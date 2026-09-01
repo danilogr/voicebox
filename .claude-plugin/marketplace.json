@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "speak-marketplace",
+  "version": "1.0.0",
+  "description": "Local marketplace hosting the speak plugin",
+  "owner": {
+    "name": "Danilo Gasques"
+  },
+  "plugins": [
+    {
+      "name": "speak",
+      "description": "Gives Claude Code a voice: a speak tool that says one short sentence out loud at the moments that matter.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}
