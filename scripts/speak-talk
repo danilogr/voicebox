@@ -1,0 +1,19 @@
+#!/bin/sh
+# Locate uv and run the /talk capture. Invoked by commands/talk.md through
+# /bin/sh, so it works even when the parent process has a bare PATH.
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+run() { exec "$1" run --directory "$root" --quiet speak-talk; }
+
+[ -n "${SPEAK_UV:-}" ] && [ -x "${SPEAK_UV:-}" ] && run "$SPEAK_UV"
+
+found=$(command -v uv 2>/dev/null) && [ -n "$found" ] && run "$found"
+
+for candidate in "$HOME/.local/bin/uv" /opt/homebrew/bin/uv /usr/local/bin/uv; do
+  [ -x "$candidate" ] && run "$candidate"
+done
+
+echo "speak: could not find uv. Install it from https://docs.astral.sh/uv/ or set SPEAK_UV." >&2
+exit 127

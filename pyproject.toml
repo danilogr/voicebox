@@ -11,6 +11,7 @@ dependencies = [
 
 [project.scripts]
 speak-mcp = "speak.__main__:main"
+speak-talk = "speak.talk:main"
 
 [build-system]
 requires = ["hatchling"]
