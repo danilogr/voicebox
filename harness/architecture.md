@@ -16,17 +16,21 @@ returns a transcript, and the `/talk` slash command dictates a prompt instead of
 typing it. There are therefore two entry points into the same code: the long-lived
 MCP server (`__main__`) and a short-lived one-shot process (`talk`) that a slash
 command runs and whose stdout is injected into the user's message. Both transcribe
-against the same shared speech server the supervisor already manages; neither is
-built when `SPEAK_LISTEN` is unset, so the default plugin is unchanged.
+against the same shared speech server the supervisor already manages. With
+`SPEAK_LISTEN` unset the `listen` tool is never defined, so the tool list is
+unchanged; `/talk` is a static command file that still appears in the palette, and
+the script behind it refuses at once with one line on stderr.
 
 ## Components & boundaries
 
 - **`__main__`** — the composition root for the MCP server. Reads the environment,
   builds every other component, and starts the transport. It must not contain
   behaviour worth testing on its own. Voice input added a second entry point, so the
-  boundary rule now names both: `__main__` and `talk` are the only modules that touch
-  `os.environ`, and neither installs a log handler itself — both call
-  `runtime.configure_logging`.
+  boundary rule now names both: `__main__` and `talk` are the only modules that read
+  this plugin's configuration from `os.environ`, and neither installs a log handler
+  itself — both call `runtime.configure_logging`. One other module touches the
+  environment at all: `engines.say` reads `LANG` to filter `say -v '?'` by locale,
+  which is the platform's setting rather than the plugin's configuration.
 - **`config.Settings`** — a frozen dataclass built from a mapping. Parses and validates
   the whole environment at that one boundary; unparsable values fall back to defaults
   with a warning rather than raising. It must not read the environment itself, so every
@@ -39,7 +43,10 @@ built when `SPEAK_LISTEN` is unset, so the default plugin is unchanged.
   In every engine the text is an argv element and is never interpolated into a shell.
 - **`queue.SpeechQueue`** — owns playback. Exactly one child process runs at a time.
   `enqueue` is synchronous and returns the number of utterances ahead; a single worker
-  task drains the queue. It must not know which engine produced an utterance.
+  task drains the queue. `drain()` waits until nothing is queued, being synthesized, or
+  playing, and is part of the `Queue` protocol because `listen` opens the microphone
+  only once the speaker has finished. It must not know which engine produced an
+  utterance.
 - **`supervisor.NemoSupervisor`** — starts, shares, and stops the local speech server.
   It must not synthesize or play anything.
 - **`server.create_server`** — the transport layer. Defines the tools inside a
@@ -60,7 +67,8 @@ built when `SPEAK_LISTEN` is unset, so the default plugin is unchanged.
   installs the one log handler, on stderr, and is the only module that installs one.
 - **`talk`** — the `/talk` one-shot: hold the shared server for the life of the
   process, record, transcribe, print. It is the only module besides `__main__` that
-  reads the environment, and the only one where printing to stdout is the point.
+  reads the plugin's configuration from the environment, and the only one where
+  printing to stdout is the point.
 
 Components communicate by direct async call. The only indirection is the supervisor's
 coordination between separate session processes, which happens through the filesystem —
