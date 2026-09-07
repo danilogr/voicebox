@@ -1,9 +1,10 @@
-"""Closing a session must silence the speaker before tearing anything down."""
+"""Opening a session warms the server; closing one silences the speaker first."""
 
 import asyncio
 
-from fakes import FakeSupervisor
-from speak.server import SessionState, shutdown
+from fakes import FakeMicLock, FakeRecorder, FakeSupervisor, FakeTranscriber
+from speak.capture import Recording, State, TrackerSettings
+from speak.server import Ears, SessionState, shutdown, start_listening
 
 
 class RecordingQueue:
@@ -70,3 +71,40 @@ async def test_shutdown_waits_for_the_worker_to_finish():
 
     await shutdown(queue=queue, worker=worker, supervisor=None, session=SessionState())
     assert worker.done()
+
+
+EARS = Ears(
+    recorder=FakeRecorder(Recording(wav=b"", reason=State.DONE)),
+    transcriber=FakeTranscriber(),
+    mic_lock=FakeMicLock(),
+    limits=TrackerSettings(),
+)
+
+
+async def test_listening_registers_and_warms_the_speech_server():
+    supervisor = FakeSupervisor()
+    session = SessionState()
+
+    warmup = await start_listening(supervisor=supervisor, session=session, ears=EARS)
+
+    assert warmup is not None
+    assert await warmup is True
+    assert supervisor.registrations == 1
+    assert supervisor.starts == 1
+    assert session.registered is True
+
+
+async def test_a_session_that_never_listens_does_not_warm_the_speech_server():
+    supervisor = FakeSupervisor()
+    session = SessionState()
+
+    assert await start_listening(supervisor=supervisor, session=session, ears=None) is None
+    assert supervisor.registrations == 0
+    assert supervisor.starts == 0
+    assert session.registered is False
+
+
+async def test_listening_without_a_supervisor_starts_nothing():
+    session = SessionState()
+    assert await start_listening(supervisor=None, session=session, ears=EARS) is None
+    assert session.registered is False

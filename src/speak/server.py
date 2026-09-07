@@ -109,6 +109,25 @@ async def shutdown(
         await supervisor.release()
 
 
+async def start_listening(
+    *,
+    supervisor: "Supervisor | None",
+    session: "SessionState",
+    ears: "Ears | None",
+) -> asyncio.Task[bool] | None:
+    """Claim the shared speech server for a session that can listen.
+
+    `/talk` runs as its own short-lived process, so it needs a server that is
+    already warm. Registering is awaited; the warmup is handed back as a task
+    the caller owns, so a cold start never delays the session opening.
+    """
+    if ears is None or supervisor is None:
+        return None
+    session.registered = True
+    await supervisor.register()
+    return asyncio.create_task(supervisor.ensure_running())
+
+
 def create_server(
     *,
     settings: Settings,
@@ -122,13 +141,21 @@ def create_server(
         voice=settings.voice, rate=settings.rate, randomize=settings.randomize_voice
     )
     roll = rng or random.Random()
+    # Voice input needs both the configuration and the wiring; settling that once
+    # keeps the `listen` tool and the session warmup from disagreeing.
+    if not settings.listen:
+        ears = None
 
     @asynccontextmanager
     async def lifespan(_: MCPServer) -> AsyncIterator[None]:
         worker = asyncio.create_task(queue.run())
+        warmup = await start_listening(supervisor=supervisor, session=session, ears=ears)
         try:
             yield
         finally:
+            if warmup is not None:
+                warmup.cancel()
+                await asyncio.gather(warmup, return_exceptions=True)
             await shutdown(queue=queue, worker=worker, supervisor=supervisor, session=session)
 
     server = MCPServer(name="speak", version=VERSION, lifespan=lifespan)
@@ -206,7 +233,7 @@ def create_server(
         dropped = await queue.stop()
         return f"stopped; dropped {dropped} utterance{_plural(dropped)}"
 
-    if settings.listen and ears is not None:
+    if ears is not None:
         # The microphone lock is re-entrant by pid, so it separates sessions but not
         # two calls inside this one process; without this second gate a concurrent
         # pair would open the microphone together and release the lock out from under

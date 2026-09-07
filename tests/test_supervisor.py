@@ -174,3 +174,18 @@ async def test_release_survives_a_server_that_is_already_gone(tmp_path):
 
 async def test_release_before_register_is_harmless(tmp_path):
     assert await build(tmp_path).release() is False
+
+
+async def test_no_asr_model_is_served_unless_one_is_configured(tmp_path):
+    spawns = Spawns()
+    await build(tmp_path, spawn=spawns).ensure_running()
+    _binary, args = spawns.calls[0]
+    assert "--asr-model" not in args
+
+
+async def test_the_configured_asr_model_is_served_alongside_speech(tmp_path):
+    spawns = Spawns()
+    await build(tmp_path, spawn=spawns, asr_model="nemotron-3.5").ensure_running()
+    _binary, args = spawns.calls[0]
+    assert args[args.index("--asr-model") + 1] == "nemotron-3.5"
+    assert "--tts-model" in args

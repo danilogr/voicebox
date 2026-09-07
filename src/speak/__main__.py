@@ -3,64 +3,50 @@
 import asyncio
 import logging
 import os
-import sys
 
-import httpx2
 from mcp.server.mcpserver import MCPServer
 
+from speak.capture import MicrophoneRecorder
 from speak.config import Settings
 from speak.engines import build_engine
+from speak.engines.asr import NemoTranscriber
+from speak.miclock import MicLock
 from speak.queue import SpeechQueue
-from speak.server import create_server
-from speak.supervisor import NemoSupervisor, Probe
+from speak.runtime import capture_limits, configure_logging, health_probe
+from speak.server import Ears, create_server
+from speak.supervisor import NemoSupervisor, process_is_alive
 
 logger = logging.getLogger(__name__)
-
-HEALTH_TIMEOUT = 30.0
-HEALTH_INTERVAL = 0.5
 
 _background: set[asyncio.Task[object]] = set()
 
 
-def configure_logging() -> None:
-    """Log to stderr only. stdout carries the protocol and nothing else."""
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter("[speak] %(message)s"))
-    root = logging.getLogger("speak")
-    root.addHandler(handler)
-    root.setLevel(logging.INFO)
-    root.propagate = False
-
-
-def health_probe(base_url: str, timeout: float = HEALTH_TIMEOUT) -> Probe:
-    """Poll until the speech server answers, so the start lock covers the real warmup."""
-
-    async def probe() -> bool:
-        deadline = asyncio.get_running_loop().time() + timeout
-        async with httpx2.AsyncClient(timeout=2.0) as client:
-            while asyncio.get_running_loop().time() < deadline:
-                try:
-                    response = await client.get(f"{base_url.rstrip('/')}/health")
-                except httpx2.HTTPError:
-                    pass
-                else:
-                    if response.is_success:
-                        return True
-                await asyncio.sleep(HEALTH_INTERVAL)
-        return False
-
-    return probe
+def build_ears(settings: Settings) -> Ears | None:
+    """Everything the listen tool needs, or None when voice input is off."""
+    if not settings.listen:
+        return None
+    return Ears(
+        recorder=MicrophoneRecorder(),
+        transcriber=NemoTranscriber(
+            base_url=settings.nemo_url,
+            api_key=settings.nemo_api_key,
+            model=settings.nemo_asr_model,
+        ),
+        mic_lock=MicLock(state_dir=settings.state_dir, is_alive=process_is_alive),
+        limits=capture_limits(settings),
+    )
 
 
 def build(settings: Settings) -> MCPServer:
-    """Wire the engine, queue and supervisor together."""
+    """Wire the engine, queue, supervisor and ears together."""
     supervisor: NemoSupervisor | None = None
-    if settings.engine == "nemo" and settings.nemo_autostart:
+    if (settings.engine == "nemo" or settings.listen) and settings.nemo_autostart:
         supervisor = NemoSupervisor(
             state_dir=settings.state_dir,
             port=settings.nemo_port,
             binary=settings.nemo_binary,
             model=settings.nemo_model,
+            asr_model=settings.nemo_asr_model if settings.listen else None,
             seed=settings.seed,
             probe=health_probe(settings.nemo_url),
         )
@@ -75,7 +61,13 @@ def build(settings: Settings) -> MCPServer:
 
     engine = build_engine(settings, on_unavailable=start_speech_server)
     queue = SpeechQueue(prepare=engine.prepare)
-    return create_server(settings=settings, engine=engine, queue=queue, supervisor=supervisor)
+    return create_server(
+        settings=settings,
+        engine=engine,
+        queue=queue,
+        supervisor=supervisor,
+        ears=build_ears(settings),
+    )
 
 
 def main() -> None:

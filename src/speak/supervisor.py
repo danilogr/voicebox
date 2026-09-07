@@ -57,6 +57,7 @@ class NemoSupervisor:
         port: int = 8082,
         binary: str = "nemo-speech",
         model: str = "magpie",
+        asr_model: str | None = None,
         seed: int | None = None,
         pid: int | None = None,
         stale_lock_seconds: float = STALE_LOCK_SECONDS,
@@ -72,6 +73,7 @@ class NemoSupervisor:
         self._port = port
         self._binary = binary
         self._model = model
+        self._asr_model = asr_model
         self._seed = seed
         self._pid = pid if pid is not None else os.getpid()
         self._stale_lock_seconds = stale_lock_seconds
@@ -89,6 +91,8 @@ class NemoSupervisor:
             "cpu",
             "--no-ui",
         ]
+        if self._asr_model is not None:
+            args += ["--asr-model", self._asr_model]
         if self._seed is not None:
             args += ["--tts.seed", str(self._seed)]
         return args
