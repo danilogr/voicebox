@@ -85,8 +85,8 @@ Two ways in:
   your answer.
 
 Recording stops when you stop talking: the gate calibrates to the room's ambient
-noise over the first 300 ms, then ends the utterance after 1.5 seconds of silence.
-Tune it with `SPEAK_LISTEN_SILENCE_MS`, `SPEAK_LISTEN_MAX_SECONDS` (60 by default,
+noise over the first 300 ms, then ends the utterance after 3 seconds of silence.
+Tune it with `SPEAK_LISTEN_SILENCE_MS`, `SPEAK_LISTEN_MAX_SECONDS` (240 by default,
 a hard cap), and `SPEAK_LISTEN_TIMEOUT` (10 seconds, how long it waits for you to
 start).
 
@@ -124,8 +124,8 @@ All optional, set in your shell or in the plugin's `.mcp.json`:
 | `NEMO_TTS_MODEL` | `magpie` | model name sent in the request |
 | `SPEAK_LISTEN` | — | set `1` for the `listen` tool and `/talk` |
 | `NEMO_ASR_MODEL` | `nemotron-3.5` | transcription model the server loads and the request names |
-| `SPEAK_LISTEN_SILENCE_MS` | `1500` | silence that ends an utterance |
-| `SPEAK_LISTEN_MAX_SECONDS` | `60` | hard cap on one recording |
+| `SPEAK_LISTEN_SILENCE_MS` | `3000` | silence that ends an utterance |
+| `SPEAK_LISTEN_MAX_SECONDS` | `240` | hard cap on one recording |
 | `SPEAK_LISTEN_TIMEOUT` | `10` | seconds to wait for you to start talking |
 | `SPEAK_LISTEN_LANGUAGE` | — | language hint for transcription, e.g. `en` |
 | `SPEAK_COMMAND` | — | required when `SPEAK_ENGINE=command` |

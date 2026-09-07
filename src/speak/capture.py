@@ -43,9 +43,9 @@ class TrackerSettings:
 
     block_ms: float = 30.0
     calibrate_ms: float = 300.0
-    silence_ms: float = 1500.0
+    silence_ms: float = 3000.0
     start_timeout_ms: float = 10_000.0
-    max_ms: float = 60_000.0
+    max_ms: float = 240_000.0
     noise_multiple: float = 3.0
     floor: float = 0.01
 

@@ -68,8 +68,8 @@ class Settings:
     nemo_model: str = "magpie"
     listen: bool = False
     nemo_asr_model: str = "nemotron-3.5"
-    listen_silence_ms: float = 1500.0
-    listen_max_seconds: float = 60.0
+    listen_silence_ms: float = 3000.0
+    listen_max_seconds: float = 240.0
     listen_timeout: float = 10.0
     listen_language: str | None = None
     nemo_binary: str = "nemo-speech"
@@ -107,8 +107,8 @@ class Settings:
             nemo_model=_text(env, "NEMO_TTS_MODEL") or "magpie",
             listen=_flag(env, "SPEAK_LISTEN"),
             nemo_asr_model=_text(env, "NEMO_ASR_MODEL") or "nemotron-3.5",
-            listen_silence_ms=_positive(env, "SPEAK_LISTEN_SILENCE_MS", 1500.0),
-            listen_max_seconds=_positive(env, "SPEAK_LISTEN_MAX_SECONDS", 60.0),
+            listen_silence_ms=_positive(env, "SPEAK_LISTEN_SILENCE_MS", 3000.0),
+            listen_max_seconds=_positive(env, "SPEAK_LISTEN_MAX_SECONDS", 240.0),
             listen_timeout=_positive(env, "SPEAK_LISTEN_TIMEOUT", 10.0),
             listen_language=_text(env, "SPEAK_LISTEN_LANGUAGE"),
             nemo_binary=_text(env, "SPEAK_NEMO_BIN") or "nemo-speech",

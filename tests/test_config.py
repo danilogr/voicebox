@@ -139,19 +139,19 @@ def test_asr_model_defaults_and_overrides():
 
 def test_listen_numbers_have_defaults():
     settings = Settings.from_env({})
-    assert settings.listen_silence_ms == 1500
-    assert settings.listen_max_seconds == 60
+    assert settings.listen_silence_ms == 3000
+    assert settings.listen_max_seconds == 240
     assert settings.listen_timeout == 10
 
 
 def test_unparsable_listen_numbers_fall_back_to_the_default():
     settings = Settings.from_env({"SPEAK_LISTEN_SILENCE_MS": "soon"})
-    assert settings.listen_silence_ms == 1500
+    assert settings.listen_silence_ms == 3000
 
 
 def test_non_positive_listen_numbers_fall_back_to_the_default():
     settings = Settings.from_env({"SPEAK_LISTEN_MAX_SECONDS": "-5"})
-    assert settings.listen_max_seconds == 60
+    assert settings.listen_max_seconds == 240
 
 
 def test_listen_language_is_optional():
@@ -162,7 +162,7 @@ def test_listen_language_is_optional():
 def test_a_non_finite_listen_number_falls_back_to_the_default():
     """nan passes every `<= 0` check, and a nan limit records forever."""
     for raw in ("nan", "inf", "-inf"):
-        assert Settings.from_env({"SPEAK_LISTEN_MAX_SECONDS": raw}).listen_max_seconds == 60, raw
+        assert Settings.from_env({"SPEAK_LISTEN_MAX_SECONDS": raw}).listen_max_seconds == 240, raw
         assert Settings.from_env({"SPEAK_LISTEN_TIMEOUT": raw}).listen_timeout == 10, raw
 
 
