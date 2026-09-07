@@ -21,10 +21,12 @@ built when `SPEAK_LISTEN` is unset, so the default plugin is unchanged.
 
 ## Components & boundaries
 
-- **`__main__`** — the composition root. Reads the environment, builds every other
-  component, configures logging, and starts the transport. It is the only module that
-  touches `os.environ` or installs a log handler. It must not contain behaviour worth
-  testing on its own.
+- **`__main__`** — the composition root for the MCP server. Reads the environment,
+  builds every other component, and starts the transport. It must not contain
+  behaviour worth testing on its own. Voice input added a second entry point, so the
+  boundary rule now names both: `__main__` and `talk` are the only modules that touch
+  `os.environ`, and neither installs a log handler itself — both call
+  `runtime.configure_logging`.
 - **`config.Settings`** — a frozen dataclass built from a mapping. Parses and validates
   the whole environment at that one boundary; unparsable values fall back to defaults
   with a warning rather than raising. It must not read the environment itself, so every
@@ -54,7 +56,8 @@ built when `SPEAK_LISTEN` is unset, so the default plugin is unchanged.
   route. It must not record anything.
 - **`miclock`** — one holder at a time for the single microphone, elected the same
   way the speech server's start lock is. It must not know what the microphone is for.
-- **`runtime`** — logging and the health probe, shared by the two entry points.
+- **`runtime`** — logging and the health probe, shared by the two entry points. It
+  installs the one log handler, on stderr, and is the only module that installs one.
 - **`talk`** — the `/talk` one-shot: hold the shared server for the life of the
   process, record, transcribe, print. It is the only module besides `__main__` that
   reads the environment, and the only one where printing to stdout is the point.

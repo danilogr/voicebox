@@ -152,9 +152,11 @@ instead.
 Measured on an M5 with the CPU backend: 10 s to start, then about 1.7 s per sentence
 against 0.7 s for `say`. Resident memory once the server answers `/health` is 780 MB
 with the voice alone and 1.5 GB when `SPEAK_LISTEN` adds the transcription model.
-Both grow in use: a spoken sentence cost about 120 MB more, and one transcription took
-the server here to 2.4 GB. The first sentence after a cold start is spoken by `say`
-while the server warms up, so speech is never delayed and never silently dropped.
+Both grow in use, and not by the same amount: one spoken sentence added 120 MB to the
+voice-only server but only 45 MB to the one carrying both models, and a single
+transcription took that one to 2.4 GB. The first sentence after a cold start is spoken
+by `say` while the server warms up, so speech is never delayed and never silently
+dropped.
 
 The supervisor always passes `--device cpu`. Metal works, but on Apple silicon it runs
 this workload *slower* than the CPU backend — about 1.5x realtime against 2.0x — so CPU
@@ -182,8 +184,8 @@ supervisor and the microphone lock against injected spawn, liveness and kill cal
 over a temporary state directory, and the end-to-end tests drive the real server
 process over stdio with the `command` engine pointed at a recorder script. Capture is
 split so the decision to stop recording is a pure state machine fed block energies,
-which is why every path through it is a table test. No test starts a speech server,
-downloads a model, or opens an input device.
+which is what lets every capture path be tested without audio hardware. No test starts
+a speech server, downloads a model, or opens an input device.
 
 ## Layout
 
