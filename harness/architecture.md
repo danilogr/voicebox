@@ -11,6 +11,14 @@ server over stdio and exposes four tools — `speak`, `stop_speaking`, `list_voi
 voice beats scrollback. Its single responsibility is turning a sentence into audible
 speech without ever blocking the agent and without letting two utterances overlap.
 
+With `SPEAK_LISTEN=1` it also hears. A fifth tool, `listen`, records the user and
+returns a transcript, and the `/talk` slash command dictates a prompt instead of
+typing it. There are therefore two entry points into the same code: the long-lived
+MCP server (`__main__`) and a short-lived one-shot process (`talk`) that a slash
+command runs and whose stdout is injected into the user's message. Both transcribe
+against the same shared speech server the supervisor already manages; neither is
+built when `SPEAK_LISTEN` is unset, so the default plugin is unchanged.
+
 ## Components & boundaries
 
 - **`__main__`** — the composition root. Reads the environment, builds every other
@@ -32,13 +40,28 @@ speech without ever blocking the agent and without letting two utterances overla
   task drains the queue. It must not know which engine produced an utterance.
 - **`supervisor.NemoSupervisor`** — starts, shares, and stops the local speech server.
   It must not synthesize or play anything.
-- **`server.create_server`** — the transport layer. Defines the four tools inside a
+- **`server.create_server`** — the transport layer. Defines the tools inside a
   factory that closes over its dependencies, so there is no module-level mutable state
   and tests can build a server over fakes. It must not contain speech logic; it
-  normalizes, delegates, and formats the reply.
+  normalizes, delegates, and formats the reply. `listen` is defined only when the
+  factory is given an `Ears`, which bundles the recorder, the transcriber, the
+  microphone lock and the capture limits into one presence check.
+- **`capture`** — the microphone. `SilenceTracker` is a pure state machine fed block
+  energies and decides when an utterance has ended; `MicrophoneRecorder` is a thin
+  shell that opens a `sounddevice` stream and feeds it. The split is what lets every
+  capture path be tested without audio hardware.
+- **`engines.asr`** — transcription over the speech server's OpenAI-compatible
+  route. It must not record anything.
+- **`miclock`** — one holder at a time for the single microphone, elected the same
+  way the speech server's start lock is. It must not know what the microphone is for.
+- **`runtime`** — logging and the health probe, shared by the two entry points.
+- **`talk`** — the `/talk` one-shot: hold the shared server for the life of the
+  process, record, transcribe, print. It is the only module besides `__main__` that
+  reads the environment, and the only one where printing to stdout is the point.
 
 Components communicate by direct async call. The only indirection is the supervisor's
-coordination between separate session processes, which happens through the filesystem.
+coordination between separate session processes, which happens through the filesystem —
+and the microphone lock, which coordinates the same way for the same reason.
 
 ## Data model
 
@@ -57,21 +80,32 @@ Almost nothing is persistent.
     what to stop.
   - `starting/` — a lock directory. Its existence means a session is mid-start; its
     mtime dates the attempt so an abandoned lock can be taken over.
+  - `mic/owner` — the pid of the session currently recording. Its directory is the
+    lock; the file says who holds it, so a lock left by a dead session is reclaimed.
+
+Nothing about voice input is persistent either. A recording lives in memory as WAV
+bytes for the length of one transcription and is never written to disk.
 
 ## External dependencies
 
 - **`mcp`** — the official MCP SDK. Provides the stdio transport, protocol negotiation,
   tool-schema generation from type hints, and the client used by the end-to-end tests.
-- **`httpx2`** — async HTTP for the speech server's `/v1/audio/speech` and `/v1/models`
-  endpoints and for the health probe. Its `MockTransport` lets the engine be tested
-  without a live socket.
+- **`httpx2`** — async HTTP for the speech server's `/v1/audio/speech`,
+  `/v1/audio/transcriptions` and `/v1/models` endpoints and for the health probe. Its
+  `MockTransport` lets the engine and the transcriber be tested without a live socket.
+- **`sounddevice`** — the microphone binding, and the only native-wheel dependency
+  here. Imported inside the recorder rather than at module scope, so a machine without
+  a working PortAudio still runs the speech half of the plugin.
 - **`uv`** — environment and dependency management, and the launcher. Must be
   resolvable at startup; `scripts/speak-mcp` finds it.
 - **macOS `say` and `afplay`** — the default engine and the audio player. The plugin is
   macOS-only in practice.
 - **NeMo-Speech.cpp** (optional) — a local neural speech server, installed by
   `scripts/install-nemo.sh` and managed by the supervisor. Not vendored: it is a
-  per-platform binary plus about 1.2 GB of models.
+  per-platform binary plus 1.2 GB of models — MagpieTTS and its codec at 520 MB,
+  nemotron-3.5 at 710 MB, measured on 2026-09-07 from the model cache under
+  `~/Library/Caches/NeMoSpeech`, and the ASR figure confirmed by pulling into an empty
+  `NEMO_SPEECH_MODEL_DIR`.
 
 ## Key decisions (with rationale)
 
@@ -149,3 +183,92 @@ Almost nothing is persistent.
   PATH dependency; the shim then finds uv via `$SPEAK_UV`, the PATH, and the locations
   uv's installers use. Rejected: invoking `uv` directly, which fails under any parent
   that does not source the user's shell profile.
+
+- 2026-09-07 — **`listen` drains the speech queue before opening the microphone.**
+  `speak` returns immediately by design, so a question is usually still playing when
+  the next tool call runs, and without the drain the recording captures the agent's
+  own voice. `SpeechQueue.drain()` exists for this and waits out synthesis as well as
+  playback. A drain that does not finish inside a minute is logged and the microphone
+  is opened anyway: refusing the user is worse than the risk of hearing ourselves.
+  Rejected: a combined `ask(question)` tool, which duplicates `speak` to buy only the
+  ordering the drain already gives.
+
+- 2026-09-07 — **Recording stops on silence, not on a keypress.** Neither entry point
+  has a terminal: the MCP server owns stdin for the protocol, and a slash command's
+  bash output is captured. There is no key to press, so silence is the only available
+  end-of-turn signal. The gate is calibrated from the room's own ambient level over
+  the first 300 ms rather than fixed, because a fixed threshold fails on a quiet
+  microphone and in a noisy room alike.
+
+- 2026-09-07 — **ASR is served by the shared speech server, not a one-shot
+  subprocess.** The model stays resident, so a transcription costs a request rather
+  than a model load. The supervisor already elects one server per machine and tears it
+  down when the last session leaves, so this is the existing lifecycle carrying a
+  second model. Rejected: `nemo-speech transcribe` per capture, which pays the load
+  every time.
+
+- 2026-09-07 — **`--asr-model` is only added when listening is enabled.** A missing
+  ASR model makes `serve` fail, which would take neural speech down with it. Gating
+  the flag means a session that never listens cannot regress, and a session that opts
+  in without running setup degrades to the `say` fallback that already exists rather
+  than breaking.
+
+  The cost of gating is a mixed machine: a session using neural speech without
+  listening can win the start election and leave an ASR-less server running, which a
+  listening session then finds. `listen` cannot tell that apart from an unpulled model
+  by probing alone, so it names both causes rather than guessing one. It does not
+  restart the server to fix itself — that would cut off whichever session is
+  mid-sentence.
+
+- 2026-09-07 — **The microphone is arbitrated by a lock, and contention fails fast.**
+  There is one microphone and any number of sessions; two recordings at once produce
+  garbage in both. The election is the supervisor's, reused: an atomic `mkdir` on
+  `mic/`, an owner pid in the file inside it, and a lock left by a dead session
+  reclaimed by the next caller. Rejected: queueing on the lock, which is worse than
+  refusing — you would start talking and a window you are not looking at would take
+  the words.
+
+- 2026-09-07 — **A second, in-process lock guards `listen` against itself.** The
+  microphone lock is re-entrant by pid, which is what makes reclaiming a dead owner's
+  lock possible but means it does not separate two calls inside one session: both
+  would acquire it, and the first to finish would release the cross-process lock while
+  the other was still recording. `listen` therefore also holds an `asyncio.Lock` and
+  refuses a concurrent call rather than queueing it, so the answer is immediate.
+
+- 2026-09-07 — **Enabling `SPEAK_LISTEN` registers with the supervisor at session
+  start.** `/talk` runs as its own short-lived process, so without a warm server it
+  pays a cold start on every invocation. Registering eagerly trades resident memory
+  from session start for an instant `/talk`. Measured on an M5 with the CPU backend on
+  2026-09-07, once the server answers `/health`: 780 MB with the voice alone, 1.5 GB
+  with the transcription model beside it. Sessions that do not enable listening keep
+  today's lazy registration.
+
+- 2026-09-07 — **Every caller guards `ensure_running()` with a liveness check.**
+  `ensure_running` spawns unconditionally; its lock only excludes another session
+  starting at the same moment, so a session opening later would start a second server,
+  overwrite `server.json` with the duplicate's pid, and orphan the first — the last
+  session out would then stop the wrong process and leave a gigabyte resident. Both
+  the session warmup and `/talk` therefore call `reachable()` first. That check is
+  liveness, not readiness: any HTTP answer means the port is taken, including the 503
+  of a server still warming up and the case of a server with no ASR model, neither of
+  which may be replaced.
+
+- 2026-09-07 — **The queue re-checks the generation after spawning the player.** The
+  existing check ran only before the spawn, so an utterance stopped in the window
+  between `stop()` releasing the current process and the new handle being recorded was
+  still heard. The player is now terminated the moment its handle is stored if the
+  generation has moved since. It matters more with voice input than without: `listen`
+  opens the microphone as soon as speech is meant to have ended, so an utterance that
+  survives that window is recorded as well as heard.
+
+- 2026-09-07 — **Capture uses the `sounddevice` package rather than an ffmpeg
+  subprocess.** It is the first native-wheel dependency here, and it is what makes
+  voice input work off macOS; an `avfoundation` command line would not. The import is
+  inside the recorder so a machine without a working PortAudio still gets speech.
+  Rejected: ffmpeg, which is one more thing to install and macOS-specific in this use.
+
+- 2026-09-07 — **A denied microphone is reported as silence, not as an error.** On
+  macOS a denied permission commonly opens the stream and delivers zeroed samples
+  rather than raising, so no error is available to report. Both entry points therefore
+  answer "heard nothing", and the documentation names that as the symptom to look for
+  instead of promising a message the user may never see.
