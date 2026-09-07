@@ -1,0 +1,110 @@
+import httpx2
+import pytest
+
+from speak.engines.asr import NemoTranscriber, TranscriptionFailed
+
+MODELS_WITH_ASR = {
+    "data": [
+        {"id": "nemotron-3.5", "capability": "transcription"},
+        {"id": "magpie", "capability": "speech", "voices": ["John"]},
+    ]
+}
+MODELS_WITHOUT_ASR = {"data": [{"id": "magpie", "capability": "speech", "voices": ["John"]}]}
+WAV = b"RIFF\x00\x00\x00\x00WAVEfmt "
+
+
+def transcriber_over(handler, **kwargs: object) -> NemoTranscriber:
+    client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
+    return NemoTranscriber(base_url="http://127.0.0.1:8082", client=client, **kwargs)
+
+
+async def test_returns_the_transcript_collapsed_to_one_line():
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json={"text": "  run   the\ntests  "})
+
+    assert await transcriber_over(handler).transcribe(WAV) == "run the tests"
+
+
+async def test_posts_the_audio_and_the_model_to_the_transcription_route():
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = request.content
+        return httpx2.Response(200, json={"text": "ok"})
+
+    await transcriber_over(handler, model="parakeet-tdt").transcribe(WAV, language="en")
+    assert seen["url"].endswith("/v1/audio/transcriptions")
+    assert b"parakeet-tdt" in seen["body"]
+    assert b'name="language"' in seen["body"]
+    assert WAV in seen["body"]
+
+
+async def test_language_is_omitted_when_unset():
+    seen: dict[str, bytes] = {}
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen["body"] = request.content
+        return httpx2.Response(200, json={"text": "ok"})
+
+    await transcriber_over(handler).transcribe(WAV)
+    assert b'name="language"' not in seen["body"]
+
+
+async def test_an_empty_transcript_is_returned_as_empty():
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json={"text": ""})
+
+    assert await transcriber_over(handler).transcribe(WAV) == ""
+
+
+async def test_a_server_error_becomes_a_transcription_failure():
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(500, text="boom")
+
+    with pytest.raises(TranscriptionFailed):
+        await transcriber_over(handler).transcribe(WAV)
+
+
+async def test_a_non_json_body_becomes_a_transcription_failure():
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, text="<html>nope</html>")
+
+    with pytest.raises(TranscriptionFailed):
+        await transcriber_over(handler).transcribe(WAV)
+
+
+async def test_has_asr_is_true_when_the_server_reports_a_transcription_model():
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json=MODELS_WITH_ASR)
+
+    assert await transcriber_over(handler).has_asr() is True
+
+
+async def test_has_asr_is_false_when_the_server_only_speaks():
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json=MODELS_WITHOUT_ASR)
+
+    assert await transcriber_over(handler).has_asr() is False
+
+
+async def test_has_asr_is_false_when_the_server_cannot_be_reached():
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        raise httpx2.ConnectError("refused")
+
+    assert await transcriber_over(handler).has_asr() is False
+
+
+async def test_reachable_is_true_when_the_server_answers_its_health_route():
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        assert request.url.path == "/health"
+        return httpx2.Response(200, text="ok")
+
+    assert await transcriber_over(handler).reachable() is True
+
+
+async def test_reachable_is_false_when_nothing_is_listening():
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        raise httpx2.ConnectError("refused")
+
+    assert await transcriber_over(handler).reachable() is False
