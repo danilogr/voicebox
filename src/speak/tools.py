@@ -48,8 +48,17 @@ in which case restarting that session will let the server come back with transcr
 
 LISTEN_OFF = "Voice input is off. Set SPEAK_LISTEN=1 in the environment and restart the session."
 
+NO_SERVER = (
+    "could not start the speech server. Run /speak:setup to install nemo-speech and pull "
+    "the models, or set SPEAK_NEMO_BIN to it if it is installed somewhere else."
+)
+
 ALREADY_LISTENING = (
     "this session is already listening; wait for that recording to finish before asking again"
 )
 
 HEARD_NOTHING = "heard nothing"
+
+# The sentinel /talk prints when the recording held no speech. `commands/talk.md`
+# branches on this exact line, so it lives here rather than as a literal in both.
+TALK_HEARD_NOTHING = f"({HEARD_NOTHING})"
