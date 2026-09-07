@@ -74,6 +74,32 @@ async def test_a_non_json_body_becomes_a_transcription_failure():
         await transcriber_over(handler).transcribe(WAV)
 
 
+async def test_a_json_body_that_is_not_an_object_becomes_a_transcription_failure():
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json=[1, 2])
+
+    with pytest.raises(TranscriptionFailed):
+        await transcriber_over(handler).transcribe(WAV)
+
+
+async def test_sends_the_api_key_as_a_bearer_token_on_every_route():
+    seen: dict[str, str | None] = {}
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen[request.url.path] = request.headers.get("authorization")
+        return httpx2.Response(200, json={"text": "ok", "data": []})
+
+    transcriber = transcriber_over(handler, api_key="secret")
+    await transcriber.transcribe(WAV)
+    await transcriber.reachable()
+    await transcriber.has_asr()
+    assert seen == {
+        "/v1/audio/transcriptions": "Bearer secret",
+        "/health": "Bearer secret",
+        "/v1/models": "Bearer secret",
+    }
+
+
 async def test_has_asr_is_true_when_the_server_reports_a_transcription_model():
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(200, json=MODELS_WITH_ASR)
@@ -95,10 +121,28 @@ async def test_has_asr_is_false_when_the_server_cannot_be_reached():
     assert await transcriber_over(handler).has_asr() is False
 
 
+@pytest.mark.parametrize("payload", [{"data": "nope"}, {"data": ["whisper"]}, [1, 2]])
+async def test_has_asr_is_false_when_the_model_list_is_malformed(payload):
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json=payload)
+
+    assert await transcriber_over(handler).has_asr() is False
+
+
 async def test_reachable_is_true_when_the_server_answers_its_health_route():
     def handler(request: httpx2.Request) -> httpx2.Response:
         assert request.url.path == "/health"
         return httpx2.Response(200, text="ok")
+
+    assert await transcriber_over(handler).reachable() is True
+
+
+@pytest.mark.parametrize("status", [404, 503])
+async def test_reachable_is_true_when_a_server_answers_with_an_error_status(status):
+    """A warming-up or route-less server still holds the port: do not start a second one."""
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(status, text="not ready")
 
     assert await transcriber_over(handler).reachable() is True
 

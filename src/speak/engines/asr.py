@@ -55,24 +55,31 @@ class NemoTranscriber:
                 timeout=self._timeout,
             )
             response.raise_for_status()
-            text = response.json().get("text", "")
+            payload = response.json()
         except (httpx2.HTTPError, ValueError) as error:
             raise TranscriptionFailed(f"could not transcribe: {error}") from error
-        return " ".join(str(text).split())
+        if not isinstance(payload, dict):
+            raise TranscriptionFailed(
+                f"expected a JSON object from the server, got {type(payload).__name__}"
+            )
+        return " ".join(str(payload.get("text", "")).split())
 
     async def reachable(self) -> bool:
-        """True when a speech server is answering at all.
+        """True when something is listening on the speech server's port.
 
-        Distinct from `has_asr`: a server that is up but was started without a
-        transcription model must not be replaced by a second one on the same port.
+        Liveness, not readiness: any HTTP answer means a process holds the port, so a
+        404 or the 503 of a server still warming up counts as reachable. A caller that
+        treated those as absence would start a second server on a port already taken.
+        Distinct from `has_asr` for the same reason: a server that is up but was
+        started without a transcription model must not be replaced either.
         """
         try:
-            response = await self._client.get(
+            await self._client.get(
                 f"{self._base_url}/health", headers=self._headers, timeout=self._timeout
             )
         except httpx2.HTTPError:
             return False
-        return bool(response.is_success)
+        return True
 
     async def has_asr(self) -> bool:
         """True when the running server reports a transcription model."""
@@ -81,8 +88,15 @@ class NemoTranscriber:
                 f"{self._base_url}/v1/models", headers=self._headers, timeout=self._timeout
             )
             response.raise_for_status()
-            models = response.json().get("data", [])
+            payload = response.json()
         except (httpx2.HTTPError, ValueError) as error:
             logger.warning("could not list speech server models: %s", error)
             return False
-        return any(model.get("capability") == ASR_CAPABILITY for model in models)
+        models = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(models, list):
+            logger.warning("speech server did not report a usable model list")
+            return False
+        return any(
+            isinstance(model, dict) and model.get("capability") == ASR_CAPABILITY
+            for model in models
+        )
