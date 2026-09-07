@@ -7,6 +7,7 @@ energies, so every path through it is a table test with no audio hardware. The
 
 import array
 import asyncio
+import contextlib
 import io
 import logging
 import math
@@ -14,7 +15,8 @@ import wave
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol
+from types import ModuleType
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -199,20 +201,34 @@ class MicrophoneRecorder:
                 f"no microphone binding available: {error}. Run uv sync in the plugin directory."
             ) from error
 
+        # Constructing the stream already claims the device, and sounddevice streams
+        # have no __del__ — so from here on every path out must close it.
+        stream = self._open(sounddevice)
+        with contextlib.closing(stream):
+            try:
+                stream.start()
+            except sounddevice.PortAudioError as error:
+                raise RecorderUnavailable(_microphone_hint(error)) from error
+            try:
+                pcm, reason = drive(lambda: bytes(stream.read(self._block_frames)[0]), settings)
+            except sounddevice.PortAudioError as error:
+                raise RecorderUnavailable(
+                    f"the microphone failed during recording: {error}. "
+                    "Check that the input device is still connected."
+                ) from error
+        return Recording(wav=to_wav(pcm, self._sample_rate), reason=reason)
+
+    def _open(self, sounddevice: ModuleType) -> Any:
         try:
-            stream = sounddevice.RawInputStream(
+            return sounddevice.RawInputStream(
                 samplerate=self._sample_rate,
                 blocksize=self._block_frames,
                 dtype="int16",
                 channels=1,
                 device=self._device,
             )
-        except Exception as error:  # sounddevice raises PortAudioError and friends
+        except Exception as error:  # PortAudioError, or ValueError for a bad device
             raise RecorderUnavailable(_microphone_hint(error)) from error
-
-        with stream:
-            pcm, reason = drive(lambda: bytes(stream.read(self._block_frames)[0]), settings)
-        return Recording(wav=to_wav(pcm, self._sample_rate), reason=reason)
 
 
 def _microphone_hint(error: BaseException) -> str:

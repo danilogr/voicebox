@@ -1,12 +1,16 @@
 import array
 import io
+import sys
 import wave
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
 from speak.capture import (
     FINAL,
+    MicrophoneRecorder,
+    RecorderUnavailable,
     Recording,
     SilenceTracker,
     State,
@@ -135,3 +139,80 @@ def test_a_silent_recording_has_no_speech():
     assert Recording(wav=b"", reason=State.SILENT).has_speech is False
     assert Recording(wav=b"", reason=State.DONE).has_speech is True
     assert Recording(wav=b"", reason=State.CAPPED).has_speech is True
+
+
+class FakePortAudioError(Exception):
+    """Stands in for sounddevice.PortAudioError, which only the real module defines."""
+
+
+class FakeStream:
+    """A RawInputStream that yields silence, without touching audio hardware."""
+
+    def __init__(self, fail_at: str | None = None) -> None:
+        self._fail_at = fail_at
+        self.started = False
+        self.closed = False
+
+    def start(self) -> None:
+        if self._fail_at == "start":
+            raise FakePortAudioError("device unavailable")
+        self.started = True
+
+    def read(self, frames: int) -> tuple[bytes, bool]:
+        if self._fail_at == "read":
+            raise FakePortAudioError("device disconnected")
+        return block(0, frames), False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def fake_binding(monkeypatch, stream: FakeStream | None = None, opening=None) -> FakeStream:
+    """Install a stand-in `sounddevice` so `_record` never opens a real device."""
+    stream = stream or FakeStream()
+    module = SimpleNamespace(
+        PortAudioError=FakePortAudioError,
+        RawInputStream=opening or (lambda **_kwargs: stream),
+    )
+    monkeypatch.setitem(sys.modules, "sounddevice", module)
+    return stream
+
+
+async def test_a_recorded_stream_is_wrapped_as_a_wav_and_closed(monkeypatch):
+    stream = fake_binding(monkeypatch)
+    recording = await MicrophoneRecorder().record(LIMITS)
+    assert recording.reason is State.SILENT
+    assert stream.started is True
+    assert stream.closed is True
+    with wave.open(io.BytesIO(recording.wav), "rb") as handle:
+        assert handle.getframerate() == 16_000
+        assert handle.getnframes() == 20 * 480
+
+
+async def test_a_stream_that_cannot_be_opened_is_reported(monkeypatch):
+    def explode(**_kwargs: object) -> FakeStream:
+        raise FakePortAudioError("Error querying device 99")
+
+    fake_binding(monkeypatch, opening=explode)
+    with pytest.raises(RecorderUnavailable, match="could not open the microphone"):
+        await MicrophoneRecorder().record(LIMITS)
+
+
+async def test_a_stream_that_cannot_start_is_reported_and_still_closed(monkeypatch):
+    stream = fake_binding(monkeypatch, FakeStream(fail_at="start"))
+    with pytest.raises(RecorderUnavailable, match="could not open the microphone"):
+        await MicrophoneRecorder().record(LIMITS)
+    assert stream.closed is True
+
+
+async def test_a_device_lost_mid_recording_is_reported_and_still_closed(monkeypatch):
+    stream = fake_binding(monkeypatch, FakeStream(fail_at="read"))
+    with pytest.raises(RecorderUnavailable, match="failed during recording"):
+        await MicrophoneRecorder().record(LIMITS)
+    assert stream.closed is True
+
+
+async def test_a_missing_binding_is_reported(monkeypatch):
+    monkeypatch.setitem(sys.modules, "sounddevice", None)
+    with pytest.raises(RecorderUnavailable, match="no microphone binding"):
+        await MicrophoneRecorder().record(LIMITS)
