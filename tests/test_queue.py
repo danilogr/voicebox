@@ -215,3 +215,81 @@ async def test_utterances_queued_after_a_stop_still_play(running):
     queue.enqueue("kept", voice=None, rate=None)
     await settle()
     assert spawner.calls == [("say", ["kept"])]
+
+
+async def test_drain_returns_at_once_when_nothing_is_queued():
+    queue = SpeechQueue(prepare=prepare_say, spawn=Spawner())
+    await asyncio.wait_for(queue.drain(), timeout=1)
+
+
+async def test_drain_waits_until_every_queued_utterance_has_played(running):
+    queue, spawner = running(spawn=Spawner(autofinish=False))
+    queue.enqueue("one", voice=None, rate=None)
+    queue.enqueue("two", voice=None, rate=None)
+
+    drained = asyncio.create_task(queue.drain())
+    await settle()
+    assert not drained.done()
+    assert len(spawner.calls) == 1
+
+    spawner.processes[0].finished.set()
+    await settle()
+    assert not drained.done()
+    assert len(spawner.calls) == 2
+
+    spawner.processes[1].finished.set()
+    await asyncio.wait_for(drained, timeout=1)
+    assert queue.size == 0
+
+
+async def test_drain_waits_for_an_utterance_queued_behind_the_one_playing(running):
+    queue, spawner = running(spawn=Spawner(autofinish=False))
+    queue.enqueue("one", voice=None, rate=None)
+    await settle()
+
+    drained = asyncio.create_task(queue.drain())
+    queue.enqueue("two", voice=None, rate=None)
+    spawner.processes[0].finished.set()
+    await settle()
+    assert not drained.done()
+    assert len(spawner.calls) == 2
+
+    spawner.processes[1].finished.set()
+    await asyncio.wait_for(drained, timeout=1)
+    assert queue.size == 0
+
+
+async def test_stop_releases_a_waiting_drain():
+    queue = SpeechQueue(prepare=prepare_say, spawn=Spawner())
+    queue.enqueue("hello", voice=None, rate=None)
+
+    drained = asyncio.create_task(queue.drain())
+    await settle()
+    assert not drained.done()
+
+    await queue.stop()
+    await asyncio.wait_for(drained, timeout=1)
+
+
+async def test_drain_waits_out_a_synthesis_that_stop_cancelled(running):
+    """stop() during a slow prepare leaves work in flight; drain must wait for it."""
+    release = asyncio.Event()
+
+    async def slow_prepare(text: str, *, voice: str | None, rate: float | None) -> Utterance:
+        await release.wait()
+        return Utterance(command="say", args=[text])
+
+    queue, spawner = running(prepare=slow_prepare)
+    queue.enqueue("cancel me", voice=None, rate=None)
+    await settle()
+    assert await queue.stop() == 1
+
+    drained = asyncio.create_task(queue.drain())
+    await settle()
+    assert not drained.done()
+    assert queue.size == 1
+
+    release.set()
+    await asyncio.wait_for(drained, timeout=1)
+    assert queue.size == 0
+    assert spawner.calls == []

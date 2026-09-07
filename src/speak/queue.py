@@ -61,6 +61,8 @@ class SpeechQueue:
         self._on_error = on_error or self._log_error
         self._waiting: deque[_Pending] = deque()
         self._wake = asyncio.Event()
+        self._idle = asyncio.Event()
+        self._idle.set()
         self._current: Process | None = None
         self._preparing = False
         self._generation = 0
@@ -78,6 +80,7 @@ class SpeechQueue:
         """Queue one utterance and return how many are ahead of it."""
         ahead = self.size
         self._waiting.append(_Pending(text=text, voice=voice, rate=rate))
+        self._idle.clear()
         self._wake.set()
         return ahead
 
@@ -89,7 +92,14 @@ class SpeechQueue:
         current, self._current = self._current, None
         if current is not None:
             current.terminate()
+        if self.size == 0:
+            # A synthesis still in flight settles in the worker, which sets _idle then.
+            self._idle.set()
         return dropped
+
+    async def drain(self) -> None:
+        """Wait until nothing is queued, being prepared, or playing."""
+        await self._idle.wait()
 
     async def run(self) -> None:
         """Drain the queue until cancelled."""
@@ -98,6 +108,8 @@ class SpeechQueue:
             self._wake.clear()
             while self._waiting:
                 await self._play(self._waiting.popleft())
+            # Nothing waiting, preparing, or playing: release drain() waiters.
+            self._idle.set()
 
     async def _play(self, pending: _Pending) -> None:
         generation = self._generation
