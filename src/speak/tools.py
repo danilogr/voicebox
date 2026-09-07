@@ -28,3 +28,28 @@ TEXT = "One short sentence to say out loud."
 VOICE_OVERRIDE = 'Override the configured voice, e.g. "Samantha".'
 RATE = "Words per minute. The macOS default is about 175."
 VOICE_NAME = 'A name from list_voices, e.g. "Sofia".'
+
+LISTEN = """Listen to the user through the microphone and return what they said.
+
+Use it after asking the user a question with `speak`, so they can answer out loud
+instead of typing. Recording starts once anything queued has finished playing and
+stops on its own when the user stops talking.
+
+The transcript comes from a small on-device model and may contain errors. Treat it
+as what the user meant, not as a literal quotation, and confirm before acting on it
+if a misheard word would be costly."""
+
+LISTEN_SECONDS = "Longest recording to allow, in seconds. Defaults to the configured cap."
+
+NO_ASR = """The speech server is running without a transcription model, so there is nothing
+to listen with. Either the model was never downloaded - run /speak:setup to pull it -
+or another Claude Code session started this shared server without voice input enabled,
+in which case restarting that session will let the server come back with transcription."""
+
+LISTEN_OFF = "Voice input is off. Set SPEAK_LISTEN=1 in the environment and restart the session."
+
+ALREADY_LISTENING = (
+    "this session is already listening; wait for that recording to finish before asking again"
+)
+
+HEARD_NOTHING = "heard nothing"

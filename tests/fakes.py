@@ -1,6 +1,8 @@
 """Fakes shared by the server-level tests."""
 
+from speak.capture import Recording, TrackerSettings
 from speak.engines.base import Utterance
+from speak.miclock import MicrophoneBusy
 
 
 class FakeEngine:
@@ -26,9 +28,10 @@ class FakeEngine:
 
 
 class FakeQueue:
-    def __init__(self, ahead: int = 0, dropped: int = 0) -> None:
+    def __init__(self, ahead: int = 0, dropped: int = 0, calls: list[str] | None = None) -> None:
         self.enqueued: list[tuple[str, str | None, float | None]] = []
         self.stopped = 0
+        self.calls = calls if calls is not None else []
         self._ahead = ahead
         self._dropped = dropped
 
@@ -43,11 +46,15 @@ class FakeQueue:
     async def run(self) -> None:
         return None
 
+    async def drain(self) -> None:
+        self.calls.append("drain")
+
 
 class FakeSupervisor:
     def __init__(self) -> None:
         self.registrations = 0
         self.releases = 0
+        self.starts = 0
 
     async def register(self) -> None:
         self.registrations += 1
@@ -55,3 +62,61 @@ class FakeSupervisor:
     async def release(self) -> bool:
         self.releases += 1
         return True
+
+    async def ensure_running(self) -> bool:
+        self.starts += 1
+        return True
+
+
+class FakeRecorder:
+    def __init__(self, recording: Recording, calls: list[str] | None = None) -> None:
+        self.recording = recording
+        self.calls = calls if calls is not None else []
+        self.limits: TrackerSettings | None = None
+
+    async def record(self, settings: TrackerSettings) -> Recording:
+        self.calls.append("record")
+        self.limits = settings
+        return self.recording
+
+
+class FakeTranscriber:
+    def __init__(
+        self,
+        text: str = "",
+        has_asr: bool = True,
+        error: Exception | None = None,
+    ) -> None:
+        self.text = text
+        self.languages: list[str | None] = []
+        self._has_asr = has_asr
+        self._error = error
+        self.calls: list[str] = []
+
+    async def transcribe(self, wav: bytes, *, language: str | None = None) -> str:
+        self.calls.append("transcribe")
+        self.languages.append(language)
+        if self._error is not None:
+            raise self._error
+        return self.text
+
+    async def has_asr(self) -> bool:
+        return self._has_asr
+
+
+class FakeMicLock:
+    def __init__(self, busy_with: int | None = None) -> None:
+        self.busy_with = busy_with
+        self.held = False
+        self.acquires = 0
+        self.releases = 0
+
+    def acquire(self) -> None:
+        self.acquires += 1
+        if self.busy_with is not None:
+            raise MicrophoneBusy(self.busy_with)
+        self.held = True
+
+    def release(self) -> None:
+        self.releases += 1
+        self.held = False

@@ -1,11 +1,11 @@
-"""The MCP server: four tools over the queue and the selected engine."""
+"""The MCP server: the speech tools, and `listen` when voice input is on."""
 
 import asyncio
 import logging
 import random
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Annotated, Protocol
 
 from mcp.server.mcpserver import MCPServer
@@ -13,13 +13,18 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from speak import tools
+from speak.capture import Recorder, RecorderUnavailable, TrackerSettings
 from speak.config import Settings
+from speak.engines.asr import Transcriber, TranscriptionFailed
 from speak.engines.base import Engine
+from speak.miclock import MicLock, MicrophoneBusy
 from speak.text import normalize
 
 logger = logging.getLogger(__name__)
 
 VERSION = "1.0.0"
+
+DRAIN_TIMEOUT = 60.0
 
 
 class Queue(Protocol):
@@ -29,11 +34,25 @@ class Queue(Protocol):
 
     async def run(self) -> None: ...
 
+    async def drain(self) -> None: ...
+
 
 class Supervisor(Protocol):
     async def register(self) -> None: ...
 
     async def release(self) -> bool: ...
+
+    async def ensure_running(self) -> bool: ...
+
+
+@dataclass(frozen=True, slots=True)
+class Ears:
+    """Everything the `listen` tool needs. Absent when voice input is off."""
+
+    recorder: Recorder
+    transcriber: Transcriber
+    mic_lock: MicLock
+    limits: TrackerSettings
 
 
 @dataclass(slots=True)
@@ -97,6 +116,7 @@ def create_server(
     queue: Queue,
     supervisor: Supervisor | None,
     rng: random.Random | None = None,
+    ears: Ears | None = None,
 ) -> MCPServer:
     session = SessionState(
         voice=settings.voice, rate=settings.rate, randomize=settings.randomize_voice
@@ -186,4 +206,55 @@ def create_server(
         dropped = await queue.stop()
         return f"stopped; dropped {dropped} utterance{_plural(dropped)}"
 
+    if settings.listen and ears is not None:
+        # The microphone lock is re-entrant by pid, so it separates sessions but not
+        # two calls inside this one process; without this second gate a concurrent
+        # pair would open the microphone together and release the lock out from under
+        # each other. Refusing rather than queueing keeps the answer immediate.
+        listening = asyncio.Lock()
+
+        @server.tool(name="listen", description=tools.LISTEN)
+        async def listen(
+            max_seconds: Annotated[float | None, Field(description=tools.LISTEN_SECONDS)] = None,
+        ) -> str:
+            if listening.locked():
+                raise ToolError(tools.ALREADY_LISTENING)
+
+            async with listening:
+                try:
+                    await asyncio.wait_for(queue.drain(), timeout=DRAIN_TIMEOUT)
+                except TimeoutError:
+                    # A queue that will not drain is a reason to record anyway, not a
+                    # reason to refuse the user; the worst case is hearing ourselves.
+                    logger.warning("speech queue did not drain; opening the microphone anyway")
+
+                if not await ears.transcriber.has_asr():
+                    raise ToolError(tools.NO_ASR)
+
+                try:
+                    ears.mic_lock.acquire()
+                except MicrophoneBusy as error:
+                    raise ToolError(str(error)) from error
+
+                try:
+                    recording = await ears.recorder.record(_limits(ears.limits, max_seconds))
+                    if not recording.has_speech:
+                        return tools.HEARD_NOTHING
+                    heard = await ears.transcriber.transcribe(
+                        recording.wav, language=settings.listen_language
+                    )
+                except (TranscriptionFailed, RecorderUnavailable) as error:
+                    raise ToolError(str(error)) from error
+                finally:
+                    ears.mic_lock.release()
+
+            return heard or tools.HEARD_NOTHING
+
     return server
+
+
+def _limits(configured: TrackerSettings, max_seconds: float | None) -> TrackerSettings:
+    """Apply the caller's cap, ignoring a value that would forbid recording at all."""
+    if max_seconds is None or max_seconds <= 0:
+        return configured
+    return replace(configured, max_ms=max_seconds * 1000)
