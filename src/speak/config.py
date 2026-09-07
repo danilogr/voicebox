@@ -32,6 +32,21 @@ def _number(env: Mapping[str, str], key: str, default: float | None) -> float | 
         return default
 
 
+TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
+def _flag(env: Mapping[str, str], key: str) -> bool:
+    return (_text(env, key) or "").lower() in TRUTHY
+
+
+def _positive(env: Mapping[str, str], key: str, default: float) -> float:
+    value = _number(env, key, default)
+    if value is None or value <= 0:
+        logger.warning("ignoring %s: must be a positive number", key)
+        return default
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     engine: str = "say"
@@ -44,6 +59,12 @@ class Settings:
     nemo_url: str = DEFAULT_NEMO_URL
     nemo_api_key: str | None = None
     nemo_model: str = "magpie"
+    listen: bool = False
+    nemo_asr_model: str = "nemotron-3.5"
+    listen_silence_ms: float = 1500.0
+    listen_max_seconds: float = 60.0
+    listen_timeout: float = 10.0
+    listen_language: str | None = None
     nemo_binary: str = "nemo-speech"
     nemo_autostart: bool = True
     seed: int | None = None
@@ -77,6 +98,12 @@ class Settings:
             nemo_url=_text(env, "NEMO_HTTP_URL") or DEFAULT_NEMO_URL,
             nemo_api_key=_text(env, "NEMO_API_KEY"),
             nemo_model=_text(env, "NEMO_TTS_MODEL") or "magpie",
+            listen=_flag(env, "SPEAK_LISTEN"),
+            nemo_asr_model=_text(env, "NEMO_ASR_MODEL") or "nemotron-3.5",
+            listen_silence_ms=_positive(env, "SPEAK_LISTEN_SILENCE_MS", 1500.0),
+            listen_max_seconds=_positive(env, "SPEAK_LISTEN_MAX_SECONDS", 60.0),
+            listen_timeout=_positive(env, "SPEAK_LISTEN_TIMEOUT", 10.0),
+            listen_language=_text(env, "SPEAK_LISTEN_LANGUAGE"),
             nemo_binary=_text(env, "SPEAK_NEMO_BIN") or "nemo-speech",
             nemo_autostart=_text(env, "SPEAK_NEMO_AUTOSTART") != "0",
             seed=None if seed is None else int(seed),

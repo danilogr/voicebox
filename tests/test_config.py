@@ -115,3 +115,44 @@ def test_random_is_recognised_case_insensitively():
 
 def test_random_is_never_treated_as_a_literal_voice_name():
     assert Settings.from_env({"SPEAK_VOICE": "random"}).voice is None
+
+
+def test_listen_is_off_unless_asked_for():
+    assert Settings.from_env({}).listen is False
+
+
+def test_listen_accepts_the_usual_truthy_spellings():
+    for raw in ("1", "true", "TRUE", "yes", "on"):
+        assert Settings.from_env({"SPEAK_LISTEN": raw}).listen is True, raw
+
+
+def test_listen_treats_anything_else_as_off():
+    for raw in ("0", "false", "no", "off", ""):
+        assert Settings.from_env({"SPEAK_LISTEN": raw}).listen is False, raw
+
+
+def test_asr_model_defaults_and_overrides():
+    assert Settings.from_env({}).nemo_asr_model == "nemotron-3.5"
+    assert Settings.from_env({"NEMO_ASR_MODEL": "parakeet-tdt"}).nemo_asr_model == "parakeet-tdt"
+
+
+def test_listen_numbers_have_defaults():
+    settings = Settings.from_env({})
+    assert settings.listen_silence_ms == 1500
+    assert settings.listen_max_seconds == 60
+    assert settings.listen_timeout == 10
+
+
+def test_unparsable_listen_numbers_fall_back_to_the_default():
+    settings = Settings.from_env({"SPEAK_LISTEN_SILENCE_MS": "soon"})
+    assert settings.listen_silence_ms == 1500
+
+
+def test_non_positive_listen_numbers_fall_back_to_the_default():
+    settings = Settings.from_env({"SPEAK_LISTEN_MAX_SECONDS": "-5"})
+    assert settings.listen_max_seconds == 60
+
+
+def test_listen_language_is_optional():
+    assert Settings.from_env({}).listen_language is None
+    assert Settings.from_env({"SPEAK_LISTEN_LANGUAGE": "en"}).listen_language == "en"
