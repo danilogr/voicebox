@@ -81,6 +81,40 @@ async def test_ensure_running_releases_the_lock_when_it_finishes(tmp_path):
     assert not (tmp_path / "starting").exists()
 
 
+async def test_a_server_that_is_already_running_is_not_replaced(tmp_path):
+    """The TTS fallback calls this on any HTTP failure, a 5xx from a busy server included.
+
+    A second `nemo-speech` cannot bind the port, so spawning would only overwrite the
+    record of the server that is still answering and orphan it.
+    """
+    (tmp_path / "server.json").write_text(json.dumps({"pid": 4242, "port": 8082}))
+    spawns = Spawns(pid=9999)
+
+    supervisor = build(tmp_path, spawn=spawns, is_alive=lambda pid: pid == 4242)
+
+    assert await supervisor.ensure_running() is False
+    assert spawns.calls == []
+    assert json.loads((tmp_path / "server.json").read_text())["pid"] == 4242
+
+
+async def test_a_recorded_server_that_has_died_is_replaced(tmp_path):
+    (tmp_path / "server.json").write_text(json.dumps({"pid": 4242, "port": 8082}))
+    spawns = Spawns(pid=9999)
+
+    supervisor = build(tmp_path, spawn=spawns, is_alive=lambda pid: False)
+
+    assert await supervisor.ensure_running() is True
+    assert json.loads((tmp_path / "server.json").read_text())["pid"] == 9999
+
+
+async def test_an_unreadable_server_record_does_not_block_a_start(tmp_path):
+    (tmp_path / "server.json").write_text("half a json file")
+    spawns = Spawns(pid=9999)
+
+    assert await build(tmp_path, spawn=spawns).ensure_running() is True
+    assert len(spawns.calls) == 1
+
+
 async def test_only_one_session_wins_the_right_to_start(tmp_path):
     (tmp_path / "starting").mkdir(parents=True)
     spawns = Spawns()

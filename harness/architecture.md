@@ -246,15 +246,19 @@ bytes for the length of one transcription and is never written to disk.
   with the transcription model beside it. Sessions that do not enable listening keep
   today's lazy registration.
 
-- 2026-09-07 — **Every caller guards `ensure_running()` with a liveness check.**
-  `ensure_running` spawns unconditionally; its lock only excludes another session
-  starting at the same moment, so a session opening later would start a second server,
-  overwrite `server.json` with the duplicate's pid, and orphan the first — the last
-  session out would then stop the wrong process and leave a gigabyte resident. Both
-  the session warmup and `/talk` therefore call `reachable()` first. That check is
-  liveness, not readiness: any HTTP answer means the port is taken, including the 503
-  of a server still warming up and the case of a server with no ASR model, neither of
-  which may be replaced.
+- 2026-09-07 — **A running speech server is never replaced, and that is guarded
+  twice.** A second server would overwrite `server.json` with a pid that cannot bind
+  the port and orphan the first — the last session out would then stop the wrong
+  process and leave a gigabyte resident. The session warmup and `/talk` therefore call
+  `reachable()` before `ensure_running()`. That check is liveness, not readiness: any
+  HTTP answer means the port is taken, including the 503 of a server still warming up
+  and the case of a server with no ASR model, neither of which may be replaced.
+
+  `ensure_running` also refuses on its own when `server.json` names a live pid, which
+  covers the caller that cannot make the check: the TTS fallback starts the server from
+  `except (HTTPError, OSError)`, so a 5xx or a synthesis timeout from a loaded server
+  reaches it as "the server is gone". Guarding at the supervisor protects every call
+  site at once, including future ones.
 
 - 2026-09-07 — **The queue re-checks the generation after spawning the player.** The
   existing check ran only before the spawn, so an utterance stopped in the window
