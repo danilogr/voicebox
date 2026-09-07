@@ -81,9 +81,9 @@ def _quiet_logging(monkeypatch) -> None:
     monkeypatch.setattr(talk_module, "configure_logging", lambda: None)
 
 
-async def _dictate(supervisor, transcriber, lock=None) -> str:
+async def _dictate(supervisor, transcriber, lock=None, settings=None) -> str:
     return await dictate(
-        Settings(listen=True),
+        settings if settings is not None else Settings(listen=True),
         supervisor=supervisor,
         recorder=FakeRecorder(SPOKEN),
         transcriber=transcriber,
@@ -130,6 +130,21 @@ async def test_the_speech_server_is_given_back_when_the_recording_fails():
         )
 
     assert supervisor.registrations == 1
+    assert supervisor.releases == 1
+
+
+async def test_autostart_off_leaves_the_speech_server_to_the_user():
+    """The composition root builds no supervisor under this setting; /talk must agree."""
+    supervisor = FakeSupervisor()
+
+    with pytest.raises(TranscriptionFailed, match="not answering"):
+        await _dictate(
+            supervisor,
+            FakeTranscriber(reachable=False),
+            settings=Settings(listen=True, nemo_autostart=False),
+        )
+
+    assert supervisor.starts == 0
     assert supervisor.releases == 1
 
 

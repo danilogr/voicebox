@@ -273,6 +273,12 @@ def create_server(
                     # reason to refuse the user; the worst case is hearing ourselves.
                     logger.warning("speech queue did not drain; opening the microphone anyway")
 
+                # Liveness first: `has_asr` answers False for any HTTP failure, so a
+                # server that is not there at all would otherwise be reported as one
+                # running without a transcription model, and neither remedy that
+                # message offers would apply.
+                if not await ears.transcriber.reachable():
+                    raise ToolError(tools.SERVER_UNREACHABLE)
                 if not await ears.transcriber.has_asr():
                     raise ToolError(tools.NO_ASR)
 

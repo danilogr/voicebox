@@ -18,7 +18,7 @@ from speak.engines.asr import NemoTranscriber, Transcriber, TranscriptionFailed
 from speak.miclock import MicLock, MicrophoneBusy
 from speak.runtime import capture_limits, configure_logging, health_probe
 from speak.supervisor import NemoSupervisor, process_is_alive
-from speak.tools import LISTEN_OFF, NO_ASR, NO_SERVER, TALK_HEARD_NOTHING
+from speak.tools import LISTEN_OFF, NO_ASR, NO_SERVER, SERVER_UNREACHABLE, TALK_HEARD_NOTHING
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,11 @@ async def dictate(
         # reports that case instead. `speak.server.warm_speech_server` guards the
         # session path the same way for the same reason: change the two together.
         if not await transcriber.reachable():
+            if not settings.nemo_autostart:
+                # `__main__.build_supervisor` builds no supervisor under this setting;
+                # a user who said they would run the server must not get one spawned
+                # behind their back here either.
+                raise TranscriptionFailed(SERVER_UNREACHABLE)
             await _start(supervisor)
         return await capture(settings, recorder=recorder, transcriber=transcriber, lock=lock)
     finally:

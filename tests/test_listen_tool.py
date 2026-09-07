@@ -37,13 +37,14 @@ def build(
     limits=None,
     queue=None,
     recorder=None,
+    reachable=True,
 ) -> Rig:
     calls: list[str] = []
     queue = queue if queue is not None else FakeQueue(calls=calls)
     queue.calls = calls
     recorder = recorder if recorder is not None else FakeRecorder(recording, calls=calls)
     recorder.calls = calls
-    transcriber = FakeTranscriber(text=text, has_asr=has_asr, error=error)
+    transcriber = FakeTranscriber(text=text, has_asr=has_asr, error=error, reachable=reachable)
     lock = FakeMicLock(busy_with=busy_with)
     server = create_server(
         settings=Settings(listen=listen, listen_language=language),
@@ -134,6 +135,18 @@ async def test_a_busy_microphone_names_the_other_session():
     with pytest.raises(ToolError, match="4242"):
         await call_listen(rig.server)
     assert rig.calls == ["drain"]
+
+
+async def test_a_speech_server_that_is_not_there_is_named_as_such():
+    """`has_asr` is False for any HTTP failure, so an absent server needs its own check.
+
+    Reporting "running without a transcription model" would assert the server is up and
+    offer two remedies, neither of which applies when nothing is listening on the port.
+    """
+    rig = build(reachable=False)
+    with pytest.raises(ToolError, match="not answering"):
+        await call_listen(rig.server)
+    assert rig.lock.acquires == 0
 
 
 async def test_a_server_without_transcription_explains_both_causes():
