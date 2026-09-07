@@ -15,6 +15,16 @@ if [ -z "$version" ]; then
   exit 1
 fi
 
+# $version becomes a path segment below, so it must be one: no separators, no
+# dot-dot. Without this the cache-prefix guard passes on a path that resolves
+# outside the cache.
+case "$version" in
+  *[/\\]*|*..*|"")
+    echo "refusing to sync: bad version $version in $manifest" >&2
+    exit 1
+    ;;
+esac
+
 target="$HOME/.claude/plugins/cache/speak-marketplace/speak/$version"
 
 # --delete is destructive, so refuse anything outside the plugin cache.
