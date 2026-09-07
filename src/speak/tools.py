@@ -11,6 +11,12 @@ Use it at the moments where a voice beats scrollback: when you have finished a t
 when you are blocked and need input, and when you are asking the user a question.
 Do not narrate routine progress and do not read out code, paths, or long output.
 
+End a substantial turn with a one-line recap: the outcome, plus any catch on it -
+"Voices set to random; takes effect next reload." Lead with what changed, not with
+what you did. If the turn ended blocked, or the work is partly done, say that instead
+of "done" - a recap the user cannot trust is worse than silence. Skip the recap on a
+lookup, a one-line answer, or a question already on screen.
+
 Write one short sentence of plain spoken English - it is heard, not read.
 Returns immediately; utterances queue and play in order without overlapping."""
 

@@ -45,6 +45,12 @@ async def test_the_speak_description_carries_the_when_to_speak_policy():
     assert "Do not narrate routine progress" in description
 
 
+async def test_the_speak_description_asks_for_a_closing_recap():
+    description = (await tools_by_name())["speak"].description
+    assert "recap" in description
+    assert "outcome" in description
+
+
 async def test_no_description_arrives_with_source_indentation():
     for tool in (await tools_by_name()).values():
         assert tool.description is not None

@@ -80,6 +80,13 @@ Almost nothing is persistent.
   Rejected: a hook or a skill, neither of which can add a callable tool or is guaranteed
   to be read at that moment.
 
+  The closing one-line recap is part of that policy and lives in the same place, for the
+  same reason plus one more: a `Stop` hook receives a shell command and no view of the
+  turn, so it can play a fixed sound but cannot say what changed. The hook types that
+  could summarise — `prompt` and `agent` — are restricted to tool events. Only the model
+  can write the recap. Also rejected: per-user memory or `CLAUDE.md`, which would make
+  the plugin's own behaviour depend on machine-local state that does not travel with it.
+
 - 2026-09-07 — **The queue is serial and non-blocking.** `speak` returns immediately
   with a queue position, and exactly one child process runs at a time, so the agent
   never waits on playback and two quick calls never talk over each other. Rejected:
