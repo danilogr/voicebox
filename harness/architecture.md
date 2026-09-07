@@ -121,6 +121,15 @@ Almost nothing is persistent.
   "unknown voice X; available: …" into unusable feedback. `ToolError` carries the
   message through.
 
+- 2026-09-07 — **A random session voice is resolved lazily, not at startup.** A
+  speech server reports no voices until it has warmed up, so rolling at construction
+  would always fall back to the default. The roll happens on first use and retries
+  until the engine can answer. Per engine, the eligible pool differs: `nemo` uses every
+  speaker the model reports, while `say` reports mostly novelty and legacy voices and so
+  draws from a curated natural-voice list, narrowed to what is actually installed.
+  `SPEAK_VOICE_POOL` overrides both and is taken at its word, so it also works with an
+  engine that reports no names at all.
+
 - 2026-09-07 — **`stop_speaking` cancels synthesis already in flight.** A neural
   utterance takes seconds to synthesize, so without a generation counter a sentence
   stopped mid-synthesis would still be spoken once its audio arrived. The queue counts

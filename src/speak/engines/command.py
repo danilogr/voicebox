@@ -7,6 +7,7 @@ class CommandEngine:
     """Runs a configured command with the text appended as its final argument."""
 
     name = "command"
+    random_pool: tuple[str, ...] | None = None
 
     def __init__(self, command: str | None, *, default_voice: str | None = None) -> None:
         parts = (command or "").split()

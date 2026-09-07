@@ -9,6 +9,11 @@ from speak.engines.base import Utterance
 
 logger = logging.getLogger(__name__)
 
+# Natural-sounding voices to draw from when the voice is chosen at random.
+# `say` also reports novelty, legacy and locale-suffixed voices, which make poor
+# defaults for a session that lasts hours.
+NATURAL_VOICES = ("Samantha", "Karen", "Moira", "Tessa", "Daniel", "Rishi", "Aman", "Tara")
+
 
 def default_language() -> str:
     return os.environ.get("LANG", "en_US")[:2]
@@ -47,6 +52,7 @@ class SayEngine:
     """Speaks through `say`. The text is an argv entry, never a shell string."""
 
     name = "say"
+    random_pool: tuple[str, ...] | None = NATURAL_VOICES
 
     def __init__(
         self,

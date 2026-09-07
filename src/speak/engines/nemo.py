@@ -26,6 +26,7 @@ class NemoEngine:
     """
 
     name = "nemo"
+    random_pool: tuple[str, ...] | None = None
 
     def __init__(
         self,

@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_NEMO_URL = "http://127.0.0.1:8082"
 DEFAULT_NEMO_PORT = 8082
+RANDOM_VOICE = "random"
 
 
 def _text(env: Mapping[str, str], key: str) -> str | None:
@@ -35,6 +36,8 @@ def _number(env: Mapping[str, str], key: str, default: float | None) -> float | 
 class Settings:
     engine: str = "say"
     voice: str | None = None
+    randomize_voice: bool = False
+    voice_pool: tuple[str, ...] = ()
     rate: float | None = None
     max_chars: int = DEFAULT_MAX_CHARS
     command: str | None = None
@@ -60,9 +63,14 @@ class Settings:
 
         seed = _number(env, "SPEAK_SEED", None)
 
+        wanted_voice = _text(env, "SPEAK_VOICE")
+        randomize = (wanted_voice or "").lower() == RANDOM_VOICE
+
         return cls(
             engine=(_text(env, "SPEAK_ENGINE") or "say").lower(),
-            voice=_text(env, "SPEAK_VOICE"),
+            voice=None if randomize else wanted_voice,
+            randomize_voice=randomize,
+            voice_pool=_pool(env, "SPEAK_VOICE_POOL"),
             rate=_number(env, "SPEAK_RATE", None),
             max_chars=int(cap),
             command=_text(env, "SPEAK_COMMAND"),
@@ -74,6 +82,11 @@ class Settings:
             seed=None if seed is None else int(seed),
             state_dir=_state_dir(env, platform if platform is not None else sys.platform),
         )
+
+
+def _pool(env: Mapping[str, str], key: str) -> tuple[str, ...]:
+    raw = _text(env, key) or ""
+    return tuple(name.strip() for name in raw.split(",") if name.strip())
 
 
 def _state_dir(env: Mapping[str, str], platform: str) -> Path:

@@ -21,6 +21,10 @@ class Engine(Protocol):
     name: str
     default_voice: str | None
 
+    # Voices to draw from when one is chosen at random. None means every voice
+    # the engine reports is eligible.
+    random_pool: tuple[str, ...] | None
+
     async def prepare(self, text: str, *, voice: str | None, rate: float | None) -> Utterance: ...
 
     async def list_voices(self) -> list[str]: ...

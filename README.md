@@ -36,6 +36,21 @@ Set `SPEAK_VOICE` if you want a different starting voice everywhere.
 Text is collapsed to a single line and capped (400 characters by default), so a stray
 paragraph can never be read aloud in full.
 
+### A different voice every session
+
+Set `SPEAK_VOICE=random` and each session opens on a voice picked at random, then
+keeps it until the session ends. `set_voice` still overrides the roll.
+
+What it draws from depends on the engine. `nemo` uses every speaker the model
+reports, which is what you want — all five are real voices. `say` reports 184,
+most of them novelty or legacy, so it draws from a curated set of natural voices:
+Samantha, Karen, Moira, Tessa, Daniel, Rishi, Aman, Tara. Names missing from your
+system are skipped, and if none of them are installed it falls back to every voice
+`say` reports.
+
+Override either with `SPEAK_VOICE_POOL="Karen,Moira,Tessa"`, which is taken at its
+word and applies to any engine.
+
 ## When Claude speaks
 
 The policy lives in the `speak` tool description, which is always in context: finished
@@ -52,7 +67,8 @@ All optional, set in your shell or in the plugin's `.mcp.json`:
 | Variable | Default | Meaning |
 |---|---|---|
 | `SPEAK_ENGINE` | `say` | `say`, `nemo`, or `command` |
-| `SPEAK_VOICE` | system voice | e.g. `Samantha`. `say -v '?'` lists 184 of them |
+| `SPEAK_VOICE` | system voice | e.g. `Samantha`. `say -v '?'` lists 184 of them. Set `random` for a new voice each session |
+| `SPEAK_VOICE_POOL` | engine's own pool | comma-separated names the random pick draws from |
 | `SPEAK_RATE` | system rate | words per minute; the macOS default is about 175 |
 | `SPEAK_MAX_CHARS` | `400` | truncation cap, at a word boundary |
 | `NEMO_HTTP_URL` | `http://127.0.0.1:8082` | OpenAI-compatible `/v1/audio/speech` server |
@@ -104,7 +120,7 @@ uv run ruff check .
 uv run mypy
 ```
 
-122 tests, no network and no audio: the queue runs against a fake spawner, the NeMo
+145 tests, no network and no audio: the queue runs against a fake spawner, the NeMo
 engine against a mock HTTP transport, the supervisor against injected spawn, liveness
 and kill callables over a temporary state directory, and the end-to-end tests drive the
 real server process over stdio with the `command` engine pointed at a recorder script.

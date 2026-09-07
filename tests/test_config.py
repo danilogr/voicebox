@@ -88,3 +88,30 @@ def test_state_dir_can_be_overridden():
 def test_nemo_port_comes_from_the_url():
     assert Settings.from_env({"NEMO_HTTP_URL": "http://127.0.0.1:9100"}).nemo_port == 9100
     assert Settings.from_env({"NEMO_HTTP_URL": "http://127.0.0.1"}).nemo_port == 8082
+
+
+def test_no_voice_pool_by_default():
+    assert Settings.from_env({}).voice_pool == ()
+
+
+def test_reads_a_comma_separated_voice_pool():
+    settings = Settings.from_env({"SPEAK_VOICE_POOL": "Samantha,Karen,Moira"})
+    assert settings.voice_pool == ("Samantha", "Karen", "Moira")
+
+
+def test_voice_pool_tolerates_spacing_and_empty_entries():
+    settings = Settings.from_env({"SPEAK_VOICE_POOL": " Samantha , , Karen "})
+    assert settings.voice_pool == ("Samantha", "Karen")
+
+
+def test_randomize_is_off_unless_the_voice_is_random():
+    assert Settings.from_env({}).randomize_voice is False
+    assert Settings.from_env({"SPEAK_VOICE": "Samantha"}).randomize_voice is False
+
+
+def test_random_is_recognised_case_insensitively():
+    assert Settings.from_env({"SPEAK_VOICE": "Random"}).randomize_voice is True
+
+
+def test_random_is_never_treated_as_a_literal_voice_name():
+    assert Settings.from_env({"SPEAK_VOICE": "random"}).voice is None

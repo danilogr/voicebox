@@ -6,8 +6,14 @@ from speak.engines.base import Utterance
 class FakeEngine:
     name = "fake"
 
-    def __init__(self, voices: list[str] | None = None, default_voice: str | None = None) -> None:
+    def __init__(
+        self,
+        voices: list[str] | None = None,
+        default_voice: str | None = None,
+        random_pool: tuple[str, ...] | None = None,
+    ) -> None:
         self.default_voice = default_voice
+        self.random_pool = random_pool
         self._voices = voices or []
         self.prepared: list[tuple[str, str | None, float | None]] = []
 
