@@ -182,10 +182,35 @@ async def test_the_configured_cap_is_used_without_an_override():
     assert rig.recorder.limits.max_ms == 12_000
 
 
-async def test_a_meaningless_max_seconds_is_ignored():
+async def test_max_seconds_cannot_raise_the_configured_cap():
+    """The configured cap is the machine's limit, not a suggestion the caller may lift."""
     rig = build(limits=TrackerSettings(max_ms=12_000))
-    await call_listen(rig.server, max_seconds=0)
+    await call_listen(rig.server, max_seconds=600)
     assert rig.recorder.limits.max_ms == 12_000
+
+
+@pytest.mark.parametrize("nonsense", [0, -5])
+async def test_a_non_positive_max_seconds_is_refused(nonsense):
+    rig = build()
+    with pytest.raises(ToolError, match="greater than 0"):
+        await call_listen(rig.server, max_seconds=nonsense)
+    assert rig.calls == []
+
+
+@pytest.mark.parametrize("nonsense", [float("nan"), float("inf")])
+async def test_a_non_finite_max_seconds_is_refused(nonsense):
+    """`nan` passes every `<= 0` test, so an unbounded recording would hold the mic lock."""
+    rig = build()
+    with pytest.raises(ToolError, match="finite"):
+        await call_listen(rig.server, max_seconds=nonsense)
+    assert rig.calls == []
+
+
+@pytest.mark.parametrize("nonsense", [None, 0.0, -5.0, float("nan"), float("inf"), float("-inf")])
+def test_limits_keeps_the_configured_cap_for_anything_that_would_not_bound_a_recording(nonsense):
+    """Behind the schema, because a cap that never fires records until the process dies."""
+    configured = TrackerSettings(max_ms=12_000)
+    assert server_module._limits(configured, nonsense).max_ms == 12_000
 
 
 async def test_the_configured_language_reaches_the_transcriber():

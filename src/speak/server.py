@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import math
 import random
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
@@ -257,7 +258,9 @@ def create_server(
 
         @server.tool(name="listen", description=tools.LISTEN)
         async def listen(
-            max_seconds: Annotated[float | None, Field(description=tools.LISTEN_SECONDS)] = None,
+            max_seconds: Annotated[
+                float | None, Field(description=tools.LISTEN_SECONDS, gt=0, allow_inf_nan=False)
+            ] = None,
         ) -> str:
             if listening.locked():
                 raise ToolError(tools.ALREADY_LISTENING)
@@ -296,7 +299,14 @@ def create_server(
 
 
 def _limits(configured: TrackerSettings, max_seconds: float | None) -> TrackerSettings:
-    """Apply the caller's cap, ignoring a value that would forbid recording at all."""
-    if max_seconds is None or max_seconds <= 0:
+    """Apply the caller's cap, never above the configured one.
+
+    Non-finite values are rejected here as well as in the schema, the way
+    `config._number` already rejects them: `nan` passes every `<= 0` test and `inf`
+    caps nothing, so either one records until the process dies while holding the
+    microphone lock against every other session. The configured cap is a ceiling
+    rather than a suggestion, so a larger override is clamped to it.
+    """
+    if max_seconds is None or not math.isfinite(max_seconds) or max_seconds <= 0:
         return configured
-    return replace(configured, max_ms=max_seconds * 1000)
+    return replace(configured, max_ms=min(max_seconds * 1000, configured.max_ms))

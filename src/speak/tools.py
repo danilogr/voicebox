@@ -39,7 +39,10 @@ The transcript comes from a small on-device model and may contain errors. Treat 
 as what the user meant, not as a literal quotation, and confirm before acting on it
 if a misheard word would be costly."""
 
-LISTEN_SECONDS = "Longest recording to allow, in seconds. Defaults to the configured cap."
+LISTEN_SECONDS = (
+    "Longest recording to allow, in seconds. Must be positive, and is capped by the "
+    "configured limit, which is also the default."
+)
 
 NO_ASR = """The speech server is running without a transcription model, so there is nothing
 to listen with. Either the model was never downloaded - run /speak:setup to pull it -
