@@ -1,0 +1,217 @@
+import asyncio
+
+import pytest
+
+from speak.engines.base import Utterance
+from speak.queue import SpeechQueue
+
+
+class FakeProcess:
+    """A child process the test decides when to end."""
+
+    def __init__(self) -> None:
+        self.finished = asyncio.Event()
+        self.terminated = False
+
+    def terminate(self) -> None:
+        self.terminated = True
+        self.finished.set()
+
+    async def wait(self) -> int:
+        await self.finished.wait()
+        return 0
+
+
+class Spawner:
+    def __init__(self, *, autofinish: bool = True) -> None:
+        self.calls: list[tuple[str, list[str]]] = []
+        self.processes: list[FakeProcess] = []
+        self._autofinish = autofinish
+
+    async def __call__(self, command: str, args: list[str]) -> FakeProcess:
+        self.calls.append((command, list(args)))
+        process = FakeProcess()
+        if self._autofinish:
+            process.finished.set()
+        self.processes.append(process)
+        return process
+
+
+async def prepare_say(text: str, *, voice: str | None, rate: float | None) -> Utterance:
+    return Utterance(command="say", args=[text])
+
+
+async def settle() -> None:
+    for _ in range(20):
+        await asyncio.sleep(0)
+
+
+@pytest.fixture
+async def running():
+    """Build a queue with its worker task running, and tear it down."""
+    started: list[tuple[SpeechQueue, asyncio.Task[None]]] = []
+
+    def build(prepare=prepare_say, spawn=None, on_error=None) -> tuple[SpeechQueue, Spawner]:
+        spawner = spawn or Spawner()
+        queue = SpeechQueue(prepare=prepare, spawn=spawner, on_error=on_error)
+        started.append((queue, asyncio.create_task(queue.run())))
+        return queue, spawner
+
+    yield build
+    for _, task in started:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+def test_enqueue_reports_how_many_utterances_are_ahead():
+    queue = SpeechQueue(prepare=prepare_say, spawn=Spawner())
+    assert queue.enqueue("first", voice=None, rate=None) == 0
+    assert queue.enqueue("second", voice=None, rate=None) == 1
+    assert queue.enqueue("third", voice=None, rate=None) == 2
+
+
+async def test_plays_utterances_in_order(running):
+    queue, spawner = running()
+    for word in ("one", "two", "three"):
+        queue.enqueue(word, voice=None, rate=None)
+    await settle()
+    assert spawner.calls == [("say", ["one"]), ("say", ["two"]), ("say", ["three"])]
+
+
+async def test_runs_only_one_process_at_a_time(running):
+    queue, spawner = running(spawn=Spawner(autofinish=False))
+    queue.enqueue("one", voice=None, rate=None)
+    queue.enqueue("two", voice=None, rate=None)
+    await settle()
+    assert len(spawner.calls) == 1
+
+    spawner.processes[0].finished.set()
+    await settle()
+    assert len(spawner.calls) == 2
+
+
+async def test_stop_terminates_the_current_process_and_drops_the_rest(running):
+    queue, spawner = running(spawn=Spawner(autofinish=False))
+    for word in ("one", "two", "three"):
+        queue.enqueue(word, voice=None, rate=None)
+    await settle()
+
+    assert await queue.stop() == 3
+    assert spawner.processes[0].terminated is True
+    await settle()
+    assert len(spawner.calls) == 1
+
+
+async def test_stop_on_an_idle_queue_drops_nothing(running):
+    queue, _ = running()
+    assert await queue.stop() == 0
+
+
+async def test_a_failing_prepare_does_not_stall_the_utterances_behind_it(running):
+    async def prepare(text: str, *, voice: str | None, rate: float | None) -> Utterance:
+        if text == "bad":
+            raise RuntimeError("synthesis failed")
+        return Utterance(command="say", args=[text])
+
+    errors: list[BaseException] = []
+    queue, spawner = running(prepare=prepare, on_error=errors.append)
+    queue.enqueue("bad", voice=None, rate=None)
+    queue.enqueue("good", voice=None, rate=None)
+    await settle()
+
+    assert spawner.calls == [("say", ["good"])]
+    assert len(errors) == 1
+
+
+async def test_a_failing_spawn_does_not_stall_the_queue(running):
+    spawner = Spawner()
+    calls: list[str] = []
+
+    async def spawn(command: str, args: list[str]) -> FakeProcess:
+        calls.append(args[0])
+        if args[0] == "bad":
+            raise OSError("no such binary")
+        return await spawner(command, args)
+
+    errors: list[BaseException] = []
+    queue, _ = running(spawn=spawn, on_error=errors.append)
+    queue.enqueue("bad", voice=None, rate=None)
+    queue.enqueue("good", voice=None, rate=None)
+    await settle()
+
+    assert calls == ["bad", "good"]
+    assert len(errors) == 1
+
+
+async def test_cleanup_runs_exactly_once_per_utterance(running):
+    cleaned: list[str] = []
+
+    async def prepare(text: str, *, voice: str | None, rate: float | None) -> Utterance:
+        async def cleanup() -> None:
+            cleaned.append(text)
+
+        return Utterance(command="afplay", args=[text], cleanup=cleanup)
+
+    queue, _ = running(prepare=prepare)
+    queue.enqueue("one", voice=None, rate=None)
+    queue.enqueue("two", voice=None, rate=None)
+    await settle()
+    assert cleaned == ["one", "two"]
+
+
+async def test_cleanup_runs_when_an_utterance_is_stopped(running):
+    cleaned: list[str] = []
+
+    async def prepare(text: str, *, voice: str | None, rate: float | None) -> Utterance:
+        async def cleanup() -> None:
+            cleaned.append(text)
+
+        return Utterance(command="afplay", args=[text], cleanup=cleanup)
+
+    queue, _ = running(prepare=prepare, spawn=Spawner(autofinish=False))
+    queue.enqueue("one", voice=None, rate=None)
+    await settle()
+    await queue.stop()
+    await settle()
+    assert cleaned == ["one"]
+
+
+async def test_prepare_receives_the_voice_and_rate(running):
+    seen: list[tuple[str | None, float | None]] = []
+
+    async def prepare(text: str, *, voice: str | None, rate: float | None) -> Utterance:
+        seen.append((voice, rate))
+        return Utterance(command="say", args=[text])
+
+    queue, _ = running(prepare=prepare)
+    queue.enqueue("hi", voice="Sofia", rate=190)
+    await settle()
+    assert seen == [("Sofia", 190)]
+
+
+async def test_stop_cancels_an_utterance_that_is_still_being_synthesized(running):
+    """stop_speaking during a slow synthesis must not let the sentence out afterwards."""
+    release = asyncio.Event()
+
+    async def slow_prepare(text: str, *, voice: str | None, rate: float | None) -> Utterance:
+        await release.wait()
+        return Utterance(command="say", args=[text])
+
+    queue, spawner = running(prepare=slow_prepare)
+    queue.enqueue("cancel me", voice=None, rate=None)
+    await settle()
+
+    assert await queue.stop() == 1
+    release.set()
+    await settle()
+
+    assert spawner.calls == []
+
+
+async def test_utterances_queued_after_a_stop_still_play(running):
+    queue, spawner = running()
+    queue.enqueue("dropped", voice=None, rate=None)
+    await queue.stop()
+    queue.enqueue("kept", voice=None, rate=None)
+    await settle()
+    assert spawner.calls == [("say", ["kept"])]

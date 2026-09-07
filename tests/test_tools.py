@@ -1,0 +1,57 @@
+from fakes import FakeEngine, FakeQueue
+from speak.config import Settings
+from speak.server import create_server
+
+TOOL_NAMES = {"speak", "stop_speaking", "list_voices", "set_voice"}
+
+
+def server() -> object:
+    return create_server(
+        settings=Settings.from_env({}, platform="darwin"),
+        engine=FakeEngine(),
+        queue=FakeQueue(),
+        supervisor=None,
+    )
+
+
+async def tools_by_name() -> dict:
+    return {tool.name: tool for tool in await server().list_tools()}
+
+
+async def test_exposes_exactly_the_four_tools():
+    assert set(await tools_by_name()) == TOOL_NAMES
+
+
+async def test_speak_requires_only_the_text():
+    schema = (await tools_by_name())["speak"].input_schema
+    assert schema["required"] == ["text"]
+    assert set(schema["properties"]) == {"text", "voice", "rate"}
+
+
+async def test_set_voice_requires_a_voice():
+    assert (await tools_by_name())["set_voice"].input_schema["required"] == ["voice"]
+
+
+async def test_the_listing_tools_take_no_arguments():
+    tools = await tools_by_name()
+    assert tools["list_voices"].input_schema.get("required", []) == []
+    assert tools["stop_speaking"].input_schema.get("required", []) == []
+
+
+async def test_the_speak_description_carries_the_when_to_speak_policy():
+    description = (await tools_by_name())["speak"].description
+    assert "finished a task" in description
+    assert "blocked" in description
+    assert "Do not narrate routine progress" in description
+
+
+async def test_no_description_arrives_with_source_indentation():
+    for tool in (await tools_by_name()).values():
+        assert tool.description is not None
+        indented = [line for line in tool.description.splitlines() if line.startswith("    ")]
+        assert indented == [], f"{tool.name} description is indented: {indented}"
+
+
+async def test_every_tool_is_described():
+    for tool in (await tools_by_name()).values():
+        assert tool.description and len(tool.description) > 40

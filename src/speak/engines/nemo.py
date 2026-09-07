@@ -1,0 +1,97 @@
+"""A local NeMo-Speech.cpp server, or any OpenAI-compatible /v1/audio/speech endpoint."""
+
+import asyncio
+import logging
+import tempfile
+import uuid
+from collections.abc import Callable
+from pathlib import Path
+
+import httpx2
+
+from speak.engines.base import Engine, Utterance
+from speak.engines.say import SayEngine
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_TIMEOUT = 15.0
+
+
+class NemoEngine:
+    """Synthesises to a WAV file and plays it.
+
+    When the server cannot answer, the sentence is handed to the fallback engine
+    instead of being lost, and `on_unavailable` is invoked so the server can be
+    started for the next one.
+    """
+
+    name = "nemo"
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        client: httpx2.AsyncClient | None = None,
+        api_key: str | None = None,
+        model: str = "magpie",
+        default_voice: str | None = "John",
+        timeout: float = DEFAULT_TIMEOUT,
+        fallback: Engine | None = None,
+        on_unavailable: Callable[[], None] | None = None,
+    ) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._client = client or httpx2.AsyncClient(timeout=timeout)
+        self._model = model
+        self.default_voice = default_voice
+        self._timeout = timeout
+        self._fallback = fallback or SayEngine()
+        self._on_unavailable = on_unavailable
+        self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+    async def prepare(self, text: str, *, voice: str | None, rate: float | None) -> Utterance:
+        try:
+            audio = await self._synthesize(text, voice)
+        except (httpx2.HTTPError, OSError) as error:
+            logger.warning("speech server unavailable, using say instead: %s", error)
+            if self._on_unavailable is not None:
+                self._on_unavailable()
+            return await self._fallback.prepare(text, voice=None, rate=rate)
+
+        path = Path(tempfile.gettempdir()) / f"speak-{uuid.uuid4().hex}.wav"
+        await asyncio.to_thread(path.write_bytes, audio)
+
+        async def cleanup() -> None:
+            await asyncio.to_thread(path.unlink, True)
+
+        return Utterance(command="afplay", args=[str(path)], cleanup=cleanup)
+
+    async def _synthesize(self, text: str, voice: str | None) -> bytes:
+        response = await self._client.post(
+            f"{self._base_url}/v1/audio/speech",
+            json={
+                "model": self._model,
+                "input": text,
+                "voice": voice or self.default_voice,
+                "response_format": "wav",
+            },
+            headers=self._headers,
+            timeout=self._timeout,
+        )
+        response.raise_for_status()
+        return response.content
+
+    async def list_voices(self) -> list[str]:
+        try:
+            response = await self._client.get(
+                f"{self._base_url}/v1/models", headers=self._headers, timeout=self._timeout
+            )
+            response.raise_for_status()
+            models = response.json().get("data", [])
+        except (httpx2.HTTPError, ValueError) as error:
+            logger.warning("could not list speech server voices: %s", error)
+            return []
+
+        for model in models:
+            if model.get("capability") == "speech":
+                return list(model.get("voices", []))
+        return []

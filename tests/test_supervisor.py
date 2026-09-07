@@ -1,0 +1,176 @@
+import json
+import os
+import time
+
+import pytest
+
+from speak.supervisor import NemoSupervisor
+
+
+class Spawns:
+    def __init__(self, pid: int = 4242) -> None:
+        self.calls: list[tuple[str, list[str]]] = []
+        self._pid = pid
+
+    async def __call__(self, binary: str, args) -> int:
+        self.calls.append((binary, list(args)))
+        return self._pid
+
+
+async def probe_ok() -> bool:
+    return True
+
+
+def build(tmp_path, **kwargs: object) -> NemoSupervisor:
+    defaults = dict(
+        state_dir=tmp_path,
+        spawn=Spawns(),
+        probe=probe_ok,
+        pid=1000,
+        is_alive=lambda pid: True,
+        kill=lambda pid, sig: None,
+    )
+    return NemoSupervisor(**{**defaults, **kwargs})
+
+
+async def test_register_leaves_a_file_named_for_this_process(tmp_path):
+    await build(tmp_path, pid=1234).register()
+    assert (tmp_path / "clients" / "1234").exists()
+
+
+async def test_register_is_idempotent(tmp_path):
+    supervisor = build(tmp_path, pid=1234)
+    await supervisor.register()
+    await supervisor.register()
+    assert [p.name for p in (tmp_path / "clients").iterdir()] == ["1234"]
+
+
+async def test_ensure_running_spawns_the_server_with_cpu_and_the_model(tmp_path):
+    spawns = Spawns()
+    assert await build(tmp_path, spawn=spawns, model="magpie", port=8082).ensure_running() is True
+
+    binary, args = spawns.calls[0]
+    assert binary == "nemo-speech"
+    assert args == [
+        "serve",
+        "--tts-model",
+        "magpie",
+        "--port",
+        "8082",
+        "--device",
+        "cpu",
+        "--no-ui",
+    ]
+
+
+async def test_ensure_running_passes_the_seed_only_when_it_is_set(tmp_path):
+    spawns = Spawns()
+    await build(tmp_path, spawn=spawns, seed=7).ensure_running()
+    assert spawns.calls[0][1][-2:] == ["--tts.seed", "7"]
+
+
+async def test_ensure_running_records_the_server_pid_and_port(tmp_path):
+    await build(tmp_path, spawn=Spawns(pid=999), port=9001).ensure_running()
+    recorded = json.loads((tmp_path / "server.json").read_text())
+    assert recorded["pid"] == 999
+    assert recorded["port"] == 9001
+
+
+async def test_ensure_running_releases_the_lock_when_it_finishes(tmp_path):
+    await build(tmp_path).ensure_running()
+    assert not (tmp_path / "starting").exists()
+
+
+async def test_only_one_session_wins_the_right_to_start(tmp_path):
+    (tmp_path / "starting").mkdir(parents=True)
+    spawns = Spawns()
+    assert await build(tmp_path, spawn=spawns).ensure_running() is False
+    assert spawns.calls == []
+
+
+async def test_a_stale_lock_is_taken_over(tmp_path):
+    lock = tmp_path / "starting"
+    lock.mkdir(parents=True)
+    long_ago = time.time() - 3600
+    os.utime(lock, (long_ago, long_ago))
+
+    spawns = Spawns()
+    assert await build(tmp_path, spawn=spawns).ensure_running() is True
+    assert len(spawns.calls) == 1
+
+
+async def test_the_lock_is_released_even_when_the_probe_fails(tmp_path):
+    async def probe_explodes() -> bool:
+        raise TimeoutError("server never answered")
+
+    with pytest.raises(TimeoutError):
+        await build(tmp_path, probe=probe_explodes).ensure_running()
+    assert not (tmp_path / "starting").exists()
+
+
+async def test_release_keeps_the_server_while_another_session_is_alive(tmp_path):
+    killed: list[int] = []
+    supervisor = build(tmp_path, pid=1000, kill=lambda pid, sig: killed.append(pid))
+    await supervisor.register()
+    (tmp_path / "clients" / "2000").write_text("")
+    (tmp_path / "server.json").write_text(json.dumps({"pid": 4242, "port": 8082}))
+
+    assert await supervisor.release() is False
+    assert killed == []
+
+
+async def test_release_stops_the_server_when_the_last_session_leaves(tmp_path):
+    killed: list[int] = []
+    supervisor = build(tmp_path, pid=1000, kill=lambda pid, sig: killed.append(pid))
+    await supervisor.register()
+    (tmp_path / "server.json").write_text(json.dumps({"pid": 4242, "port": 8082}))
+
+    assert await supervisor.release() is True
+    assert killed == [4242]
+    assert not (tmp_path / "server.json").exists()
+
+
+async def test_release_prunes_sessions_that_died_without_releasing(tmp_path):
+    killed: list[int] = []
+    supervisor = build(
+        tmp_path,
+        pid=1000,
+        is_alive=lambda pid: pid != 2000,
+        kill=lambda pid, sig: killed.append(pid),
+    )
+    await supervisor.register()
+    (tmp_path / "clients" / "2000").write_text("")
+    (tmp_path / "server.json").write_text(json.dumps({"pid": 4242, "port": 8082}))
+
+    assert await supervisor.release() is True
+    assert killed == [4242]
+    assert not (tmp_path / "clients" / "2000").exists()
+
+
+async def test_release_discards_client_files_that_are_not_pids(tmp_path):
+    supervisor = build(tmp_path, pid=1000)
+    await supervisor.register()
+    (tmp_path / "clients" / ".DS_Store").write_text("")
+    (tmp_path / "server.json").write_text(json.dumps({"pid": 4242, "port": 8082}))
+    assert await supervisor.release() is True
+
+
+async def test_release_without_a_recorded_server_does_nothing(tmp_path):
+    supervisor = build(tmp_path, pid=1000)
+    await supervisor.register()
+    assert await supervisor.release() is False
+
+
+async def test_release_survives_a_server_that_is_already_gone(tmp_path):
+    def kill_missing(pid: int, sig: int) -> None:
+        raise ProcessLookupError(pid)
+
+    supervisor = build(tmp_path, pid=1000, kill=kill_missing)
+    await supervisor.register()
+    (tmp_path / "server.json").write_text(json.dumps({"pid": 4242, "port": 8082}))
+    assert await supervisor.release() is True
+    assert not (tmp_path / "server.json").exists()
+
+
+async def test_release_before_register_is_harmless(tmp_path):
+    assert await build(tmp_path).release() is False

@@ -1,6 +1,6 @@
 {
   "speak": {
-    "command": "node",
-    "args": ["${CLAUDE_PLUGIN_ROOT}/server/index.mjs"]
+    "command": "/bin/sh",
+    "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/speak-mcp"]
   }
 }
