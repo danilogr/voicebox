@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from speak.config import Settings
+from speak.text import DEFAULT_MAX_CHARS
 
 
 def test_defaults_when_nothing_is_set():
@@ -156,3 +157,16 @@ def test_non_positive_listen_numbers_fall_back_to_the_default():
 def test_listen_language_is_optional():
     assert Settings.from_env({}).listen_language is None
     assert Settings.from_env({"SPEAK_LISTEN_LANGUAGE": "en"}).listen_language == "en"
+
+
+def test_a_non_finite_listen_number_falls_back_to_the_default():
+    """nan passes every `<= 0` check, and a nan limit records forever."""
+    for raw in ("nan", "inf", "-inf"):
+        assert Settings.from_env({"SPEAK_LISTEN_MAX_SECONDS": raw}).listen_max_seconds == 60, raw
+        assert Settings.from_env({"SPEAK_LISTEN_TIMEOUT": raw}).listen_timeout == 10, raw
+
+
+def test_a_non_finite_number_never_reaches_the_settings():
+    assert Settings.from_env({"SPEAK_MAX_CHARS": "nan"}).max_chars == DEFAULT_MAX_CHARS
+    assert Settings.from_env({"SPEAK_SEED": "inf"}).seed is None
+    assert Settings.from_env({"SPEAK_RATE": "nan"}).rate is None

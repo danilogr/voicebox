@@ -37,19 +37,29 @@ def build_ears(settings: Settings) -> Ears | None:
     )
 
 
+def build_supervisor(settings: Settings) -> NemoSupervisor | None:
+    """The shared speech server this session may start, or None when it must not.
+
+    Listening needs the server whatever the speech engine is. The transcription
+    model is served only when this session enables listening, so a session that
+    never listens cannot be broken by a missing ASR model.
+    """
+    if not settings.nemo_autostart or not (settings.engine == "nemo" or settings.listen):
+        return None
+    return NemoSupervisor(
+        state_dir=settings.state_dir,
+        port=settings.nemo_port,
+        binary=settings.nemo_binary,
+        model=settings.nemo_model,
+        asr_model=settings.nemo_asr_model if settings.listen else None,
+        seed=settings.seed,
+        probe=health_probe(settings.nemo_url),
+    )
+
+
 def build(settings: Settings) -> MCPServer:
     """Wire the engine, queue, supervisor and ears together."""
-    supervisor: NemoSupervisor | None = None
-    if (settings.engine == "nemo" or settings.listen) and settings.nemo_autostart:
-        supervisor = NemoSupervisor(
-            state_dir=settings.state_dir,
-            port=settings.nemo_port,
-            binary=settings.nemo_binary,
-            model=settings.nemo_model,
-            asr_model=settings.nemo_asr_model if settings.listen else None,
-            seed=settings.seed,
-            probe=health_probe(settings.nemo_url),
-        )
+    supervisor = build_supervisor(settings)
 
     def start_speech_server() -> None:
         """Kick off a cold start without waiting: this sentence goes out through `say`."""

@@ -109,6 +109,20 @@ async def shutdown(
         await supervisor.release()
 
 
+async def warm_speech_server(supervisor: "Supervisor", transcriber: Transcriber) -> bool:
+    """Start the shared speech server, unless something already holds its port.
+
+    `ensure_running` spawns unconditionally: its lock only excludes another session
+    starting at the same moment, so a session opened later would spawn a second
+    server, overwrite the record of the first, and leave it orphaned — the last
+    session out would then stop the wrong process. Liveness, not readiness: any
+    HTTP answer means the port is taken and this session has nothing to start.
+    """
+    if await transcriber.reachable():
+        return False
+    return await supervisor.ensure_running()
+
+
 async def start_listening(
     *,
     supervisor: "Supervisor | None",
@@ -118,14 +132,15 @@ async def start_listening(
     """Claim the shared speech server for a session that can listen.
 
     `/talk` runs as its own short-lived process, so it needs a server that is
-    already warm. Registering is awaited; the warmup is handed back as a task
-    the caller owns, so a cold start never delays the session opening.
+    already warm. Registering is awaited; the warmup is handed back as a task the
+    caller owns, so neither the liveness check nor a cold start delays the session
+    opening.
     """
     if ears is None or supervisor is None:
         return None
     session.registered = True
     await supervisor.register()
-    return asyncio.create_task(supervisor.ensure_running())
+    return asyncio.create_task(warm_speech_server(supervisor, ears.transcriber))
 
 
 def create_server(

@@ -73,19 +73,21 @@ async def test_shutdown_waits_for_the_worker_to_finish():
     assert worker.done()
 
 
-EARS = Ears(
-    recorder=FakeRecorder(Recording(wav=b"", reason=State.DONE)),
-    transcriber=FakeTranscriber(),
-    mic_lock=FakeMicLock(),
-    limits=TrackerSettings(),
-)
+def ears(*, reachable: bool = False) -> Ears:
+    """Ears for a session that can listen; `reachable` says whether a server is up."""
+    return Ears(
+        recorder=FakeRecorder(Recording(wav=b"", reason=State.DONE)),
+        transcriber=FakeTranscriber(reachable=reachable),
+        mic_lock=FakeMicLock(),
+        limits=TrackerSettings(),
+    )
 
 
 async def test_listening_registers_and_warms_the_speech_server():
     supervisor = FakeSupervisor()
     session = SessionState()
 
-    warmup = await start_listening(supervisor=supervisor, session=session, ears=EARS)
+    warmup = await start_listening(supervisor=supervisor, session=session, ears=ears())
 
     assert warmup is not None
     assert await warmup is True
@@ -106,5 +108,36 @@ async def test_a_session_that_never_listens_does_not_warm_the_speech_server():
 
 async def test_listening_without_a_supervisor_starts_nothing():
     session = SessionState()
-    assert await start_listening(supervisor=None, session=session, ears=EARS) is None
+    assert await start_listening(supervisor=None, session=session, ears=ears()) is None
     assert session.registered is False
+
+
+async def test_a_speech_server_that_is_already_up_is_not_started_again():
+    """Two listening sessions must share one server, not orphan the first one."""
+    supervisor = FakeSupervisor()
+    session = SessionState()
+
+    warmup = await start_listening(
+        supervisor=supervisor, session=session, ears=ears(reachable=True)
+    )
+
+    assert warmup is not None
+    assert await warmup is False
+    assert supervisor.starts == 0
+    assert supervisor.registrations == 1
+
+
+async def test_the_warmup_does_not_delay_the_session_opening():
+    gate = asyncio.Event()
+    supervisor = FakeSupervisor(blocked_by=gate)
+
+    # Awaiting the warmup here would hold the session shut for the whole cold load.
+    warmup = await asyncio.wait_for(
+        start_listening(supervisor=supervisor, session=SessionState(), ears=ears()),
+        timeout=5.0,
+    )
+
+    assert warmup is not None
+    assert not warmup.done()
+    gate.set()
+    assert await warmup is True

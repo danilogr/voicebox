@@ -18,6 +18,8 @@ class Transcriber(Protocol):
 
     async def has_asr(self) -> bool: ...
 
+    async def reachable(self) -> bool: ...
+
 
 class TranscriptionFailed(RuntimeError):  # noqa: N818 - matches the plugin's other failure names
     """The server could not be reached, or answered with something unusable."""

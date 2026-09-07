@@ -1,6 +1,7 @@
 """Configuration, read once from the environment and validated at that boundary."""
 
 import logging
+import math
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -26,10 +27,16 @@ def _number(env: Mapping[str, str], key: str, default: float | None) -> float | 
     if raw is None:
         return default
     try:
-        return float(raw)
+        value = float(raw)
     except ValueError:
         logger.warning("ignoring %s=%r: not a number", key, raw)
         return default
+    if not math.isfinite(value):
+        # nan passes every `<= 0` check downstream and int(nan) raises, so it is
+        # rejected here rather than left to whichever caller trips over it first.
+        logger.warning("ignoring %s=%r: not a finite number", key, raw)
+        return default
+    return value
 
 
 TRUTHY = frozenset({"1", "true", "yes", "on"})

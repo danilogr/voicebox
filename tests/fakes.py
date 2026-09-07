@@ -1,5 +1,7 @@
 """Fakes shared by the server-level tests."""
 
+import asyncio
+
 from speak.capture import Recording, TrackerSettings
 from speak.engines.base import Utterance
 from speak.miclock import MicrophoneBusy
@@ -51,10 +53,11 @@ class FakeQueue:
 
 
 class FakeSupervisor:
-    def __init__(self) -> None:
+    def __init__(self, blocked_by: asyncio.Event | None = None) -> None:
         self.registrations = 0
         self.releases = 0
         self.starts = 0
+        self._blocked_by = blocked_by
 
     async def register(self) -> None:
         self.registrations += 1
@@ -64,7 +67,10 @@ class FakeSupervisor:
         return True
 
     async def ensure_running(self) -> bool:
+        """A start that only finishes once the gate opens, standing in for a cold load."""
         self.starts += 1
+        if self._blocked_by is not None:
+            await self._blocked_by.wait()
         return True
 
 
@@ -86,11 +92,13 @@ class FakeTranscriber:
         text: str = "",
         has_asr: bool = True,
         error: Exception | None = None,
+        reachable: bool = False,
     ) -> None:
         self.text = text
         self.languages: list[str | None] = []
         self._has_asr = has_asr
         self._error = error
+        self._reachable = reachable
         self.calls: list[str] = []
 
     async def transcribe(self, wav: bytes, *, language: str | None = None) -> str:
@@ -102,6 +110,9 @@ class FakeTranscriber:
 
     async def has_asr(self) -> bool:
         return self._has_asr
+
+    async def reachable(self) -> bool:
+        return self._reachable
 
 
 class FakeMicLock:
