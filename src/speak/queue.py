@@ -64,7 +64,7 @@ class SpeechQueue:
         self._idle = asyncio.Event()
         self._idle.set()
         self._current: Process | None = None
-        self._preparing = False
+        self._in_flight = False
         self._generation = 0
 
     @staticmethod
@@ -73,8 +73,7 @@ class SpeechQueue:
 
     @property
     def size(self) -> int:
-        in_flight = self._current is not None or self._preparing
-        return len(self._waiting) + (1 if in_flight else 0)
+        return len(self._waiting) + (1 if self._in_flight else 0)
 
     def enqueue(self, text: str, *, voice: str | None, rate: float | None) -> int:
         """Queue one utterance and return how many are ahead of it."""
@@ -93,7 +92,7 @@ class SpeechQueue:
         if current is not None:
             current.terminate()
         if self.size == 0:
-            # A synthesis still in flight settles in the worker, which sets _idle then.
+            # An utterance still in flight settles in the worker, which sets _idle then.
             self._idle.set()
         return dropped
 
@@ -112,15 +111,20 @@ class SpeechQueue:
             self._idle.set()
 
     async def _play(self, pending: _Pending) -> None:
+        """Play one utterance, counted by `size` for the whole of its life."""
+        self._in_flight = True
+        try:
+            await self._synthesize_and_play(pending)
+        finally:
+            self._in_flight = False
+
+    async def _synthesize_and_play(self, pending: _Pending) -> None:
         generation = self._generation
-        self._preparing = True
         try:
             utterance = await self._prepare(pending.text, voice=pending.voice, rate=pending.rate)
         except Exception as error:
             self._on_error(error)
             return
-        finally:
-            self._preparing = False
 
         if generation != self._generation:
             # stop() ran while this was being synthesized; discard the work.
@@ -135,6 +139,9 @@ class SpeechQueue:
             return
 
         self._current = process
+        if generation != self._generation:
+            # stop() ran while the player was starting; kill it before it is heard.
+            process.terminate()
         try:
             await process.wait()
         finally:

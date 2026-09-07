@@ -293,3 +293,47 @@ async def test_drain_waits_out_a_synthesis_that_stop_cancelled(running):
     await asyncio.wait_for(drained, timeout=1)
     assert queue.size == 0
     assert spawner.calls == []
+
+
+async def test_stop_silences_an_utterance_caught_in_the_spawn_window(running):
+    """The player is already starting when stop() lands; it must not be heard."""
+    spawner = Spawner()
+    release = asyncio.Event()
+
+    async def slow_spawn(command: str, args: list[str]) -> FakeProcess:
+        await release.wait()
+        return await spawner(command, args)
+
+    queue, _ = running(spawn=slow_spawn)
+    queue.enqueue("cancel me", voice=None, rate=None)
+    await settle()
+
+    assert await queue.stop() == 1
+    release.set()
+    await settle()
+
+    assert spawner.processes[0].terminated is True
+    assert queue.size == 0
+
+
+async def test_drain_waits_out_an_utterance_stopped_while_it_was_spawning(running):
+    spawner = Spawner(autofinish=False)
+    release = asyncio.Event()
+
+    async def slow_spawn(command: str, args: list[str]) -> FakeProcess:
+        await release.wait()
+        return await spawner(command, args)
+
+    queue, _ = running(spawn=slow_spawn)
+    queue.enqueue("cancel me", voice=None, rate=None)
+    await settle()
+
+    drained = asyncio.create_task(queue.drain())
+    await queue.stop()
+    await settle()
+    assert not drained.done()
+    assert queue.size == 1
+
+    release.set()
+    await asyncio.wait_for(drained, timeout=1)
+    assert queue.size == 0
