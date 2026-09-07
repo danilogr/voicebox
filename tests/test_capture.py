@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from speak.capture import FINAL, SilenceTracker, State, TrackerSettings
 
 LIMITS = TrackerSettings(
@@ -10,15 +12,23 @@ LIMITS = TrackerSettings(
     floor=0.01,
 )
 
+# Under LIMITS the start timeout always fires before the cap, so the cap is only
+# ever reachable from SPEAKING. These limits wait long enough for a speaker that
+# the cap arrives first, which is the only way to see it bound a silent phase.
+PATIENT = replace(LIMITS, start_timeout_ms=9000.0)
 
-def run(energies: list[float], limits: TrackerSettings = LIMITS) -> State:
+
+def run(energies: list[float], limits: TrackerSettings = LIMITS) -> tuple[State, int]:
+    """Feed blocks until a final state, reporting it and the block it landed on."""
     tracker = SilenceTracker(limits)
     state = tracker.state
+    blocks = 0
     for energy in energies:
+        blocks += 1
         state = tracker.feed(energy)
         if state in FINAL:
             break
-    return state
+    return state, blocks
 
 
 def test_a_quiet_room_calibrates_to_the_floor():
@@ -38,27 +48,32 @@ def test_a_noisy_room_calibrates_above_the_floor():
 
 
 def test_silence_throughout_gives_up_once_the_start_timeout_passes():
-    assert run([0.0] * 100) is State.SILENT
+    assert run([0.0] * 100) == (State.SILENT, 20)
 
 
 def test_speech_followed_by_silence_finishes():
-    assert run([0.0] * 3 + [0.5] * 5 + [0.0] * 5) is State.DONE
+    assert run([0.0] * 3 + [0.5] * 5 + [0.0] * 5) == (State.DONE, 13)
 
 
 def test_a_short_pause_does_not_end_the_utterance():
     tracker = SilenceTracker(LIMITS)
-    for energy in [0.0] * 3 + [0.5] * 3 + [0.0] * 4 + [0.5]:
+    for energy in [0.0] * 3 + [0.5] * 3 + [0.0] * 4 + [0.5] + [0.0] * 4 + [0.5]:
         state = tracker.feed(energy)
     assert state is State.SPEAKING
 
 
 def test_speech_that_never_stops_hits_the_cap():
-    assert run([0.0] * 3 + [0.5] * 100) is State.CAPPED
+    assert run([0.0] * 3 + [0.5] * 100) == (State.CAPPED, 50)
+
+
+def test_the_cap_also_bounds_a_recording_that_never_starts():
+    assert run([0.0] * 100, PATIENT) == (State.CAPPED, 50)
 
 
 def test_a_final_state_is_sticky():
     tracker = SilenceTracker(LIMITS)
-    for energy in [0.0] * 3 + [0.5] * 3 + [0.0] * 5:
-        tracker.feed(energy)
-    assert tracker.state is State.DONE
-    assert tracker.feed(0.9) is State.DONE
+    for _ in range(20):
+        tracker.feed(0.0)
+    assert tracker.state is State.SILENT
+    for _ in range(5):
+        assert tracker.feed(0.0) is State.SILENT
