@@ -11,6 +11,7 @@ import contextlib
 import io
 import logging
 import math
+import threading
 import wave
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class State(Enum):
-    """Where a recording is: the first three continue, the last three stop."""
+    """Where a recording is: the first three continue, the rest stop."""
 
     CALIBRATING = "calibrating"
     WAITING = "waiting"
@@ -30,9 +31,10 @@ class State(Enum):
     DONE = "done"
     SILENT = "silent"
     CAPPED = "capped"
+    CANCELLED = "cancelled"
 
 
-FINAL = frozenset({State.DONE, State.SILENT, State.CAPPED})
+FINAL = frozenset({State.DONE, State.SILENT, State.CAPPED, State.CANCELLED})
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,7 +135,7 @@ class Recording:
 
     @property
     def has_speech(self) -> bool:
-        return self.reason is not State.SILENT
+        return self.reason not in (State.SILENT, State.CANCELLED)
 
 
 class Recorder(Protocol):
@@ -160,15 +162,23 @@ def to_wav(pcm: bytes, sample_rate: int) -> bytes:
     return buffer.getvalue()
 
 
-def drive(read: Callable[[], bytes], settings: TrackerSettings) -> tuple[bytes, State]:
-    """Pull blocks from `read` until the tracker says to stop.
+def drive(
+    read: Callable[[], bytes],
+    settings: TrackerSettings,
+    cancel: threading.Event | None = None,
+) -> tuple[bytes, State]:
+    """Pull blocks from `read` until the tracker says to stop, or `cancel` is set.
 
     Everything but `read` is deterministic, which is what makes capture testable
-    without a microphone.
+    without a microphone. `cancel` is how a caller that has stopped waiting tells
+    this loop to let the device go; it is checked once per block, so the loop ends
+    within one block of being told rather than running the cap out.
     """
     tracker = SilenceTracker(settings)
     blocks: list[bytes] = []
     while True:
+        if cancel is not None and cancel.is_set():
+            return b"".join(blocks), State.CANCELLED
         block = read()
         blocks.append(block)
         if tracker.feed(rms(block)) in FINAL:
@@ -190,10 +200,22 @@ class MicrophoneRecorder:
         self._device = device
 
     async def record(self, settings: TrackerSettings) -> Recording:
-        """Record one utterance, off the event loop so nothing else stalls."""
-        return await asyncio.to_thread(self._record, settings)
+        """Record one utterance, off the event loop so nothing else stalls.
 
-    def _record(self, settings: TrackerSettings) -> Recording:
+        Cancelling this await returns at once, but the worker thread would keep the
+        device open until the cap ran out. A `listen` straight after a cancelled one
+        would then pass both locks and open a second stream against a device the
+        first thread still holds, and interpreter shutdown, which joins non-daemon
+        threads, would hold the session shut for the rest of the recording. So the
+        thread is told as well, and leaves within one block.
+        """
+        cancel = threading.Event()
+        try:
+            return await asyncio.to_thread(self._record, settings, cancel)
+        finally:
+            cancel.set()
+
+    def _record(self, settings: TrackerSettings, cancel: threading.Event) -> Recording:
         try:
             import sounddevice
         except (ImportError, OSError) as error:
@@ -210,7 +232,9 @@ class MicrophoneRecorder:
             except sounddevice.PortAudioError as error:
                 raise RecorderUnavailable(_microphone_hint(error)) from error
             try:
-                pcm, reason = drive(lambda: bytes(stream.read(self._block_frames)[0]), settings)
+                pcm, reason = drive(
+                    lambda: bytes(stream.read(self._block_frames)[0]), settings, cancel
+                )
             except sounddevice.PortAudioError as error:
                 raise RecorderUnavailable(
                     f"the microphone failed during recording: {error}. "

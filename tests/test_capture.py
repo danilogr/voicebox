@@ -1,6 +1,9 @@
 import array
+import asyncio
 import io
 import sys
+import threading
+import time
 import wave
 from dataclasses import replace
 from types import SimpleNamespace
@@ -129,6 +132,31 @@ def test_drive_returns_the_audio_and_why_it_stopped():
     assert len(pcm) == 13 * 960
 
 
+def test_drive_stops_when_it_is_told_to_and_keeps_what_it_heard():
+    """One block of latency: the check is per block, so a blocked read finishes first."""
+    cancel = threading.Event()
+    blocks = iter([block(0)] * 100)
+
+    def read() -> bytes:
+        heard = next(blocks)
+        cancel.set()
+        return heard
+
+    pcm, reason = drive(read, LIMITS, cancel)
+    assert reason is State.CANCELLED
+    assert len(pcm) == 960
+
+
+def test_drive_that_is_cancelled_before_it_starts_reads_nothing():
+    cancel = threading.Event()
+    cancel.set()
+
+    def read() -> bytes:
+        raise AssertionError("the device must not be read after cancellation")
+
+    assert drive(read, LIMITS, cancel) == (b"", State.CANCELLED)
+
+
 def test_drive_reports_a_recording_that_was_silence_throughout():
     blocks = iter([block(0)] * 100)
     _pcm, reason = drive(lambda: next(blocks), LIMITS)
@@ -137,6 +165,7 @@ def test_drive_reports_a_recording_that_was_silence_throughout():
 
 def test_a_silent_recording_has_no_speech():
     assert Recording(wav=b"", reason=State.SILENT).has_speech is False
+    assert Recording(wav=b"", reason=State.CANCELLED).has_speech is False
     assert Recording(wav=b"", reason=State.DONE).has_speech is True
     assert Recording(wav=b"", reason=State.CAPPED).has_speech is True
 
@@ -216,3 +245,46 @@ async def test_a_missing_binding_is_reported(monkeypatch):
     monkeypatch.setitem(sys.modules, "sounddevice", None)
     with pytest.raises(RecorderUnavailable, match="no microphone binding"):
         await MicrophoneRecorder().record(LIMITS)
+
+
+class SlowStream(FakeStream):
+    """Delivers its blocks in real time, the way a device paces a recording."""
+
+    def __init__(self, block_seconds: float = 0.02) -> None:
+        super().__init__()
+        self._block_seconds = block_seconds
+        self.reading = threading.Event()
+
+    def read(self, frames: int) -> tuple[bytes, bool]:
+        self.reading.set()
+        time.sleep(self._block_seconds)
+        return block(0, frames), False
+
+
+async def closes_within(stream: FakeStream, timeout: float) -> bool:
+    """True once the recording thread has let the device go."""
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        if stream.closed:
+            return True
+        await asyncio.sleep(0.01)
+    return False
+
+
+async def test_a_cancelled_recording_lets_the_microphone_go(monkeypatch):
+    """Cancelling the await returns at once; the thread has to be told as well.
+
+    Otherwise it records the whole cap out with the device open: the next `listen`
+    opens a second stream against it, and interpreter shutdown joins the thread.
+    """
+    stream = fake_binding(monkeypatch, SlowStream())
+    # Limits that only a cancellation can end early: 600 blocks at 20 ms apiece.
+    patient = replace(LIMITS, start_timeout_ms=60_000.0, max_ms=60_000.0)
+    recording = asyncio.create_task(MicrophoneRecorder().record(patient))
+    assert await asyncio.to_thread(stream.reading.wait, 5.0) is True
+
+    recording.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await recording
+
+    assert await closes_within(stream, 5.0) is True
