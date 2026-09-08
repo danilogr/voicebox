@@ -40,10 +40,22 @@ def _number(env: Mapping[str, str], key: str, default: float | None) -> float | 
 
 
 TRUTHY = frozenset({"1", "true", "yes", "on"})
+FALSY = frozenset({"0", "false", "no", "off"})
 
 
-def _flag(env: Mapping[str, str], key: str) -> bool:
-    return (_text(env, key) or "").lower() in TRUTHY
+def _flag(env: Mapping[str, str], key: str, *, default: bool = False) -> bool:
+    """A yes/no setting. Anything unrecognised, the empty string included, is the default."""
+    raw = (_text(env, key) or "").lower()
+    if raw in TRUTHY:
+        return True
+    if raw in FALSY:
+        return False
+    return default
+
+
+def _path(env: Mapping[str, str], key: str) -> Path | None:
+    raw = _text(env, key)
+    return None if raw is None else Path(raw)
 
 
 def _positive(env: Mapping[str, str], key: str, default: float) -> float:
@@ -72,6 +84,10 @@ class Settings:
     listen_max_seconds: float = 240.0
     listen_timeout: float = 10.0
     listen_language: str | None = None
+    listen_cue: bool = True
+    # None means the sound `cue` picks for itself; only an override lands here.
+    listen_cue_start: Path | None = None
+    listen_cue_end: Path | None = None
     nemo_binary: str = "nemo-speech"
     nemo_autostart: bool = True
     seed: int | None = None
@@ -111,6 +127,9 @@ class Settings:
             listen_max_seconds=_positive(env, "SPEAK_LISTEN_MAX_SECONDS", 240.0),
             listen_timeout=_positive(env, "SPEAK_LISTEN_TIMEOUT", 10.0),
             listen_language=_text(env, "SPEAK_LISTEN_LANGUAGE"),
+            listen_cue=_flag(env, "SPEAK_LISTEN_CUE", default=True),
+            listen_cue_start=_path(env, "SPEAK_LISTEN_CUE_START"),
+            listen_cue_end=_path(env, "SPEAK_LISTEN_CUE_END"),
             nemo_binary=_text(env, "SPEAK_NEMO_BIN") or "nemo-speech",
             nemo_autostart=_text(env, "SPEAK_NEMO_AUTOSTART") != "0",
             seed=None if seed is None else int(seed),

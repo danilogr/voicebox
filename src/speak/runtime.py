@@ -1,4 +1,4 @@
-"""Wiring shared by the two entry points: logging, the health probe, capture limits."""
+"""Wiring shared by the two entry points: logging, the health probe, capture, cues."""
 
 import asyncio
 import logging
@@ -8,6 +8,7 @@ import httpx2
 
 from speak.capture import TrackerSettings
 from speak.config import Settings
+from speak.cue import Cue
 from speak.supervisor import Probe
 
 HEALTH_TIMEOUT = 30.0
@@ -66,4 +67,13 @@ def capture_limits(settings: Settings) -> TrackerSettings:
         silence_ms=settings.listen_silence_ms,
         start_timeout_ms=settings.listen_timeout * 1000,
         max_ms=settings.listen_max_seconds * 1000,
+    )
+
+
+def build_cue(settings: Settings) -> Cue:
+    """The chimes that bracket one recording, built the same way by both entry points."""
+    return Cue(
+        enabled=settings.listen_cue,
+        start=settings.listen_cue_start,
+        end=settings.listen_cue_end,
     )

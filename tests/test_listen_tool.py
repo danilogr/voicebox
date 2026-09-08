@@ -1,16 +1,22 @@
 import asyncio
 import logging
+from pathlib import Path
 from typing import NamedTuple
 
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from fakes import FakeEngine, FakeMicLock, FakeQueue, FakeRecorder, FakeTranscriber
+from fakes import FakeEngine, FakeMicLock, FakePlayer, FakeQueue, FakeRecorder, FakeTranscriber
 from speak import server as server_module
 from speak.capture import Recorder, RecorderUnavailable, Recording, State, TrackerSettings
 from speak.config import Settings
+from speak.cue import Cue
 from speak.engines.asr import TranscriptionFailed
 from speak.server import Ears, create_server
+
+# Named for their stems, which is what the fake player logs when a cue finishes.
+CUE_START = Path("/sounds/cue-start.aiff")
+CUE_END = Path("/sounds/cue-end.aiff")
 
 SPOKEN = Recording(wav=b"RIFF", reason=State.DONE, has_speech=True)
 # Capped rather than silent: a recording of an empty room ends CAPPED whenever
@@ -24,6 +30,7 @@ class Rig(NamedTuple):
     recorder: Recorder
     transcriber: FakeTranscriber
     lock: FakeMicLock
+    player: FakePlayer
     calls: list[str]
 
 
@@ -41,12 +48,16 @@ def build(
     recorder=None,
     reachable=True,
     starting=False,
+    player=None,
+    cue=None,
 ) -> Rig:
     calls: list[str] = []
     queue = queue if queue is not None else FakeQueue(calls=calls)
     queue.calls = calls
     recorder = recorder if recorder is not None else FakeRecorder(recording, calls=calls)
     recorder.calls = calls
+    player = player if player is not None else FakePlayer()
+    player.calls = calls
     transcriber = FakeTranscriber(
         text=text, has_asr=has_asr, error=error, reachable=reachable, starting=starting
     )
@@ -61,9 +72,10 @@ def build(
             transcriber=transcriber,
             mic_lock=lock,
             limits=limits if limits is not None else TrackerSettings(),
+            cue=cue if cue is not None else Cue(start=CUE_START, end=CUE_END, spawn=player.spawn),
         ),
     )
-    return Rig(server, queue, recorder, transcriber, lock, calls)
+    return Rig(server, queue, recorder, transcriber, lock, player, calls)
 
 
 async def tool_names(server) -> set[str]:
@@ -81,6 +93,13 @@ class StuckQueue(FakeQueue):
     async def drain(self) -> None:
         self.calls.append("drain")
         await asyncio.Event().wait()
+
+
+class BrokenRecorder(FakeRecorder):
+    """A microphone that fails the way a missing binding does."""
+
+    async def record(self, settings: TrackerSettings) -> Recording:
+        raise RecorderUnavailable("no microphone binding available")
 
 
 class BlockingRecorder(FakeRecorder):
@@ -116,9 +135,57 @@ async def test_the_tool_is_offered_when_voice_input_is_on():
 
 
 async def test_the_queue_is_drained_before_the_microphone_opens():
+    """And the opening cue is over before the recorder is called: the noise gate is
+    calibrated from the first 300 ms of audio, so a chime still sounding then is
+    averaged into it and the recording ends in silence."""
     rig = build()
     await call_listen(rig.server)
+    assert rig.calls == ["drain", "cue-start", "record", "cue-end"]
+
+
+async def test_the_closing_cue_sounds_before_the_transcript_is_asked_for():
+    """It says the microphone shut, which happens when recording stops rather than
+    seconds later when the words come back."""
+    rig = build()
+    rig.transcriber.calls = rig.calls
+    await call_listen(rig.server)
+    assert rig.calls == ["drain", "cue-start", "record", "cue-end", "transcribe"]
+
+
+async def test_the_closing_cue_sounds_even_when_the_recording_fails():
+    rig = build(recorder=BrokenRecorder(SPOKEN))
+    with pytest.raises(ToolError, match="no microphone binding"):
+        await call_listen(rig.server)
+    assert rig.calls == ["drain", "cue-start", "cue-end"]
+
+
+async def test_a_listen_that_is_refused_makes_no_sound():
+    """A cue means the microphone is open, and a refused call never opens it."""
+    busy = build(busy_with=4242)
+    with pytest.raises(ToolError):
+        await call_listen(busy.server)
+
+    absent = build(reachable=False)
+    with pytest.raises(ToolError):
+        await call_listen(absent.server)
+
+    assert busy.player.commands == []
+    assert absent.player.commands == []
+
+
+async def test_a_cue_that_will_not_play_does_not_cost_the_recording():
+    """A cue is a convenience; a recording is not."""
+    player = FakePlayer(error=FileNotFoundError(2, "No such file", "/usr/bin/afplay"))
+    rig = build(player=player)
+    assert await call_listen(rig.server) == "run the tests"
     assert rig.calls == ["drain", "record"]
+
+
+async def test_cues_can_be_turned_off():
+    rig = build(cue=Cue(enabled=False))
+    assert await call_listen(rig.server) == "run the tests"
+    assert rig.calls == ["drain", "record"]
+    assert rig.player.commands == []
 
 
 async def test_the_transcript_comes_back():
@@ -196,10 +263,6 @@ async def test_the_lock_is_released_when_transcription_fails():
 
 
 async def test_the_lock_is_released_when_the_microphone_fails():
-    class BrokenRecorder(FakeRecorder):
-        async def record(self, settings: TrackerSettings) -> Recording:
-            raise RecorderUnavailable("no microphone binding available")
-
     rig = build(recorder=BrokenRecorder(SPOKEN))
     with pytest.raises(ToolError, match="no microphone binding"):
         await call_listen(rig.server)
@@ -268,7 +331,7 @@ async def test_a_queue_that_will_not_drain_records_anyway(monkeypatch, caplog):
     rig = build(queue=StuckQueue())
     with caplog.at_level(logging.WARNING, logger="speak.server"):
         assert await call_listen(rig.server) == "run the tests"
-    assert rig.calls == ["drain", "record"]
+    assert rig.calls == ["drain", "cue-start", "record", "cue-end"]
     assert "did not drain" in caplog.text
 
 

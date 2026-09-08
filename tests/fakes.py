@@ -1,6 +1,8 @@
 """Fakes shared by the server-level tests."""
 
 import asyncio
+from collections.abc import Callable, Sequence
+from pathlib import Path
 
 from speak.capture import Recording, TrackerSettings
 from speak.engines.asr import Liveness
@@ -144,3 +146,46 @@ class FakeMicLock:
     def release(self) -> None:
         self.releases += 1
         self.held = False
+
+
+class FinishedSound:
+    """A player process that has already exited by the time it is waited on."""
+
+    def __init__(self, code: int, done: Callable[[], None]) -> None:
+        self._code = code
+        self._done = done
+
+    def terminate(self) -> None:
+        return None
+
+    async def wait(self) -> int:
+        await asyncio.sleep(0)
+        self._done()
+        return self._code
+
+
+class FakePlayer:
+    """Stands in for `afplay`: records what it was asked to play, and plays nothing.
+
+    The label lands in `calls` when the player exits rather than when it is spawned,
+    so a shared call list pins that a cue had finished before recording started.
+    """
+
+    def __init__(
+        self,
+        calls: list[str] | None = None,
+        *,
+        code: int = 0,
+        error: OSError | None = None,
+    ) -> None:
+        self.calls = calls if calls is not None else []
+        self.commands: list[tuple[str, list[str]]] = []
+        self._code = code
+        self._error = error
+
+    async def spawn(self, command: str, args: Sequence[str]) -> FinishedSound:
+        self.commands.append((command, list(args)))
+        if self._error is not None:
+            raise self._error
+        label = Path(args[0]).stem
+        return FinishedSound(self._code, lambda: self.calls.append(label))

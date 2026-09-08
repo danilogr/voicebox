@@ -54,7 +54,11 @@ the script behind it refuses at once with one line on stderr.
   and tests can build a server over fakes. It must not contain speech logic; it
   normalizes, delegates, and formats the reply. `listen` is defined only when the
   factory is given an `Ears`, which bundles the recorder, the transcriber, the
-  microphone lock and the capture limits into one presence check.
+  microphone lock, the capture limits and the recording cue into one presence check.
+- **`cue`** — the two chimes that bracket one recording, played through `afplay` with
+  the same detached-spawn helper the speech queue uses. It must not know why the
+  microphone is opening, and it must never fail a recording: a missing sound file, a
+  missing player or a non-zero exit is a debug log and nothing else.
 - **`capture`** — the microphone. `SilenceTracker` is a pure state machine fed block
   energies and decides when an utterance has ended; `MicrophoneRecorder` is a thin
   shell that opens a `sounddevice` stream and feeds it. The split is what lets every
@@ -63,7 +67,8 @@ the script behind it refuses at once with one line on stderr.
   route. It must not record anything.
 - **`miclock`** — one holder at a time for the single microphone, elected the same
   way the speech server's start lock is. It must not know what the microphone is for.
-- **`runtime`** — logging and the health probe, shared by the two entry points. It
+- **`runtime`** — what both entry points build the same way: logging, the health
+  probe, the capture limits, the transcription timeout, and the recording cue. It
   installs the one log handler, on stderr, and is the only module that installs one.
 - **`talk`** — the `/talk` one-shot: hold the shared server for the life of the
   process, record, transcribe, print. It is the only module besides `__main__` that
@@ -109,8 +114,10 @@ bytes for the length of one transcription and is never written to disk.
   a working PortAudio still runs the speech half of the plugin.
 - **`uv`** — environment and dependency management, and the launcher. Must be
   resolvable at startup; `scripts/speak-mcp` finds it.
-- **macOS `say` and `afplay`** — the default engine and the audio player. The plugin is
-  macOS-only in practice.
+- **macOS `say` and `afplay`** — the default engine and the audio player. `afplay`
+  also sounds the recording cues, whose default sounds are `/System/Library/Sounds`
+  files. The plugin is macOS-only in practice; `SPEAK_LISTEN_CUE_START` and
+  `SPEAK_LISTEN_CUE_END` are what a port would point elsewhere.
 - **NeMo-Speech.cpp** (optional) — a local neural speech server, installed by
   `scripts/install-nemo.sh` and managed by the supervisor. Not vendored: it is a
   per-platform binary plus 1.2 GB of models — MagpieTTS and its codec at 520 MB,
@@ -356,3 +363,25 @@ bytes for the length of one transcription and is never written to disk.
   "heard nothing", which the documentation used to attribute to a denied microphone
   alone. A gate that is too low costs a longer recording; one that is too high loses
   the utterance and misdirects the user.
+
+- 2026-09-07 — **The microphone is cued open and cued shut, and the opening cue is
+  awaited.** Nothing else told the user the microphone was open; `/talk` is the acute
+  case, where you press enter and have no way to tell whether to talk now or in two
+  seconds. The closing cue is not decoration either: recording ends on silence rather
+  than on a keypress, so without it you never learn when the gate decided you had
+  finished. Both are awaited to completion. That is a correctness requirement for the
+  opening one and not merely tidiness: `SilenceTracker` calibrates its gate from the
+  first 300 ms of audio, so a chime still sounding when the stream opens is averaged
+  into the ambient level, sets the gate above what a voice reaches, and ends the
+  recording in silence — the failure the upper clamp was added to survive. The clamp
+  stays as the backstop; the cue is not allowed to lean on it. The end cue is awaited
+  too, because the latency costs nothing next to the transcription that follows.
+
+  The cues bracket the recording alone: they sound after the microphone lock is held
+  and the speech server has answered, so a refused or unserviceable `listen` stays
+  silent, and the closing one sounds when recording stops rather than when the
+  transcript arrives. A cue is a convenience and a recording is not, so a missing
+  sound file, a missing player, or a player that exits non-zero degrades to a debug
+  log. Rejected: playing the cue without awaiting it, which is exactly the
+  calibration bug above; and a cue on only one end, which leaves the more useful half
+  of the question — am I still being recorded? — unanswered.

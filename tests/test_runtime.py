@@ -1,8 +1,11 @@
 """The wiring both entry points share."""
 
+from pathlib import Path
+
 from speak.capture import SilenceTracker, State
 from speak.config import Settings
-from speak.runtime import capture_limits, transcription_timeout
+from speak.cue import END_SOUND, START_SOUND
+from speak.runtime import build_cue, capture_limits, transcription_timeout
 
 
 def test_capture_limits_turns_the_configured_seconds_into_milliseconds():
@@ -28,3 +31,20 @@ def test_configured_limits_still_let_a_silent_room_give_up():
         if tracker.feed(0.0) is State.SILENT:
             break
     assert tracker.state is State.SILENT
+
+
+def test_the_cue_is_on_by_default_and_uses_the_system_sounds():
+    cue = build_cue(Settings())
+    assert cue._enabled is True
+    assert (cue._start, cue._end) == (START_SOUND, END_SOUND)
+
+
+def test_configured_cue_sounds_reach_the_cue():
+    """The defaults are macOS paths, so the override is the only way off it."""
+    cue = build_cue(Settings(listen_cue_start=Path("/sounds/in.wav")))
+    assert cue._start == Path("/sounds/in.wav")
+    assert cue._end == END_SOUND
+
+
+def test_a_cue_that_is_turned_off_is_still_built():
+    assert build_cue(Settings(listen_cue=False))._enabled is False

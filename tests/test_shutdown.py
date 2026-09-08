@@ -5,6 +5,7 @@ import asyncio
 from fakes import FakeMicLock, FakeRecorder, FakeSupervisor, FakeTranscriber
 from speak import server as server_module
 from speak.capture import Recording, State, TrackerSettings
+from speak.cue import Cue
 from speak.server import Ears, SessionState, settle, shutdown, start_listening
 
 
@@ -81,6 +82,7 @@ def ears(*, reachable: bool = False) -> Ears:
         transcriber=FakeTranscriber(reachable=reachable),
         mic_lock=FakeMicLock(),
         limits=TrackerSettings(),
+        cue=Cue(enabled=False),
     )
 
 

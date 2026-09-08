@@ -16,6 +16,7 @@ from pydantic import Field
 from speak import tools
 from speak.capture import Recorder, RecorderUnavailable, TrackerSettings
 from speak.config import Settings
+from speak.cue import Cue
 from speak.engines.asr import Liveness, Transcriber, TranscriptionFailed
 from speak.engines.base import Engine
 from speak.miclock import MicLock, MicrophoneBusy
@@ -58,6 +59,7 @@ class Ears:
     transcriber: Transcriber
     mic_lock: MicLock
     limits: TrackerSettings
+    cue: Cue
 
 
 @dataclass(slots=True)
@@ -316,7 +318,11 @@ def create_server(
                     raise ToolError(str(error)) from error
 
                 try:
-                    recording = await ears.recorder.record(_limits(ears.limits, max_seconds))
+                    # The cues bracket the recording and nothing else: they say the
+                    # microphone is open and that it has shut, which is the moment
+                    # recording stops rather than the moment the transcript lands.
+                    async with ears.cue.around_recording():
+                        recording = await ears.recorder.record(_limits(ears.limits, max_seconds))
                     if not recording.has_speech:
                         return tools.HEARD_NOTHING
                     heard = await ears.transcriber.transcribe(

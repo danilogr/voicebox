@@ -13,6 +13,7 @@ from speak.engines.asr import NemoTranscriber
 from speak.miclock import MicLock
 from speak.queue import SpeechQueue
 from speak.runtime import (
+    build_cue,
     capture_limits,
     configure_logging,
     health_probe,
@@ -40,6 +41,7 @@ def build_ears(settings: Settings) -> Ears | None:
         ),
         mic_lock=MicLock(state_dir=settings.state_dir, is_alive=process_is_alive),
         limits=capture_limits(settings),
+        cue=build_cue(settings),
     )
 
 

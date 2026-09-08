@@ -132,6 +132,32 @@ def test_listen_treats_anything_else_as_off():
         assert Settings.from_env({"SPEAK_LISTEN": raw}).listen is False, raw
 
 
+def test_the_listen_cue_is_on_unless_it_is_turned_off():
+    assert Settings.from_env({}).listen_cue is True
+    for raw in ("0", "false", "FALSE", "no", "off"):
+        assert Settings.from_env({"SPEAK_LISTEN_CUE": raw}).listen_cue is False, raw
+
+
+def test_anything_else_leaves_the_listen_cue_on():
+    for raw in ("1", "true", "on", "", "maybe"):
+        assert Settings.from_env({"SPEAK_LISTEN_CUE": raw}).listen_cue is True, raw
+
+
+def test_the_cue_sounds_can_be_pointed_elsewhere():
+    """The defaults are macOS paths, so an override is the only way this works off it."""
+    settings = Settings.from_env(
+        {"SPEAK_LISTEN_CUE_START": "/sounds/in.wav", "SPEAK_LISTEN_CUE_END": "/sounds/out.wav"}
+    )
+    assert settings.listen_cue_start == Path("/sounds/in.wav")
+    assert settings.listen_cue_end == Path("/sounds/out.wav")
+
+
+def test_unset_cue_sounds_are_left_to_the_cue_module():
+    settings = Settings.from_env({"SPEAK_LISTEN_CUE_START": ""})
+    assert settings.listen_cue_start is None
+    assert settings.listen_cue_end is None
+
+
 def test_asr_model_defaults_and_overrides():
     assert Settings.from_env({}).nemo_asr_model == "nemotron-3.5"
     assert Settings.from_env({"NEMO_ASR_MODEL": "parakeet-tdt"}).nemo_asr_model == "parakeet-tdt"

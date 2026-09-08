@@ -14,9 +14,11 @@ from typing import NoReturn
 
 from speak.capture import MicrophoneRecorder, Recorder, RecorderUnavailable
 from speak.config import Settings
+from speak.cue import Cue
 from speak.engines.asr import Liveness, NemoTranscriber, Transcriber, TranscriptionFailed
 from speak.miclock import MicLock, MicrophoneBusy
 from speak.runtime import (
+    build_cue,
     capture_limits,
     configure_logging,
     health_probe,
@@ -41,6 +43,7 @@ async def capture(
     recorder: Recorder,
     transcriber: Transcriber,
     lock: MicLock,
+    cue: Cue,
 ) -> str:
     """Record one utterance and return its transcript, or "" for silence."""
     # Liveness before capability, the way `speak.server.listen` does it. `has_asr`
@@ -58,7 +61,10 @@ async def capture(
 
     lock.acquire()
     try:
-        recording = await recorder.record(capture_limits(settings))
+        # Cued only once the microphone is this process's to open, and cued shut when
+        # recording stops rather than when the transcript comes back.
+        async with cue.around_recording():
+            recording = await recorder.record(capture_limits(settings))
         if not recording.has_speech:
             return ""
         return await transcriber.transcribe(recording.wav, language=settings.listen_language)
@@ -73,6 +79,7 @@ async def dictate(
     recorder: Recorder,
     transcriber: Transcriber,
     lock: MicLock,
+    cue: Cue,
 ) -> str:
     """Hold the shared speech server for this process, then capture against it."""
     # Register for this process's lifetime so a standalone /talk cannot leave a
@@ -95,7 +102,9 @@ async def dictate(
                 # behind their back here either.
                 raise TranscriptionFailed(SERVER_UNREACHABLE)
             await _start(supervisor)
-        return await capture(settings, recorder=recorder, transcriber=transcriber, lock=lock)
+        return await capture(
+            settings, recorder=recorder, transcriber=transcriber, lock=lock, cue=cue
+        )
     finally:
         await supervisor.release()
 
@@ -129,6 +138,7 @@ async def _run(settings: Settings) -> str:
             timeout=transcription_timeout(settings),
         ),
         lock=MicLock(state_dir=settings.state_dir, is_alive=process_is_alive),
+        cue=build_cue(settings),
     )
 
 

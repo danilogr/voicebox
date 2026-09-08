@@ -2,14 +2,21 @@ from pathlib import Path
 
 import pytest
 
-from fakes import FakeMicLock, FakeRecorder, FakeSupervisor, FakeTranscriber
+from fakes import FakeMicLock, FakePlayer, FakeRecorder, FakeSupervisor, FakeTranscriber
 from speak import talk as talk_module
 from speak.capture import Recording, State
 from speak.config import Settings
+from speak.cue import Cue
 from speak.engines.asr import TranscriptionFailed
 from speak.miclock import MicrophoneBusy
 from speak.talk import capture, dictate, main
 from speak.tools import LISTEN_OFF, TALK_HEARD_NOTHING
+
+# Every capture below is given a cue, and none of them makes a sound: the silent one
+# never spawns a player, and the rest spawn a fake.
+SILENT = Cue(enabled=False)
+CUE_START = Path("/sounds/cue-start.aiff")
+CUE_END = Path("/sounds/cue-end.aiff")
 
 SPOKEN = Recording(wav=b"RIFF", reason=State.DONE, has_speech=True)
 # What a silent room produces when the cap is shorter than the start timeout,
@@ -23,6 +30,7 @@ async def test_a_spoken_prompt_comes_back_as_text():
         recorder=FakeRecorder(SPOKEN),
         transcriber=FakeTranscriber(text="run the tests", reachable=True),
         lock=FakeMicLock(),
+        cue=SILENT,
     )
     assert text == "run the tests"
 
@@ -33,6 +41,7 @@ async def test_saying_nothing_comes_back_empty():
         recorder=FakeRecorder(NOTHING),
         transcriber=FakeTranscriber(text="ignored", reachable=True),
         lock=FakeMicLock(),
+        cue=SILENT,
     )
     assert text == ""
 
@@ -44,6 +53,7 @@ async def test_a_busy_microphone_is_reported():
             recorder=FakeRecorder(SPOKEN),
             transcriber=FakeTranscriber(reachable=True),
             lock=FakeMicLock(busy_with=99),
+            cue=SILENT,
         )
 
 
@@ -54,6 +64,7 @@ async def test_a_server_without_transcription_is_reported():
             recorder=FakeRecorder(SPOKEN),
             transcriber=FakeTranscriber(has_asr=False, reachable=True),
             lock=FakeMicLock(),
+            cue=SILENT,
         )
 
 
@@ -67,6 +78,7 @@ async def test_a_server_that_is_still_loading_says_to_wait():
             recorder=FakeRecorder(SPOKEN),
             transcriber=FakeTranscriber(has_asr=False, reachable=True, starting=True),
             lock=FakeMicLock(),
+            cue=SILENT,
         )
 
 
@@ -77,6 +89,7 @@ async def test_a_speech_server_that_is_not_there_is_not_called_a_missing_model()
             recorder=FakeRecorder(SPOKEN),
             transcriber=FakeTranscriber(has_asr=False, reachable=False),
             lock=FakeMicLock(),
+            cue=SILENT,
         )
 
 
@@ -88,6 +101,7 @@ async def test_the_microphone_is_not_opened_while_the_server_is_still_loading():
             recorder=FakeRecorder(SPOKEN),
             transcriber=FakeTranscriber(reachable=True, starting=True),
             lock=lock,
+            cue=SILENT,
         )
     assert lock.acquires == 0
 
@@ -100,8 +114,56 @@ async def test_the_lock_is_released_when_transcription_fails():
             recorder=FakeRecorder(SPOKEN),
             transcriber=FakeTranscriber(error=TranscriptionFailed("no server"), reachable=True),
             lock=lock,
+            cue=SILENT,
         )
     assert lock.releases == 1
+
+
+async def test_the_microphone_is_cued_open_and_cued_shut():
+    """`/talk` is the acute case: you press enter with no idea whether to talk now or
+    in two seconds, and recording stops on silence with nothing to say it has."""
+    calls: list[str] = []
+    player = FakePlayer(calls)
+
+    await capture(
+        Settings(listen=True),
+        recorder=FakeRecorder(SPOKEN, calls=calls),
+        transcriber=FakeTranscriber(text="run the tests", reachable=True),
+        lock=FakeMicLock(),
+        cue=Cue(start=CUE_START, end=CUE_END, spawn=player.spawn),
+    )
+
+    assert calls == ["cue-start", "record", "cue-end"]
+
+
+async def test_the_cue_waits_for_the_microphone_lock():
+    """A cue means the microphone is open, and a refused capture never opens it."""
+    player = FakePlayer()
+
+    with pytest.raises(MicrophoneBusy):
+        await capture(
+            Settings(listen=True),
+            recorder=FakeRecorder(SPOKEN),
+            transcriber=FakeTranscriber(reachable=True),
+            lock=FakeMicLock(busy_with=99),
+            cue=Cue(start=CUE_START, end=CUE_END, spawn=player.spawn),
+        )
+
+    assert player.commands == []
+
+
+async def test_a_cue_that_will_not_play_does_not_cost_the_recording():
+    player = FakePlayer(error=FileNotFoundError(2, "No such file", "/usr/bin/afplay"))
+
+    text = await capture(
+        Settings(listen=True),
+        recorder=FakeRecorder(SPOKEN),
+        transcriber=FakeTranscriber(text="run the tests", reachable=True),
+        lock=FakeMicLock(),
+        cue=Cue(start=CUE_START, end=CUE_END, spawn=player.spawn),
+    )
+
+    assert text == "run the tests"
 
 
 class StartingSupervisor(FakeSupervisor):
@@ -138,6 +200,7 @@ async def _dictate(supervisor, transcriber, lock=None, settings=None) -> str:
         recorder=FakeRecorder(SPOKEN),
         transcriber=transcriber,
         lock=lock if lock is not None else FakeMicLock(),
+        cue=SILENT,
     )
 
 

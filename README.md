@@ -88,6 +88,17 @@ Two ways in:
   waits for the sentence to finish playing, then opens the microphone and hears
   your answer.
 
+A chime says the microphone is open, and a lower one says it has closed. Both ends
+matter: with `/talk` you press enter and otherwise have no way to tell whether to
+start talking now or in two seconds, and every recording stops on silence rather than
+on a keypress, so without the second chime you never learn when it decided you had
+finished. The opening chime is played to completion *before* the microphone opens —
+the gate calibrates on the first 300 ms of audio, and a sound still playing then
+would be averaged into it. Turn the pair off with `SPEAK_LISTEN_CUE=0`, or replace
+them with `SPEAK_LISTEN_CUE_START` and `SPEAK_LISTEN_CUE_END`; the defaults are macOS
+system sounds played with `afplay`, so anywhere else the overrides are the way in.
+A chime that cannot be played is logged and skipped — it never costs you a recording.
+
 Recording stops when you stop talking: the gate calibrates to the room's ambient
 noise over the first 300 ms, then ends the utterance after 3 seconds of silence.
 The gate is clamped at both ends, so starting to talk during that first 300 ms
@@ -139,6 +150,9 @@ All optional, set in your shell or in the plugin's `.mcp.json`:
 | `SPEAK_LISTEN_MAX_SECONDS` | `240` | hard cap on one recording |
 | `SPEAK_LISTEN_TIMEOUT` | `10` | seconds to wait for you to start talking |
 | `SPEAK_LISTEN_LANGUAGE` | — | language hint for transcription, e.g. `en` |
+| `SPEAK_LISTEN_CUE` | `1` | set `0` to open and close the microphone silently |
+| `SPEAK_LISTEN_CUE_START` | `/System/Library/Sounds/Tink.aiff` | chime as the microphone opens |
+| `SPEAK_LISTEN_CUE_END` | `/System/Library/Sounds/Purr.aiff` | chime as it closes |
 | `SPEAK_COMMAND` | — | required when `SPEAK_ENGINE=command` |
 | `SPEAK_NEMO_AUTOSTART` | `1` | set `0` to start and stop the speech server yourself |
 | `SPEAK_NEMO_BIN` | `nemo-speech` | binary the supervisor spawns |
@@ -194,10 +208,10 @@ linking it, so editing the checkout changes nothing Claude Code loads. Run
 `scripts/install-local.sh` to sync the working tree into that copy — it refuses to
 write anywhere outside the plugin cache — then restart Claude Code.
 
-303 tests, no network, no audio and no microphone: the queue runs against a fake
-spawner, the NeMo engine and the transcriber against a mock HTTP transport, the
-supervisor and the microphone lock against injected spawn, liveness and kill callables
-over a temporary state directory, and the end-to-end tests drive the real server
+327 tests, no network, no audio and no microphone: the queue and the recording cues
+run against a fake spawner, the NeMo engine and the transcriber against a mock HTTP
+transport, the supervisor and the microphone lock against injected spawn, liveness and
+kill callables over a temporary state directory, and the end-to-end tests drive the real server
 process over stdio with the `command` engine pointed at a recorder script. Capture is
 split so the decision to stop recording is a pure state machine fed block energies,
 which is what lets every capture path be tested without audio hardware. No test starts
@@ -224,6 +238,7 @@ src/speak/queue.py               one process at a time, non-blocking enqueue
 src/speak/engines/               say · nemo · command, and their voice lists
 src/speak/engines/asr.py         transcription against the shared speech server
 src/speak/capture.py             the microphone, and when an utterance has ended
+src/speak/cue.py                 the chimes that bracket one recording
 src/speak/miclock.py             one holder at a time for the one microphone
 src/speak/talk.py                the /talk entry point: record, transcribe, print
 src/speak/runtime.py             logging, the health probe, and capture limits

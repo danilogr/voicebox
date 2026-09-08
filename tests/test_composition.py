@@ -1,7 +1,10 @@
 """What the composition root decides: who gets a speech server, and with which models."""
 
+from pathlib import Path
+
 from speak.__main__ import build_ears, build_supervisor
 from speak.config import Settings
+from speak.cue import END_SOUND
 from speak.runtime import transcription_timeout
 
 
@@ -49,3 +52,17 @@ def test_the_transcriber_is_given_a_timeout_the_recording_cap_cannot_outlast():
     ears = build_ears(settings)
     assert ears is not None
     assert ears.transcriber._timeout == transcription_timeout(settings)
+
+
+def test_the_ears_carry_a_cue_that_is_on_by_default():
+    ears = build_ears(Settings(listen=True))
+    assert ears is not None
+    assert ears.cue._enabled is True
+
+
+def test_the_ears_carry_the_configured_cue_sounds():
+    """The defaults are macOS paths, so the override is the only way off it."""
+    ears = build_ears(Settings(listen=True, listen_cue=False, listen_cue_start=Path("/s/in.wav")))
+    assert ears is not None
+    assert ears.cue._enabled is False
+    assert (ears.cue._start, ears.cue._end) == (Path("/s/in.wav"), END_SOUND)
