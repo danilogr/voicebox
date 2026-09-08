@@ -40,13 +40,16 @@ def build(
     queue=None,
     recorder=None,
     reachable=True,
+    starting=False,
 ) -> Rig:
     calls: list[str] = []
     queue = queue if queue is not None else FakeQueue(calls=calls)
     queue.calls = calls
     recorder = recorder if recorder is not None else FakeRecorder(recording, calls=calls)
     recorder.calls = calls
-    transcriber = FakeTranscriber(text=text, has_asr=has_asr, error=error, reachable=reachable)
+    transcriber = FakeTranscriber(
+        text=text, has_asr=has_asr, error=error, reachable=reachable, starting=starting
+    )
     lock = FakeMicLock(busy_with=busy_with)
     server = create_server(
         settings=Settings(listen=listen, listen_language=language),
@@ -139,6 +142,23 @@ async def test_a_busy_microphone_names_the_other_session():
     assert rig.calls == ["drain"]
 
 
+async def test_listen_waits_for_this_sessions_own_warmup(monkeypatch):
+    """The warmup runs unawaited, so the first `listen` of a session can arrive while
+    the server that session just spawned is still loading. Judging it then names
+    remedies for a condition that is about to clear on its own."""
+    waited: list[str] = []
+
+    async def settle(warmup) -> None:
+        waited.append("settle")
+
+    monkeypatch.setattr(server_module, "settle", settle)
+    rig = build()
+
+    await call_listen(rig.server)
+
+    assert waited == ["settle"]
+
+
 async def test_a_speech_server_that_is_not_there_is_named_as_such():
     """`has_asr` is False for any HTTP failure, so an absent server needs its own check.
 
@@ -147,6 +167,15 @@ async def test_a_speech_server_that_is_not_there_is_named_as_such():
     """
     rig = build(reachable=False)
     with pytest.raises(ToolError, match="not answering"):
+        await call_listen(rig.server)
+    assert rig.lock.acquires == 0
+
+
+async def test_a_server_that_is_still_loading_says_to_wait():
+    """`SPEAK_LISTEN=1` starts the server as the session opens, so the first `listen`
+    can arrive while it is still loading. "No transcription model" would be wrong."""
+    rig = build(reachable=True, starting=True, has_asr=False)
+    with pytest.raises(ToolError, match="starting up"):
         await call_listen(rig.server)
     assert rig.lock.acquires == 0
 

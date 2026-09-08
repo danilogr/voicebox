@@ -16,7 +16,7 @@ from pydantic import Field
 from speak import tools
 from speak.capture import Recorder, RecorderUnavailable, TrackerSettings
 from speak.config import Settings
-from speak.engines.asr import Transcriber, TranscriptionFailed
+from speak.engines.asr import Liveness, Transcriber, TranscriptionFailed
 from speak.engines.base import Engine
 from speak.miclock import MicLock, MicrophoneBusy
 from speak.text import normalize
@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 VERSION = "1.0.0"
 
 DRAIN_TIMEOUT = 60.0
+
+# Long enough to cover a cold start, which is about ten seconds; `listen` waits it
+# out rather than reporting a server that this very session is still starting.
+WARMUP_TIMEOUT = 20.0
 
 
 class Queue(Protocol):
@@ -64,6 +68,7 @@ class SessionState:
     rate: float | None = None
     registered: bool = False
     randomize: bool = False
+    warmup: "asyncio.Task[bool] | None" = None
 
 
 def choose_pool(
@@ -135,13 +140,29 @@ async def start_listening(
     `/talk` runs as its own short-lived process, so it needs a server that is
     already warm. Registering is awaited; the warmup is handed back as a task the
     caller owns, so neither the liveness check nor a cold start delays the session
-    opening.
+    opening. It is also recorded on the session, because the first `listen` of a
+    session can arrive while that same warmup is still loading models and has to
+    wait for it rather than report the server missing.
     """
     if ears is None or supervisor is None:
         return None
     session.registered = True
     await supervisor.register()
-    return asyncio.create_task(warm_speech_server(supervisor, ears.transcriber))
+    session.warmup = asyncio.create_task(warm_speech_server(supervisor, ears.transcriber))
+    return session.warmup
+
+
+async def settle(warmup: "asyncio.Task[bool] | None") -> None:
+    """Give this session's own cold start time to finish before judging the server.
+
+    `asyncio.wait` rather than `wait_for`, which cancels what it is waiting on when
+    it times out — and the warmup is the thing that will make the next call work.
+    Timing out here is not an error: the caller goes on to ask the server directly,
+    which answers "still starting" if that is what it is.
+    """
+    if warmup is None or warmup.done():
+        return
+    await asyncio.wait({warmup}, timeout=WARMUP_TIMEOUT)
 
 
 def create_server(
@@ -273,12 +294,19 @@ def create_server(
                     # reason to refuse the user; the worst case is hearing ourselves.
                     logger.warning("speech queue did not drain; opening the microphone anyway")
 
+                await settle(session.warmup)
+
                 # Liveness first: `has_asr` answers False for any HTTP failure, so a
                 # server that is not there at all would otherwise be reported as one
                 # running without a transcription model, and neither remedy that
-                # message offers would apply.
-                if not await ears.transcriber.reachable():
+                # message offers would apply. A server that is up but still loading
+                # its models gets its own answer for the same reason: "wait" is the
+                # only correct advice, and neither other message gives it.
+                state = await ears.transcriber.liveness()
+                if state is Liveness.ABSENT:
                     raise ToolError(tools.SERVER_UNREACHABLE)
+                if state is Liveness.STARTING:
+                    raise ToolError(tools.SERVER_STARTING)
                 if not await ears.transcriber.has_asr():
                     raise ToolError(tools.NO_ASR)
 

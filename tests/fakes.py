@@ -3,6 +3,7 @@
 import asyncio
 
 from speak.capture import Recording, TrackerSettings
+from speak.engines.asr import Liveness
 from speak.engines.base import Utterance
 from speak.miclock import MicrophoneBusy
 
@@ -93,12 +94,14 @@ class FakeTranscriber:
         has_asr: bool = True,
         error: Exception | None = None,
         reachable: bool = False,
+        starting: bool = False,
     ) -> None:
         self.text = text
         self.languages: list[str | None] = []
         self._has_asr = has_asr
         self._error = error
         self._reachable = reachable
+        self._starting = starting
         self.calls: list[str] = []
 
     async def transcribe(self, wav: bytes, *, language: str | None = None) -> str:
@@ -113,6 +116,16 @@ class FakeTranscriber:
 
     async def reachable(self) -> bool:
         return self._reachable
+
+    def becomes_ready(self) -> None:
+        """The server has answered — what `ensure_running`'s probe waits for."""
+        self._reachable = True
+        self._starting = False
+
+    async def liveness(self) -> Liveness:
+        if not self._reachable:
+            return Liveness.ABSENT
+        return Liveness.STARTING if self._starting else Liveness.READY
 
 
 class FakeMicLock:

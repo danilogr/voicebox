@@ -268,6 +268,20 @@ bytes for the length of one transcription and is never written to disk.
   reaches it as "the server is gone". Guarding at the supervisor protects every call
   site at once, including future ones.
 
+- 2026-09-07 — **A cold start is reported as a cold start, not as a missing model.**
+  `has_asr` answers False for any HTTP failure, so a server that is absent or still
+  loading its models looks exactly like one served without `--asr-model` — and that
+  message tells the user to run `/speak:setup` or restart another session, neither of
+  which applies to a server that is eight seconds from ready. `SPEAK_LISTEN=1` starts
+  the server as the session opens, which makes that window the ordinary first run.
+  Three things changed together: `liveness()` answers ABSENT, STARTING or READY off
+  the one `/health` request, so both entry points can say "wait"; `ensure_running`
+  probes on its early returns as well, so a caller that finds another session's start
+  already under way is handed a server that has answered rather than one that has
+  merely been recorded; and `listen` waits on its own session's warmup task, which
+  until now was created and never awaited. Rejected: leaving `/talk` to infer
+  readiness from `has_asr`, which is what produced the wrong advice.
+
 - 2026-09-07 — **The queue re-checks the generation after spawning the player.** The
   existing check ran only before the spawn, so an utterance stopped in the window
   between `stop()` releasing the current process and the new handle being recorded was

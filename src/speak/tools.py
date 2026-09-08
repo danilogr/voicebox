@@ -49,6 +49,12 @@ to listen with. Either the model was never downloaded - run /speak:setup to pull
 or another Claude Code session started this shared server without voice input enabled,
 in which case restarting that session will let the server come back with transcription."""
 
+SERVER_STARTING = (
+    "the speech server is starting up and has not loaded its models yet, so there is "
+    "nothing to transcribe with for another few seconds. Wait, then ask again - nothing "
+    "needs installing or restarting."
+)
+
 SERVER_UNREACHABLE = (
     "the speech server is not answering, so there is nothing to transcribe with. Run "
     "/speak:setup if nemo-speech is not installed yet, check NEMO_HTTP_URL if it serves "

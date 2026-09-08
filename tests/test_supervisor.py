@@ -21,6 +21,17 @@ async def probe_ok() -> bool:
     return True
 
 
+class Probes:
+    """Counts how often the supervisor waited for the server to answer."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def __call__(self) -> bool:
+        self.calls += 1
+        return True
+
+
 def build(tmp_path, **kwargs: object) -> NemoSupervisor:
     defaults = dict(
         state_dir=tmp_path,
@@ -95,6 +106,27 @@ async def test_a_server_that_is_already_running_is_not_replaced(tmp_path):
     assert await supervisor.ensure_running() is False
     assert spawns.calls == []
     assert json.loads((tmp_path / "server.json").read_text())["pid"] == 4242
+
+
+async def test_a_server_another_session_is_starting_is_waited_for(tmp_path):
+    """The caller's next move is to transcribe against it. Returning the moment the
+    record exists hands back a server that has not bound its port, and the call site
+    then reports a missing transcription model for a ten-second cold start."""
+    (tmp_path / "server.json").write_text(json.dumps({"pid": 4242, "port": 8082}))
+    probes = Probes()
+
+    supervisor = build(tmp_path, probe=probes, is_alive=lambda pid: pid == 4242)
+
+    assert await supervisor.ensure_running() is False
+    assert probes.calls == 1
+
+
+async def test_a_session_that_loses_the_start_race_waits_for_the_winner(tmp_path):
+    (tmp_path / "starting").mkdir(parents=True)
+    probes = Probes()
+
+    assert await build(tmp_path, probe=probes).ensure_running() is False
+    assert probes.calls == 1
 
 
 async def test_a_recorded_server_that_has_died_is_replaced(tmp_path):

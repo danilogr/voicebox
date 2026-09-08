@@ -21,7 +21,7 @@ async def test_a_spoken_prompt_comes_back_as_text():
     text = await capture(
         Settings(listen=True),
         recorder=FakeRecorder(SPOKEN),
-        transcriber=FakeTranscriber(text="run the tests"),
+        transcriber=FakeTranscriber(text="run the tests", reachable=True),
         lock=FakeMicLock(),
     )
     assert text == "run the tests"
@@ -31,7 +31,7 @@ async def test_saying_nothing_comes_back_empty():
     text = await capture(
         Settings(listen=True),
         recorder=FakeRecorder(NOTHING),
-        transcriber=FakeTranscriber(text="ignored"),
+        transcriber=FakeTranscriber(text="ignored", reachable=True),
         lock=FakeMicLock(),
     )
     assert text == ""
@@ -42,7 +42,7 @@ async def test_a_busy_microphone_is_reported():
         await capture(
             Settings(listen=True),
             recorder=FakeRecorder(SPOKEN),
-            transcriber=FakeTranscriber(),
+            transcriber=FakeTranscriber(reachable=True),
             lock=FakeMicLock(busy_with=99),
         )
 
@@ -52,9 +52,44 @@ async def test_a_server_without_transcription_is_reported():
         await capture(
             Settings(listen=True),
             recorder=FakeRecorder(SPOKEN),
-            transcriber=FakeTranscriber(has_asr=False),
+            transcriber=FakeTranscriber(has_asr=False, reachable=True),
             lock=FakeMicLock(),
         )
+
+
+async def test_a_server_that_is_still_loading_says_to_wait():
+    """A cold start answers before its models do. Naming a missing model there sends
+    the user to /speak:setup or to restart another session; both are wrong, and the
+    eager warmup this branch added makes the window the ordinary first run."""
+    with pytest.raises(TranscriptionFailed, match="starting up"):
+        await capture(
+            Settings(listen=True),
+            recorder=FakeRecorder(SPOKEN),
+            transcriber=FakeTranscriber(has_asr=False, reachable=True, starting=True),
+            lock=FakeMicLock(),
+        )
+
+
+async def test_a_speech_server_that_is_not_there_is_not_called_a_missing_model():
+    with pytest.raises(TranscriptionFailed, match="not answering"):
+        await capture(
+            Settings(listen=True),
+            recorder=FakeRecorder(SPOKEN),
+            transcriber=FakeTranscriber(has_asr=False, reachable=False),
+            lock=FakeMicLock(),
+        )
+
+
+async def test_the_microphone_is_not_opened_while_the_server_is_still_loading():
+    lock = FakeMicLock()
+    with pytest.raises(TranscriptionFailed):
+        await capture(
+            Settings(listen=True),
+            recorder=FakeRecorder(SPOKEN),
+            transcriber=FakeTranscriber(reachable=True, starting=True),
+            lock=lock,
+        )
+    assert lock.acquires == 0
 
 
 async def test_the_lock_is_released_when_transcription_fails():
@@ -63,10 +98,23 @@ async def test_the_lock_is_released_when_transcription_fails():
         await capture(
             Settings(listen=True),
             recorder=FakeRecorder(SPOKEN),
-            transcriber=FakeTranscriber(error=TranscriptionFailed("no server")),
+            transcriber=FakeTranscriber(error=TranscriptionFailed("no server"), reachable=True),
             lock=lock,
         )
     assert lock.releases == 1
+
+
+class StartingSupervisor(FakeSupervisor):
+    """A supervisor whose start leaves the server answering, the way its probe does."""
+
+    def __init__(self, transcriber: FakeTranscriber) -> None:
+        super().__init__()
+        self._transcriber = transcriber
+
+    async def ensure_running(self) -> bool:
+        await super().ensure_running()
+        self._transcriber.becomes_ready()
+        return True
 
 
 class BrokenSupervisor(FakeSupervisor):
@@ -103,11 +151,13 @@ async def test_a_speech_server_that_is_already_up_is_not_started_again():
     assert supervisor.starts == 0
 
 
-async def test_a_speech_server_that_is_not_there_is_started():
-    supervisor = FakeSupervisor()
+async def test_a_speech_server_that_is_not_there_is_started_and_then_used():
+    """`ensure_running` does not return until the server answers, so the capture that
+    follows must go through rather than report the server it just started missing."""
+    transcriber = FakeTranscriber(text="run the tests", reachable=False)
+    supervisor = StartingSupervisor(transcriber)
 
-    await _dictate(supervisor, FakeTranscriber(text="run the tests", reachable=False))
-
+    assert await _dictate(supervisor, transcriber) == "run the tests"
     assert supervisor.starts == 1
 
 

@@ -14,11 +14,18 @@ import sys
 
 from speak.capture import MicrophoneRecorder, Recorder, RecorderUnavailable
 from speak.config import Settings
-from speak.engines.asr import NemoTranscriber, Transcriber, TranscriptionFailed
+from speak.engines.asr import Liveness, NemoTranscriber, Transcriber, TranscriptionFailed
 from speak.miclock import MicLock, MicrophoneBusy
 from speak.runtime import capture_limits, configure_logging, health_probe
 from speak.supervisor import NemoSupervisor, process_is_alive
-from speak.tools import LISTEN_OFF, NO_ASR, NO_SERVER, SERVER_UNREACHABLE, TALK_HEARD_NOTHING
+from speak.tools import (
+    LISTEN_OFF,
+    NO_ASR,
+    NO_SERVER,
+    SERVER_STARTING,
+    SERVER_UNREACHABLE,
+    TALK_HEARD_NOTHING,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +38,16 @@ async def capture(
     lock: MicLock,
 ) -> str:
     """Record one utterance and return its transcript, or "" for silence."""
+    # Liveness before capability, the way `speak.server.listen` does it. `has_asr`
+    # answers False for any HTTP failure, so a server that is absent, or one this
+    # process started eight seconds ago and is still loading, would be reported as a
+    # server running without a transcription model — and both remedies that message
+    # names, reinstalling the model and restarting another session, are wrong.
+    state = await transcriber.liveness()
+    if state is Liveness.ABSENT:
+        raise TranscriptionFailed(SERVER_UNREACHABLE)
+    if state is Liveness.STARTING:
+        raise TranscriptionFailed(SERVER_STARTING)
     if not await transcriber.has_asr():
         raise TranscriptionFailed(NO_ASR)
 

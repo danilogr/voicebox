@@ -3,8 +3,9 @@
 import asyncio
 
 from fakes import FakeMicLock, FakeRecorder, FakeSupervisor, FakeTranscriber
+from speak import server as server_module
 from speak.capture import Recording, State, TrackerSettings
-from speak.server import Ears, SessionState, shutdown, start_listening
+from speak.server import Ears, SessionState, settle, shutdown, start_listening
 
 
 class RecordingQueue:
@@ -125,6 +126,51 @@ async def test_a_speech_server_that_is_already_up_is_not_started_again():
     assert await warmup is False
     assert supervisor.starts == 0
     assert supervisor.registrations == 1
+
+
+async def test_the_warmup_is_recorded_on_the_session():
+    """`listen` has to be able to wait for it; nothing else in the session can."""
+    session = SessionState()
+
+    warmup = await start_listening(supervisor=FakeSupervisor(), session=session, ears=ears())
+
+    assert session.warmup is warmup
+    assert await warmup is True
+
+
+async def test_settling_waits_for_a_warmup_that_is_still_running():
+    gate = asyncio.Event()
+    supervisor = FakeSupervisor(blocked_by=gate)
+    session = SessionState()
+    warmup = await start_listening(supervisor=supervisor, session=session, ears=ears())
+    assert warmup is not None
+
+    settling = asyncio.create_task(settle(warmup))
+    await asyncio.sleep(0)
+    assert not settling.done()
+
+    gate.set()
+    await asyncio.wait_for(settling, timeout=5.0)
+
+
+async def test_settling_leaves_the_warmup_running_when_it_gives_up(monkeypatch):
+    """`wait_for` would cancel the very thing that is about to make `listen` work."""
+    monkeypatch.setattr(server_module, "WARMUP_TIMEOUT", 0.01)
+    gate = asyncio.Event()
+    supervisor = FakeSupervisor(blocked_by=gate)
+    session = SessionState()
+    warmup = await start_listening(supervisor=supervisor, session=session, ears=ears())
+    assert warmup is not None
+
+    await asyncio.wait_for(settle(warmup), timeout=5.0)
+
+    assert not warmup.cancelled()
+    gate.set()
+    assert await warmup is True
+
+
+async def test_settling_without_a_warmup_returns_at_once():
+    await asyncio.wait_for(settle(None), timeout=5.0)
 
 
 async def test_the_warmup_does_not_delay_the_session_opening():

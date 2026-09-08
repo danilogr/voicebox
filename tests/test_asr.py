@@ -1,7 +1,7 @@
 import httpx2
 import pytest
 
-from speak.engines.asr import NemoTranscriber, TranscriptionFailed
+from speak.engines.asr import Liveness, NemoTranscriber, TranscriptionFailed
 
 MODELS_WITH_ASR = {
     "data": [
@@ -152,3 +152,28 @@ async def test_reachable_is_false_when_nothing_is_listening():
         raise httpx2.ConnectError("refused")
 
     assert await transcriber_over(handler).reachable() is False
+
+
+async def test_liveness_is_ready_when_the_server_answers_with_success():
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, text="ok")
+
+    assert await transcriber_over(handler).liveness() is Liveness.READY
+
+
+@pytest.mark.parametrize("status", [404, 503])
+async def test_liveness_is_starting_when_the_server_answers_without_success(status):
+    """A cold start holds the port before it serves. Callers about to use the server
+    need that apart from absence: the remedy is to wait, not to install anything."""
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(status, text="not ready")
+
+    assert await transcriber_over(handler).liveness() is Liveness.STARTING
+
+
+async def test_liveness_is_absent_when_nothing_is_listening():
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        raise httpx2.ConnectError("refused")
+
+    assert await transcriber_over(handler).liveness() is Liveness.ABSENT

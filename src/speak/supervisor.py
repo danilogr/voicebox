@@ -117,6 +117,12 @@ class NemoSupervisor:
     async def ensure_running(self) -> bool:
         """Start the server unless one is already running or being started.
 
+        Returns True only when this call spawned it. Either way the caller is left
+        with a server that has answered, because both early returns still probe: a
+        server spawned a moment ago by another session has not bound its port yet,
+        and returning before it does turns a ten-second cold start into "there is no
+        transcription model" at the call site, whose remedies are then all wrong.
+
         The recorded server is checked here rather than only at the call sites,
         because a caller cannot always tell a dead server from a busy one: the TTS
         fallback fires on any HTTP failure, a 5xx or a timeout from a loaded server
@@ -129,8 +135,11 @@ class NemoSupervisor:
         self._state_dir.mkdir(parents=True, exist_ok=True)
         if self._recorded_server_is_alive():
             logger.info("a speech server is already running; not starting another")
+            await self._probe()
             return False
         if not self._take_lock():
+            logger.info("another session is starting the speech server; waiting for it")
+            await self._probe()
             return False
         try:
             server_pid = await self._spawn(self._binary, self._server_args())
