@@ -33,7 +33,7 @@ manages the server for you.
 | `stop_speaking()` | Silences what is playing and drops everything queued behind it. |
 | `list_voices()` | The voices the current engine can use, and which one is active. |
 | `set_voice(voice)` | Changes the voice for the rest of this session. |
-| `listen(max_seconds?)` | Records you through the microphone and returns what you said. Waits for anything queued to finish playing first. |
+| `listen(max_seconds?)` | Records you through the microphone and returns what you said. Waits for anything queued to finish playing first — `/talk`, in its own process, cannot. |
 
 `listen` only exists when `SPEAK_LISTEN=1`; the other four are always there.
 
@@ -79,7 +79,11 @@ Two ways in:
 - **`/talk`** — say your prompt instead of typing it. The transcript is injected
   into your message, prefixed with a note that it came from a local speech model
   and may contain errors, so Claude reads a garbled word charitably and confirms
-  before anything destructive.
+  before anything destructive. It runs as its own process with no access to the
+  session's speech queue, so unlike `listen` it does not wait for Claude to stop
+  talking: if a sentence is still playing, the recording will contain it and the
+  command file says to act on the result as your request. Let the voice finish
+  before you start, or ask Claude to stop speaking first.
 - **`listen`** — a tool Claude calls itself. It asks you something with `speak`,
   waits for the sentence to finish playing, then opens the microphone and hears
   your answer.
@@ -126,7 +130,7 @@ All optional, set in your shell or in the plugin's `.mcp.json`:
 | `SPEAK_VOICE_POOL` | engine's own pool | comma-separated names the random pick draws from |
 | `SPEAK_RATE` | system rate | words per minute; the macOS default is about 175 |
 | `SPEAK_MAX_CHARS` | `400` | truncation cap, at a word boundary |
-| `NEMO_HTTP_URL` | `http://127.0.0.1:8082` | OpenAI-compatible `/v1/audio/speech` server |
+| `NEMO_HTTP_URL` | `http://127.0.0.1:8082` | OpenAI-compatible speech server: `/v1/audio/speech`, and `/v1/audio/transcriptions` when listening |
 | `NEMO_API_KEY` | — | bearer token for that server |
 | `NEMO_TTS_MODEL` | `magpie` | model name sent in the request |
 | `SPEAK_LISTEN` | — | set `1` for the `listen` tool and `/talk` |
@@ -185,7 +189,12 @@ uv run ruff check .
 uv run mypy
 ```
 
-259 tests, no network, no audio and no microphone: the queue runs against a fake
+`/plugin install` **copies** this repo into `~/.claude/plugins/cache/` rather than
+linking it, so editing the checkout changes nothing Claude Code loads. Run
+`scripts/install-local.sh` to sync the working tree into that copy — it refuses to
+write anywhere outside the plugin cache — then restart Claude Code.
+
+303 tests, no network, no audio and no microphone: the queue runs against a fake
 spawner, the NeMo engine and the transcriber against a mock HTTP transport, the
 supervisor and the microphone lock against injected spawn, liveness and kill callables
 over a temporary state directory, and the end-to-end tests drive the real server
@@ -203,6 +212,7 @@ a speech server, downloads a model, or opens an input device.
 scripts/speak-mcp                finds uv and launches the server
 scripts/speak-talk               finds uv and runs one /talk capture
 scripts/install-nemo.sh          idempotent bootstrap, run by /speak:setup
+scripts/install-local.sh         sync this checkout into the plugin cache Claude Code loads
 commands/setup.md                the /speak:setup command
 commands/talk.md                 the /talk command, and how to read a transcript
 harness/architecture.md          system shape and the decisions behind it
@@ -236,7 +246,10 @@ cannot pin the memory forever.
 
 The microphone is arbitrated the same way, under `mic/` in the same directory: the
 directory is the lock and the file inside it names the holder, so a lock left by a
-session that died is reclaimed by the next one to want it.
+session that died is reclaimed by the next one to want it. The reclaim goes by pid,
+so on the rare occasion the operating system has reused a dead holder's number you
+are told "another session (pid N) is listening" about a process that has nothing to
+do with this plugin. Delete `mic/` under `SPEAK_STATE_DIR` and try again.
 
 One consequence of sharing: the transcription model is loaded only by the session that
 happens to win the start election, and only if that session had `SPEAK_LISTEN` set. A

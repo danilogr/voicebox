@@ -212,6 +212,12 @@ bytes for the length of one transcription and is never written to disk.
   Rejected: a combined `ask(question)` tool, which duplicates `speak` to buy only the
   ordering the drain already gives.
 
+  `/talk` has none of this and cannot: it is a separate process with no handle on
+  the session's queue, and a cross-process "is anything playing" signal costs more
+  than the problem is worth. So a `/talk` started mid-sentence records the agent's
+  voice, and `commands/talk.md` says to act on the result as the user's request.
+  Documented in the README as a thing to wait out rather than engineered around.
+
 - 2026-09-07 — **Recording stops on silence, not on a keypress.** Neither entry point
   has a terminal: the MCP server owns stdin for the protocol, and a slash command's
   bash output is captured. There is no key to press, so silence is the only available
@@ -262,19 +268,24 @@ bytes for the length of one transcription and is never written to disk.
   with the transcription model beside it. Sessions that do not enable listening keep
   today's lazy registration.
 
-- 2026-09-07 — **A running speech server is never replaced, and that is guarded
-  twice.** A second server would overwrite `server.json` with a pid that cannot bind
-  the port and orphan the first — the last session out would then stop the wrong
-  process and leave a gigabyte resident. The session warmup and `/talk` therefore call
-  `reachable()` before `ensure_running()`. That check is liveness, not readiness: any
-  HTTP answer means the port is taken, including the 503 of a server still warming up
-  and the case of a server with no ASR model, neither of which may be replaced.
+- 2026-09-07 — **A running speech server is never replaced, and the listening paths
+  guard it twice.** A second server would overwrite `server.json` with a pid that
+  cannot bind the port and orphan the first — the last session out would then stop
+  the wrong process and leave a gigabyte resident.
 
-  `ensure_running` also refuses on its own when `server.json` names a live pid, which
-  covers the caller that cannot make the check: the TTS fallback starts the server from
-  `except (HTTPError, OSError)`, so a 5xx or a synthesis timeout from a loaded server
-  reaches it as "the server is gone". Guarding at the supervisor protects every call
-  site at once, including future ones.
+  The two listening paths, the session warmup and `/talk`, call `reachable()` before
+  `ensure_running()`. That check is liveness, not readiness: any HTTP answer means
+  the port is taken, including the 503 of a server still warming up and the case of a
+  server with no ASR model, neither of which may be replaced.
+
+  Every path, those two included, is then guarded again inside `ensure_running`,
+  which refuses when `server.json` names a live pid. That is the only guard on the
+  TTS fallback (`__main__.start_speech_server`), which cannot make the first check:
+  it starts the server from `except (HTTPError, OSError)`, so a 5xx or a synthesis
+  timeout from a loaded server reaches it as "the server is gone". The pid check is
+  the weaker of the two — it trusts `server.json`, so a record whose pid the OS has
+  since reused reads as a live server — but guarding at the supervisor covers every
+  call site at once, including future ones.
 
 - 2026-09-07 — **A cold start is reported as a cold start, not as a missing model.**
   `has_asr` answers False for any HTTP failure, so a server that is absent or still
