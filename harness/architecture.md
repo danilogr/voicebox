@@ -189,6 +189,14 @@ bytes for the length of one transcription and is never written to disk.
   log handler is installed in one place. A stray `print` in library code desynchronizes
   the session, so library modules use `logging.getLogger(__name__)` only.
 
+  `/talk` is the exception that proves it: its stdout is a prompt, not a protocol,
+  and a failure there is printed to stdout as well as stderr. `commands/talk.md`
+  branches on a line beginning `speak:`, and only stdout is certainly injected —
+  whether a slash command's `!` capture carries stderr from a non-zero exit is not
+  this plugin's to guarantee, and if it does not, stderr alone leaves the model an
+  empty transcript under an instruction to act on it as the user's request. The
+  prefix is what keeps the stdout copy from being read as speech.
+
 - 2026-09-07 — **`.mcp.json` launches `/bin/sh scripts/speak-mcp` rather than `uv`.**
   `/bin/sh` is an absolute path present on every target system, so the launch has no
   PATH dependency; the shim then finds uv via `$SPEAK_UV`, the PATH, and the locations

@@ -218,7 +218,7 @@ def test_voice_input_off_is_refused_before_anything_is_recorded(monkeypatch, cap
 
     assert exit_info.value.code == 1
     printed = capsys.readouterr()
-    assert printed.out == ""
+    assert printed.out == f"speak: {LISTEN_OFF}\n"
     assert printed.err == f"speak: {LISTEN_OFF}\n"
 
 
@@ -253,7 +253,11 @@ def test_silence_prints_the_sentinel_the_command_branches_on(monkeypatch, capsys
     assert capsys.readouterr().out == f"{TALK_HEARD_NOTHING}\n"
 
 
-def test_a_failure_is_reported_on_stderr_with_a_non_zero_exit(monkeypatch, capsys):
+def test_a_failure_reaches_the_prompt_as_well_as_the_log(monkeypatch, capsys):
+    """The command file branches on a line beginning `speak:`, so the line has to be
+    in the message. Only stdout is certainly injected; stderr from a non-zero exit is
+    not this plugin's to guarantee, and its absence would leave an empty transcript
+    under an instruction to act on it as the user's request."""
     _speaking(monkeypatch, error=TranscriptionFailed("could not transcribe: no server"))
 
     with pytest.raises(SystemExit) as exit_info:
@@ -261,8 +265,17 @@ def test_a_failure_is_reported_on_stderr_with_a_non_zero_exit(monkeypatch, capsy
 
     assert exit_info.value.code == 1
     printed = capsys.readouterr()
-    assert printed.out == ""
+    assert printed.out == "speak: could not transcribe: no server\n"
     assert printed.err == "speak: could not transcribe: no server\n"
+
+
+def test_an_error_on_stdout_cannot_be_mistaken_for_the_user_talking(monkeypatch, capsys):
+    _speaking(monkeypatch, error=TranscriptionFailed("no server"))
+
+    with pytest.raises(SystemExit):
+        main()
+
+    assert capsys.readouterr().out.startswith("speak: ")
 
 
 def test_an_os_error_does_not_reach_the_prompt_as_a_traceback(monkeypatch, capsys):
@@ -274,9 +287,9 @@ def test_an_os_error_does_not_reach_the_prompt_as_a_traceback(monkeypatch, capsy
 
     assert exit_info.value.code == 1
     printed = capsys.readouterr()
-    assert printed.out == ""
+    assert printed.out.count("\n") == 1
     assert printed.err.count("\n") == 1
-    assert "Traceback" not in printed.err
+    assert "Traceback" not in printed.out + printed.err
 
 
 def test_the_command_file_branches_on_the_sentinel_talk_prints():

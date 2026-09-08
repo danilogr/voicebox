@@ -1,16 +1,16 @@
 """The /talk entry point: record the user, transcribe, print the transcript.
 
 stdout is this program's product - a slash command injects it into the prompt -
-so unlike the library modules, printing here is the point. It is also why nothing
-but the transcript may reach stdout: whatever lands there is read as the user's
-own words, so a failure leaves as one actionable line on stderr and a non-zero
-exit rather than a traceback.
+so unlike the library modules, printing here is the point. Whatever lands there is
+read as the user's own words, so a failure leaves as one actionable line marked as
+one, on both streams, with a non-zero exit and never a traceback.
 """
 
 import asyncio
 import logging
 import os
 import sys
+from typing import NoReturn
 
 from speak.capture import MicrophoneRecorder, Recorder, RecorderUnavailable
 from speak.config import Settings
@@ -132,18 +132,32 @@ async def _run(settings: Settings) -> str:
     )
 
 
+def _fail(message: str) -> NoReturn:
+    """Report one line, on both streams, and stop.
+
+    `commands/talk.md` tells Claude that a line beginning `speak:` is an error
+    rather than the user's words, and it has to arrive for that to help. Whether a
+    slash command's `!` injection carries stderr from a command that exited non-zero
+    is not something this plugin controls, and if it does not, stderr alone leaves
+    the model an empty transcript under an instruction to act on it as the user's
+    request. The prefix is what keeps the stdout copy from being read as speech.
+    """
+    line = f"speak: {message}"
+    print(line, file=sys.stderr)
+    print(line)
+    raise SystemExit(1)
+
+
 def main() -> None:
     configure_logging()
     settings = Settings.from_env(os.environ)
     if not settings.listen:
-        print(f"speak: {LISTEN_OFF}", file=sys.stderr)
-        raise SystemExit(1)
+        _fail(LISTEN_OFF)
     try:
         text = asyncio.run(_run(settings))
     except (MicrophoneBusy, RecorderUnavailable, TranscriptionFailed, OSError) as error:
         # OSError is in the list because the state directory and the microphone are
         # both filesystem-backed: an unwritable one would otherwise print a
         # traceback into the prompt as if the user had typed it.
-        print(f"speak: {error}", file=sys.stderr)
-        raise SystemExit(1) from error
+        _fail(str(error))
     print(text or TALK_HEARD_NOTHING)
