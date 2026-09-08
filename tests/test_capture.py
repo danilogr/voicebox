@@ -14,7 +14,6 @@ from speak.capture import (
     FINAL,
     MicrophoneRecorder,
     RecorderUnavailable,
-    Recording,
     SilenceTracker,
     State,
     TrackerSettings,
@@ -37,6 +36,10 @@ LIMITS = TrackerSettings(
 # ever reachable from SPEAKING. These limits wait long enough for a speaker that
 # the cap arrives first, which is the only way to see it bound a silent phase.
 PATIENT = replace(LIMITS, start_timeout_ms=9000.0)
+
+# What `listen(max_seconds=8)` builds against the default 10 s start timeout: the
+# cap is the shorter of the two, so an empty room runs into the cap, not the timeout.
+CAP_BEFORE_TIMEOUT = replace(LIMITS, start_timeout_ms=10_000.0, max_ms=8000.0)
 
 
 def run(energies: list[float], limits: TrackerSettings = LIMITS) -> tuple[State, int]:
@@ -63,9 +66,24 @@ def test_a_quiet_room_calibrates_to_the_floor():
 def test_a_noisy_room_calibrates_above_the_floor():
     tracker = SilenceTracker(LIMITS)
     for _ in range(3):
-        tracker.feed(0.02)
-    assert tracker.threshold == 0.06
+        tracker.feed(0.01)
+    assert tracker.threshold == pytest.approx(0.03)
     assert tracker.state is State.WAITING
+
+
+def test_talking_through_calibration_does_not_poison_the_gate():
+    """Nothing cues the user to wait, so calibrating against their voice is the
+    first-run case. An unclamped gate lands near three times speech level and the
+    recording ends SILENT - the symptom the docs teach means a denied microphone."""
+    state, _blocks = run([0.2] * 10 + [0.0] * 10)
+    assert state is State.DONE
+
+
+def test_the_gate_is_clamped_from_above():
+    tracker = SilenceTracker(LIMITS)
+    for _ in range(3):
+        tracker.feed(0.2)
+    assert tracker.threshold == LIMITS.ceiling
 
 
 def test_silence_throughout_gives_up_once_the_start_timeout_passes():
@@ -127,8 +145,9 @@ def test_to_wav_produces_a_readable_mono_16khz_file():
 
 def test_drive_returns_the_audio_and_why_it_stopped():
     blocks = iter([block(0)] * 3 + [block(20000)] * 5 + [block(0)] * 5)
-    pcm, reason = drive(lambda: next(blocks), LIMITS)
+    pcm, reason, heard_speech = drive(lambda: next(blocks), LIMITS)
     assert reason is State.DONE
+    assert heard_speech is True
     assert len(pcm) == 13 * 960
 
 
@@ -142,7 +161,7 @@ def test_drive_stops_when_it_is_told_to_and_keeps_what_it_heard():
         cancel.set()
         return heard
 
-    pcm, reason = drive(read, LIMITS, cancel)
+    pcm, reason, _heard_speech = drive(read, LIMITS, cancel)
     assert reason is State.CANCELLED
     assert len(pcm) == 960
 
@@ -154,20 +173,32 @@ def test_drive_that_is_cancelled_before_it_starts_reads_nothing():
     def read() -> bytes:
         raise AssertionError("the device must not be read after cancellation")
 
-    assert drive(read, LIMITS, cancel) == (b"", State.CANCELLED)
+    assert drive(read, LIMITS, cancel) == (b"", State.CANCELLED, False)
 
 
 def test_drive_reports_a_recording_that_was_silence_throughout():
     blocks = iter([block(0)] * 100)
-    _pcm, reason = drive(lambda: next(blocks), LIMITS)
+    _pcm, reason, heard_speech = drive(lambda: next(blocks), LIMITS)
     assert reason is State.SILENT
+    assert heard_speech is False
 
 
-def test_a_silent_recording_has_no_speech():
-    assert Recording(wav=b"", reason=State.SILENT).has_speech is False
-    assert Recording(wav=b"", reason=State.CANCELLED).has_speech is False
-    assert Recording(wav=b"", reason=State.DONE).has_speech is True
-    assert Recording(wav=b"", reason=State.CAPPED).has_speech is True
+def test_the_cap_does_not_turn_a_silent_recording_into_speech():
+    """The two halves the suite used to pin apart: `feed` checks the cap before the
+    start timeout, so an empty room ends CAPPED whenever the cap is the shorter of
+    the two - and CAPPED used to mean speech. That combination sends room tone to
+    the transcriber and returns its stock phrase as the user's own words."""
+    silent_room = iter([block(0)] * 200)
+    _pcm, reason, heard_speech = drive(lambda: next(silent_room), CAP_BEFORE_TIMEOUT)
+    assert reason is State.CAPPED
+    assert heard_speech is False
+
+
+def test_a_recording_capped_mid_sentence_still_counts_as_speech():
+    blocks = iter([block(0)] * 3 + [block(20000)] * 200)
+    _pcm, reason, heard_speech = drive(lambda: next(blocks), LIMITS)
+    assert reason is State.CAPPED
+    assert heard_speech is True
 
 
 class FakePortAudioError(Exception):
@@ -216,6 +247,16 @@ async def test_a_recorded_stream_is_wrapped_as_a_wav_and_closed(monkeypatch):
     with wave.open(io.BytesIO(recording.wav), "rb") as handle:
         assert handle.getframerate() == 16_000
         assert handle.getnframes() == 20 * 480
+
+
+async def test_a_capped_recording_of_an_empty_room_reports_no_speech(monkeypatch):
+    """The join: a silent recording must never reach the transcriber, whichever
+    limit ended it. `listen(max_seconds=8)` with the default 10 s start timeout is
+    the ordinary way to land here."""
+    fake_binding(monkeypatch)
+    recording = await MicrophoneRecorder().record(CAP_BEFORE_TIMEOUT)
+    assert recording.reason is State.CAPPED
+    assert recording.has_speech is False
 
 
 async def test_a_stream_that_cannot_be_opened_is_reported(monkeypatch):

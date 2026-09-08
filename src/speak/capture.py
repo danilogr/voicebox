@@ -48,6 +48,7 @@ class TrackerSettings:
     max_ms: float = 240_000.0
     noise_multiple: float = 3.0
     floor: float = 0.01
+    ceiling: float = 0.05
 
 
 class SilenceTracker:
@@ -55,7 +56,7 @@ class SilenceTracker:
 
     A fixed threshold fails on a quiet microphone and in a noisy room alike, so
     the gate is calibrated from the ambient level at the start of the recording
-    and clamped to a floor.
+    and clamped between a floor and a ceiling.
     """
 
     def __init__(self, settings: TrackerSettings) -> None:
@@ -65,6 +66,7 @@ class SilenceTracker:
         self._threshold = settings.floor
         self._silence_ms = 0.0
         self._state = State.CALIBRATING
+        self._heard_speech = False
 
     @property
     def state(self) -> State:
@@ -73,6 +75,16 @@ class SilenceTracker:
     @property
     def threshold(self) -> float:
         return self._threshold
+
+    @property
+    def heard_speech(self) -> bool:
+        """True once the gate has opened, whatever the recording ends as.
+
+        The terminal state cannot answer this. `feed` checks the cap before the
+        start timeout, so whenever the cap is the shorter of the two a recording
+        of an empty room ends CAPPED rather than SILENT.
+        """
+        return self._heard_speech
 
     def feed(self, energy: float) -> State:
         """Take one block's energy and report whether recording continues."""
@@ -94,7 +106,14 @@ class SilenceTracker:
         self._ambient.append(energy)
         if self._elapsed_ms >= self._settings.calibrate_ms:
             ambient = sum(self._ambient) / len(self._ambient)
-            self._threshold = max(self._settings.floor, ambient * self._settings.noise_multiple)
+            gate = ambient * self._settings.noise_multiple
+            # Clamped from above as well as below. Talking immediately is what a
+            # user does when nothing cues them to wait, and then calibration
+            # averages their own voice: an unclamped gate lands near three times
+            # speech level, which no microphone reaches, so `_wait` never fires and
+            # the recording ends SILENT at the start timeout. A gate that is too low
+            # costs a longer recording; one that is too high loses the utterance.
+            self._threshold = min(max(gate, self._settings.floor), self._settings.ceiling)
             self._state = State.WAITING
             logger.debug("microphone gate set to %.4f", self._threshold)
         return self._state
@@ -102,6 +121,7 @@ class SilenceTracker:
     def _wait(self, energy: float) -> State:
         if energy >= self._threshold:
             self._state = State.SPEAKING
+            self._heard_speech = True
             self._silence_ms = 0.0
         elif self._elapsed_ms >= self._settings.start_timeout_ms:
             self._state = State.SILENT
@@ -128,14 +148,19 @@ class RecorderUnavailable(RuntimeError):  # noqa: N818 - reads as a state, not a
 
 @dataclass(frozen=True, slots=True)
 class Recording:
-    """One captured utterance and the reason capture stopped."""
+    """One captured utterance, why capture stopped, and whether anyone spoke.
+
+    `has_speech` is carried rather than inferred from `reason`, because CAPPED
+    means only that the recording ran its length: an empty room reaches it
+    whenever the cap is shorter than the start timeout. Inferring speech from it
+    would send room tone to the transcriber, and a transcription model given
+    silence reliably emits a stock phrase, which the caller would then treat as
+    the user's own words.
+    """
 
     wav: bytes
     reason: State
-
-    @property
-    def has_speech(self) -> bool:
-        return self.reason not in (State.SILENT, State.CANCELLED)
+    has_speech: bool
 
 
 class Recorder(Protocol):
@@ -166,9 +191,10 @@ def drive(
     read: Callable[[], bytes],
     settings: TrackerSettings,
     cancel: threading.Event | None = None,
-) -> tuple[bytes, State]:
+) -> tuple[bytes, State, bool]:
     """Pull blocks from `read` until the tracker says to stop, or `cancel` is set.
 
+    Returns the audio, why recording stopped, and whether the gate ever opened.
     Everything but `read` is deterministic, which is what makes capture testable
     without a microphone. `cancel` is how a caller that has stopped waiting tells
     this loop to let the device go; it is checked once per block, so the loop ends
@@ -178,11 +204,11 @@ def drive(
     blocks: list[bytes] = []
     while True:
         if cancel is not None and cancel.is_set():
-            return b"".join(blocks), State.CANCELLED
+            return b"".join(blocks), State.CANCELLED, tracker.heard_speech
         block = read()
         blocks.append(block)
         if tracker.feed(rms(block)) in FINAL:
-            return b"".join(blocks), tracker.state
+            return b"".join(blocks), tracker.state, tracker.heard_speech
 
 
 class MicrophoneRecorder:
@@ -232,7 +258,7 @@ class MicrophoneRecorder:
             except sounddevice.PortAudioError as error:
                 raise RecorderUnavailable(_microphone_hint(error)) from error
             try:
-                pcm, reason = drive(
+                pcm, reason, heard_speech = drive(
                     lambda: bytes(stream.read(self._block_frames)[0]), settings, cancel
                 )
             except sounddevice.PortAudioError as error:
@@ -240,7 +266,7 @@ class MicrophoneRecorder:
                     f"the microphone failed during recording: {error}. "
                     "Check that the input device is still connected."
                 ) from error
-        return Recording(wav=to_wav(pcm, self._sample_rate), reason=reason)
+        return Recording(wav=to_wav(pcm, self._sample_rate), reason=reason, has_speech=heard_speech)
 
     def _open(self, sounddevice: ModuleType) -> Any:
         try:

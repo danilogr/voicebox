@@ -25,9 +25,11 @@ transcription model is loaded alongside it.
 5. On macOS the first recording asks for microphone access for the app running
    Claude Code — the terminal, not Claude Code itself. Warn that a denied
    microphone usually opens and returns silence rather than failing, so the
-   symptom is `/talk` and `listen` answering "heard nothing" every time rather
-   than any error. The switch is in System Settings > Privacy & Security >
-   Microphone.
+   symptom is `/talk` and `listen` answering "heard nothing" rather than any
+   error. The switch is in System Settings > Privacy & Security > Microphone.
+   Say that "heard nothing" only means the gate never opened, so a muted
+   microphone, the wrong input device, or simply not talking before the recording
+   ran out give the same answer: check the permission first, then the device.
 6. Mention that the first sentence after a cold start is spoken by the macOS
    `say` voice while the server warms up (about 10 seconds), and every sentence
    after that uses the neural voice.

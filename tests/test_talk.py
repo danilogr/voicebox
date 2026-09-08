@@ -11,8 +11,10 @@ from speak.miclock import MicrophoneBusy
 from speak.talk import capture, dictate, main
 from speak.tools import LISTEN_OFF, TALK_HEARD_NOTHING
 
-SPOKEN = Recording(wav=b"RIFF", reason=State.DONE)
-NOTHING = Recording(wav=b"RIFF", reason=State.SILENT)
+SPOKEN = Recording(wav=b"RIFF", reason=State.DONE, has_speech=True)
+# What a silent room produces when the cap is shorter than the start timeout,
+# which is what `listen(max_seconds=8)` builds against the default 10 s timeout.
+NOTHING = Recording(wav=b"RIFF", reason=State.CAPPED, has_speech=False)
 
 
 async def test_a_spoken_prompt_comes_back_as_text():

@@ -286,4 +286,28 @@ bytes for the length of one transcription and is never written to disk.
   macOS a denied permission commonly opens the stream and delivers zeroed samples
   rather than raising, so no error is available to report. Both entry points therefore
   answer "heard nothing", and the documentation names that as the symptom to look for
-  instead of promising a message the user may never see.
+  instead of promising a message the user may never see. It is named as the first
+  thing to check rather than the only one: "heard nothing" says the gate never
+  opened, which a muted device, the wrong input, or a cap shorter than the user's
+  pause produce just as well.
+
+- 2026-09-07 — **Whether anyone spoke is recorded by the tracker, not inferred from
+  the terminal state.** `SilenceTracker.feed` checks the cap before the start
+  timeout, so a recording of an empty room ends CAPPED rather than SILENT whenever
+  the cap is the shorter limit — which `listen(max_seconds=8)` produces against the
+  default 10 s timeout, and `max_seconds` is a parameter the model chooses. Treating
+  CAPPED as speech sent room tone to the transcriber, and a transcription model given
+  silence reliably emits a stock phrase: a fabricated answer for `listen`, and an
+  injected prompt for `/talk`, whose command file says to act on it as the user's
+  request. `Recording.has_speech` is therefore the fact that the gate opened, carried
+  from the tracker. Rejected: clamping the start timeout to the cap, which narrows the
+  window but still lands on CAPPED when the two are equal.
+
+- 2026-09-07 — **The microphone gate is clamped from above as well as below.**
+  Calibration averages the first 300 ms, and nothing cues the user to wait, so
+  talking straight away is the ordinary first run rather than a corner case. With no
+  upper clamp the gate landed near three times speech level, above anything the
+  microphone produces: the recording ended SILENT at the start timeout and answered
+  "heard nothing", which the documentation used to attribute to a denied microphone
+  alone. A gate that is too low costs a longer recording; one that is too high loses
+  the utterance and misdirects the user.

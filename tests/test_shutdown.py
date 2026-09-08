@@ -76,7 +76,7 @@ async def test_shutdown_waits_for_the_worker_to_finish():
 def ears(*, reachable: bool = False) -> Ears:
     """Ears for a session that can listen; `reachable` says whether a server is up."""
     return Ears(
-        recorder=FakeRecorder(Recording(wav=b"", reason=State.DONE)),
+        recorder=FakeRecorder(Recording(wav=b"", reason=State.DONE, has_speech=True)),
         transcriber=FakeTranscriber(reachable=reachable),
         mic_lock=FakeMicLock(),
         limits=TrackerSettings(),

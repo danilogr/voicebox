@@ -12,8 +12,10 @@ from speak.config import Settings
 from speak.engines.asr import TranscriptionFailed
 from speak.server import Ears, create_server
 
-SPOKEN = Recording(wav=b"RIFF", reason=State.DONE)
-NOTHING = Recording(wav=b"RIFF", reason=State.SILENT)
+SPOKEN = Recording(wav=b"RIFF", reason=State.DONE, has_speech=True)
+# Capped rather than silent: a recording of an empty room ends CAPPED whenever
+# the cap is the shorter limit, and it still must not reach the transcriber.
+NOTHING = Recording(wav=b"RIFF", reason=State.CAPPED, has_speech=False)
 
 
 class Rig(NamedTuple):

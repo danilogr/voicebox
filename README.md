@@ -86,6 +86,8 @@ Two ways in:
 
 Recording stops when you stop talking: the gate calibrates to the room's ambient
 noise over the first 300 ms, then ends the utterance after 3 seconds of silence.
+The gate is clamped at both ends, so starting to talk during that first 300 ms
+cannot set it above what a voice reaches and lose the sentence.
 Tune it with `SPEAK_LISTEN_SILENCE_MS`, `SPEAK_LISTEN_MAX_SECONDS` (240 by default,
 a hard cap), and `SPEAK_LISTEN_TIMEOUT` (10 seconds, how long it waits for you to
 start).
@@ -104,9 +106,14 @@ answers, against 780 MB for a voice-only server.
 
 The first recording asks macOS for microphone access for the app running Claude
 Code — the terminal, not Claude Code itself. Expect no error if you say no: a
-denied microphone usually opens and returns silence rather than failing, so the
-symptom is "heard nothing" every time. The switch is in System Settings > Privacy
-& Security > Microphone.
+denied microphone usually opens and returns silence rather than failing, so it
+answers "heard nothing".
+
+"heard nothing" means only that the gate never opened, so a denied microphone is
+the first thing to check, not the only one. A muted microphone, the wrong input
+device, or a `max_seconds` short enough to run out before you started talking all
+end the same way. Check the permission in System Settings > Privacy & Security >
+Microphone, then the input device and its level.
 
 ## Configuration
 
