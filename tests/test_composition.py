@@ -2,6 +2,7 @@
 
 from speak.__main__ import build_ears, build_supervisor
 from speak.config import Settings
+from speak.runtime import transcription_timeout
 
 
 def test_a_plain_say_session_needs_no_speech_server():
@@ -40,3 +41,11 @@ def test_the_ears_carry_the_configured_capture_limits():
     assert ears is not None
     assert ears.limits.max_ms == 5_000
     assert ears.limits.start_timeout_ms == 2_000
+
+
+def test_the_transcriber_is_given_a_timeout_the_recording_cap_cannot_outlast():
+    """Nothing else sets it, and the default cap is four minutes of audio."""
+    settings = Settings(listen=True, listen_max_seconds=240.0)
+    ears = build_ears(settings)
+    assert ears is not None
+    assert ears.transcriber._timeout == transcription_timeout(settings)

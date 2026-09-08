@@ -16,7 +16,12 @@ from speak.capture import MicrophoneRecorder, Recorder, RecorderUnavailable
 from speak.config import Settings
 from speak.engines.asr import Liveness, NemoTranscriber, Transcriber, TranscriptionFailed
 from speak.miclock import MicLock, MicrophoneBusy
-from speak.runtime import capture_limits, configure_logging, health_probe
+from speak.runtime import (
+    capture_limits,
+    configure_logging,
+    health_probe,
+    transcription_timeout,
+)
 from speak.supervisor import NemoSupervisor, process_is_alive
 from speak.tools import (
     LISTEN_OFF,
@@ -121,6 +126,7 @@ async def _run(settings: Settings) -> str:
             base_url=settings.nemo_url,
             api_key=settings.nemo_api_key,
             model=settings.nemo_asr_model,
+            timeout=transcription_timeout(settings),
         ),
         lock=MicLock(state_dir=settings.state_dir, is_alive=process_is_alive),
     )

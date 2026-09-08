@@ -12,7 +12,12 @@ from speak.engines import build_engine
 from speak.engines.asr import NemoTranscriber
 from speak.miclock import MicLock
 from speak.queue import SpeechQueue
-from speak.runtime import capture_limits, configure_logging, health_probe
+from speak.runtime import (
+    capture_limits,
+    configure_logging,
+    health_probe,
+    transcription_timeout,
+)
 from speak.server import Ears, create_server
 from speak.supervisor import NemoSupervisor, process_is_alive
 
@@ -31,6 +36,7 @@ def build_ears(settings: Settings) -> Ears | None:
             base_url=settings.nemo_url,
             api_key=settings.nemo_api_key,
             model=settings.nemo_asr_model,
+            timeout=transcription_timeout(settings),
         ),
         mic_lock=MicLock(state_dir=settings.state_dir, is_alive=process_is_alive),
         limits=capture_limits(settings),

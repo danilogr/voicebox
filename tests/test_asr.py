@@ -1,7 +1,14 @@
 import httpx2
 import pytest
 
-from speak.engines.asr import Liveness, NemoTranscriber, TranscriptionFailed
+from speak.config import Settings
+from speak.engines.asr import (
+    DEFAULT_TIMEOUT,
+    PROBE_TIMEOUT,
+    Liveness,
+    NemoTranscriber,
+    TranscriptionFailed,
+)
 
 MODELS_WITH_ASR = {
     "data": [
@@ -152,6 +159,43 @@ async def test_reachable_is_false_when_nothing_is_listening():
         raise httpx2.ConnectError("refused")
 
     assert await transcriber_over(handler).reachable() is False
+
+
+def read_timeout(request: httpx2.Request) -> float:
+    """The deadline httpx applied to this request, as the transport sees it."""
+    return request.extensions["timeout"]["read"]
+
+
+async def test_the_transcription_request_carries_the_timeout_it_was_given():
+    """MockTransport answers instantly, so only the deadline itself can be checked."""
+    seen: dict[str, float] = {}
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen["timeout"] = read_timeout(request)
+        return httpx2.Response(200, json={"text": "ok"})
+
+    await transcriber_over(handler, timeout=270.0).transcribe(WAV)
+    assert seen["timeout"] == 270.0
+
+
+async def test_the_probes_do_not_wait_as_long_as_a_transcription():
+    """A wedged server would otherwise hold `listen` for the length of a recording."""
+    seen: dict[str, float] = {}
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen[request.url.path] = read_timeout(request)
+        return httpx2.Response(200, json={"data": []})
+
+    transcriber = transcriber_over(handler, timeout=270.0)
+    await transcriber.liveness()
+    await transcriber.has_asr()
+    assert seen == {"/health": PROBE_TIMEOUT, "/v1/models": PROBE_TIMEOUT}
+
+
+def test_the_default_timeout_outlasts_the_longest_recording_allowed():
+    """Both entry points derive their own, but a caller that does not must not get a
+    timeout the configured cap can walk straight through."""
+    assert Settings().listen_max_seconds < DEFAULT_TIMEOUT
 
 
 async def test_liveness_is_ready_when_the_server_answers_with_success():

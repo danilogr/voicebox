@@ -8,7 +8,16 @@ import httpx2
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 30.0
+# A backstop, not the operating value: both entry points derive their own from the
+# recording cap via `runtime.transcription_timeout`. It has to stay above the default
+# SPEAK_LISTEN_MAX_SECONDS, because a transcription that times out has already thrown
+# the audio away and reports the server's fault instead of its own.
+DEFAULT_TIMEOUT = 300.0
+
+# Liveness against localhost: a server that is up answers in milliseconds, and one
+# that is wedged must not hold `listen` for the length of a transcription timeout.
+PROBE_TIMEOUT = 5.0
+
 ASR_CAPABILITY = "transcription"
 
 
@@ -52,11 +61,13 @@ class NemoTranscriber:
         api_key: str | None = None,
         model: str = "nemotron-3.5",
         timeout: float = DEFAULT_TIMEOUT,
+        probe_timeout: float = PROBE_TIMEOUT,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._client = client or httpx2.AsyncClient(timeout=timeout)
         self._model = model
         self._timeout = timeout
+        self._probe_timeout = probe_timeout
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
     async def transcribe(self, wav: bytes, *, language: str | None = None) -> str:
@@ -93,7 +104,7 @@ class NemoTranscriber:
         """
         try:
             response = await self._client.get(
-                f"{self._base_url}/health", headers=self._headers, timeout=self._timeout
+                f"{self._base_url}/health", headers=self._headers, timeout=self._probe_timeout
             )
         except httpx2.HTTPError:
             return Liveness.ABSENT
@@ -114,7 +125,7 @@ class NemoTranscriber:
         """True when the running server reports a transcription model."""
         try:
             response = await self._client.get(
-                f"{self._base_url}/v1/models", headers=self._headers, timeout=self._timeout
+                f"{self._base_url}/v1/models", headers=self._headers, timeout=self._probe_timeout
             )
             response.raise_for_status()
             payload = response.json()

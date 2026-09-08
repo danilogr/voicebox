@@ -13,6 +13,11 @@ from speak.supervisor import Probe
 HEALTH_TIMEOUT = 30.0
 HEALTH_INTERVAL = 0.5
 
+# Enough for the request itself on top of the audio. The CPU backend transcribes at
+# roughly twice realtime, so a second of allowance per second of recording is about
+# double what the work costs.
+TRANSCRIBE_MARGIN = 30.0
+
 
 def configure_logging() -> None:
     """Log to stderr only. stdout carries the protocol and nothing else."""
@@ -42,6 +47,17 @@ def health_probe(base_url: str, timeout: float = HEALTH_TIMEOUT) -> Probe:
         return False
 
     return probe
+
+
+def transcription_timeout(settings: Settings) -> float:
+    """How long one transcription may take, derived from the longest recording allowed.
+
+    A fixed timeout cannot serve a configurable cap: at the default 240 seconds the
+    old 30-second one could not have transcribed a one-minute answer, and a
+    transcription that times out has already discarded the audio and blames the
+    server rather than reporting that it gave up.
+    """
+    return settings.listen_max_seconds + TRANSCRIBE_MARGIN
 
 
 def capture_limits(settings: Settings) -> TrackerSettings:

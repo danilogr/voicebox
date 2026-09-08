@@ -282,6 +282,18 @@ bytes for the length of one transcription and is never written to disk.
   until now was created and never awaited. Rejected: leaving `/talk` to infer
   readiness from `has_asr`, which is what produced the wrong advice.
 
+- 2026-09-07 — **Transcription and liveness get different timeouts, and the
+  transcription one is derived.** They are the same HTTP client but not the same
+  wait: `/health` and `/v1/models` are localhost questions a live server answers in
+  milliseconds, while a transcription is minutes of audio through a model. One
+  30-second timeout served both, so a wedged server held `listen` for half a minute
+  and a recording longer than about a minute could not be transcribed at all — the
+  `ReadTimeout` surfaced as "could not transcribe", blaming the server, with the
+  audio already gone. The probes now use a short fixed timeout and the transcription
+  one comes from the configured recording cap, which is the only number that can
+  bound it. Rejected: raising the single constant, which re-breaks the moment
+  `SPEAK_LISTEN_MAX_SECONDS` is raised.
+
 - 2026-09-07 — **The queue re-checks the generation after spawning the player.** The
   existing check ran only before the spawn, so an utterance stopped in the window
   between `stop()` releasing the current process and the new handle being recorded was
