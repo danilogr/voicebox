@@ -12,13 +12,14 @@ import os
 import sys
 from typing import NoReturn
 
-from speak.capture import MicrophoneRecorder, Recorder, RecorderUnavailable
+from speak.capture import Recorder, RecorderUnavailable, describe
 from speak.config import Settings
 from speak.cue import Cue
 from speak.engines.asr import Liveness, NemoTranscriber, Transcriber, TranscriptionFailed
 from speak.miclock import MicLock, MicrophoneBusy
 from speak.runtime import (
     build_cue,
+    build_recorder,
     capture_limits,
     configure_logging,
     health_probe,
@@ -63,8 +64,13 @@ async def capture(
     try:
         # Cued only once the microphone is this process's to open, and cued shut when
         # recording stops rather than when the transcript comes back.
-        async with cue.around_recording():
+        async with cue.around_recording() as outcome:
             recording = await recorder.record(capture_limits(settings))
+            # The closing sound is the only report an empty capture gets before the
+            # transcript would have arrived, so the outcome has to be set inside the
+            # bracket rather than acted on after it.
+            outcome.heard = recording.has_speech
+        logger.info("capture: %s", describe(recording))
         if not recording.has_speech:
             return ""
         return await transcriber.transcribe(recording.wav, language=settings.listen_language)
@@ -130,7 +136,7 @@ async def _run(settings: Settings) -> str:
             seed=settings.seed,
             probe=health_probe(settings.nemo_url),
         ),
-        recorder=MicrophoneRecorder(),
+        recorder=build_recorder(settings),
         transcriber=NemoTranscriber(
             base_url=settings.nemo_url,
             api_key=settings.nemo_api_key,

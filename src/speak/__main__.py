@@ -6,7 +6,6 @@ import os
 
 from mcp.server.mcpserver import MCPServer
 
-from speak.capture import MicrophoneRecorder
 from speak.config import Settings
 from speak.engines import build_engine
 from speak.engines.asr import NemoTranscriber
@@ -14,6 +13,7 @@ from speak.miclock import MicLock
 from speak.queue import SpeechQueue
 from speak.runtime import (
     build_cue,
+    build_recorder,
     capture_limits,
     configure_logging,
     health_probe,
@@ -32,7 +32,7 @@ def build_ears(settings: Settings) -> Ears | None:
     if not settings.listen:
         return None
     return Ears(
-        recorder=MicrophoneRecorder(),
+        recorder=build_recorder(settings),
         transcriber=NemoTranscriber(
             base_url=settings.nemo_url,
             api_key=settings.nemo_api_key,

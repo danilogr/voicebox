@@ -156,6 +156,21 @@ def test_unset_cue_sounds_are_left_to_the_cue_module():
     settings = Settings.from_env({"SPEAK_LISTEN_CUE_START": ""})
     assert settings.listen_cue_start is None
     assert settings.listen_cue_end is None
+    assert settings.listen_cue_empty is None
+
+
+def test_the_empty_capture_sound_can_be_pointed_elsewhere():
+    settings = Settings.from_env({"SPEAK_LISTEN_CUE_EMPTY": "/sounds/nothing.wav"})
+    assert settings.listen_cue_empty == Path("/sounds/nothing.wav")
+
+
+def test_an_input_device_can_be_named():
+    settings = Settings.from_env({"SPEAK_INPUT_DEVICE": "USB Headset"})
+    assert settings.input_device == "USB Headset"
+
+
+def test_no_named_input_device_means_search_from_the_default():
+    assert Settings.from_env({}).input_device is None
 
 
 def test_asr_model_defaults_and_overrides():

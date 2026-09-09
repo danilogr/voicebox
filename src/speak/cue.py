@@ -10,6 +10,7 @@ stream opens is averaged into that gate and the recording ends in silence.
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 from speak.queue import Spawn, spawn_detached
@@ -23,6 +24,18 @@ PLAYER = "/usr/bin/afplay"
 # being looked at.
 START_SOUND = Path("/System/Library/Sounds/Tink.aiff")
 END_SOUND = Path("/System/Library/Sounds/Purr.aiff")
+# Recording stops on silence, so a capture that caught nothing ends exactly like one
+# that worked. Basso is the macOS error tone and is not mistakable for Purr, which
+# is why it replaces the closing chime rather than following it: hearing "got it"
+# and then "that failed" is worse than hearing only the second.
+EMPTY_SOUND = Path("/System/Library/Sounds/Basso.aiff")
+
+
+@dataclass(slots=True)
+class Outcome:
+    """Whether the bracketed recording caught any speech; set by the body."""
+
+    heard: bool = False
 
 
 class Cue:
@@ -39,6 +52,7 @@ class Cue:
         enabled: bool = True,
         start: Path | None = None,
         end: Path | None = None,
+        empty: Path | None = None,
         player: str = PLAYER,
         spawn: Spawn = spawn_detached,
     ) -> None:
@@ -47,22 +61,25 @@ class Cue:
         self._enabled = enabled
         self._start = start if start is not None else START_SOUND
         self._end = end if end is not None else END_SOUND
+        self._empty = empty if empty is not None else EMPTY_SOUND
         self._player = player
         self._spawn = spawn
 
     @asynccontextmanager
-    async def around_recording(self) -> AsyncIterator[None]:
-        """Chime, record, chime.
+    async def around_recording(self) -> AsyncIterator[Outcome]:
+        """Chime, record, then chime or buzz depending on what the body heard.
 
         The opening cue has finished before the body runs, which is what keeps it out
         of the noise gate. The closing one plays whatever the body did, so a recording
-        that fails still closes the bracket it opened.
+        that fails still closes the bracket it opened - and because the outcome starts
+        False, a body that raised reports the failure sound without having to say so.
         """
         await self._play(self._start)
+        outcome = Outcome()
         try:
-            yield
+            yield outcome
         finally:
-            await self._play(self._end)
+            await self._play(self._end if outcome.heard else self._empty)
 
     async def _play(self, sound: Path) -> None:
         if not self._enabled:

@@ -17,6 +17,7 @@ from speak.server import Ears, create_server
 # Named for their stems, which is what the fake player logs when a cue finishes.
 CUE_START = Path("/sounds/cue-start.aiff")
 CUE_END = Path("/sounds/cue-end.aiff")
+CUE_EMPTY = Path("/sounds/cue-empty.aiff")
 
 SPOKEN = Recording(wav=b"RIFF", reason=State.DONE, has_speech=True)
 # Capped rather than silent: a recording of an empty room ends CAPPED whenever
@@ -72,7 +73,9 @@ def build(
             transcriber=transcriber,
             mic_lock=lock,
             limits=limits if limits is not None else TrackerSettings(),
-            cue=cue if cue is not None else Cue(start=CUE_START, end=CUE_END, spawn=player.spawn),
+            cue=cue
+            if cue is not None
+            else Cue(start=CUE_START, end=CUE_END, empty=CUE_EMPTY, spawn=player.spawn),
         ),
     )
     return Rig(server, queue, recorder, transcriber, lock, player, calls)
@@ -152,11 +155,13 @@ async def test_the_closing_cue_sounds_before_the_transcript_is_asked_for():
     assert rig.calls == ["drain", "cue-start", "record", "cue-end", "transcribe"]
 
 
-async def test_the_closing_cue_sounds_even_when_the_recording_fails():
+async def test_a_recording_that_fails_closes_with_the_error_sound():
+    """The bracket still closes, and it closes with the sound that says nothing was
+    captured rather than the one that says the utterance was taken."""
     rig = build(recorder=BrokenRecorder(SPOKEN))
     with pytest.raises(ToolError, match="no microphone binding"):
         await call_listen(rig.server)
-    assert rig.calls == ["drain", "cue-start", "cue-end"]
+    assert rig.calls == ["drain", "cue-start", "cue-empty"]
 
 
 async def test_a_listen_that_is_refused_makes_no_sound():

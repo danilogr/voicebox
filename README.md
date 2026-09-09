@@ -74,6 +74,13 @@ Voice input is off until you set `SPEAK_LISTEN=1`. It needs the neural setup —
 `/speak:setup` pulls a transcription model alongside the voice — because the same
 local server does both.
 
+Set it *before* Claude Code starts. The plugin reads its environment once, when the
+session opens, so exporting it in your shell profile has no effect on a session that
+is already running — you need a new one, started from a shell that has the variable.
+The symptom is silent: `listen` simply is not among the tools, and `/talk` refuses.
+`claude mcp list` will show the plugin either way; what tells you is whether `listen`
+is there.
+
 Two ways in:
 
 - **`/talk`** — say your prompt instead of typing it. The transcript is injected
@@ -99,6 +106,11 @@ them with `SPEAK_LISTEN_CUE_START` and `SPEAK_LISTEN_CUE_END`; the defaults are 
 system sounds played with `afplay`, so anywhere else the overrides are the way in.
 A chime that cannot be played is logged and skipped — it never costs you a recording.
 
+A capture that caught nothing closes with an error tone instead of the usual chime
+(`Basso`, overridable with `SPEAK_LISTEN_CUE_EMPTY`). Recording stops on silence
+either way, so without a different sound an empty capture is indistinguishable from
+one that worked until the transcript fails to arrive.
+
 Recording stops when you stop talking: the gate calibrates to the room's ambient
 noise over the first 300 ms, then ends the utterance after 3 seconds of silence.
 The gate is clamped at both ends, so starting to talk during that first 300 ms
@@ -119,16 +131,38 @@ cold start every time. The trade is that the memory is held from session start:
 measured on an M5 with the CPU backend, 1.5 GB of resident memory once the server
 answers, against 780 MB for a voice-only server.
 
-The first recording asks macOS for microphone access for the app running Claude
-Code — the terminal, not Claude Code itself. Expect no error if you say no: a
-denied microphone usually opens and returns silence rather than failing, so it
-answers "heard nothing".
+### Which microphone
 
-"heard nothing" means only that the gate never opened, so a denied microphone is
-the first thing to check, not the only one. A muted microphone, the wrong input
-device, or a `max_seconds` short enough to run out before you started talking all
-end the same way. Check the permission in System Settings > Privacy & Security >
-Microphone, then the input device and its level.
+Your system default input is tried first, so the device you pick in System Settings
+is the one that gets used. If it delivers nothing, the other inputs are tried in
+turn and the first live one is kept for the rest of the session — until it too goes
+quiet, at which point the search starts again from the default, so a microphone you
+fix mid-session is picked straight up.
+
+"Delivers nothing" means exact digital silence, and only that. A live microphone
+always carries a noise floor, so a stream of pure zeros is a muted input rather
+than a quiet room — it is a fact, not a guess, which is why a device is never
+skipped merely for being quiet. That distinction matters more than it sounds: macOS
+publishes phantom inputs (`AirPods Pro - Find My` among them) that can be your
+default and never carry audio, and an input whose level slider sits at zero looks
+identical. Both used to cost a full start timeout and then report "heard nothing".
+
+Nothing is remembered between sessions and nothing is written to disk, so a fresh
+session always looks at your current default first. Name one device with
+`SPEAK_INPUT_DEVICE` and it is used without a search — and if it is mute you are
+told so, rather than quietly recorded from somewhere else.
+
+When every input returns silence, you get that as the error, with the devices it
+tried. Check System Settings > Sound > Input and the level slider there, and that
+the app running Claude Code — the terminal, not Claude Code itself — is allowed the
+microphone under Privacy & Security. macOS does not fail a denied microphone; it
+hands over silence, which now reads as a muted device rather than as your silence.
+
+"heard nothing" is left to mean only what it says: a live microphone that never
+heard the gate open. A `max_seconds` shorter than the time you took to start
+talking ends the same way. The log line for every capture names the device, the
+gate it calibrated, and the loudest block it saw, which is usually enough to tell
+those apart.
 
 ## Configuration
 
@@ -153,6 +187,8 @@ All optional, set in your shell or in the plugin's `.mcp.json`:
 | `SPEAK_LISTEN_CUE` | `1` | set `0` to open and close the microphone silently |
 | `SPEAK_LISTEN_CUE_START` | `/System/Library/Sounds/Tink.aiff` | chime as the microphone opens |
 | `SPEAK_LISTEN_CUE_END` | `/System/Library/Sounds/Purr.aiff` | chime as it closes |
+| `SPEAK_LISTEN_CUE_EMPTY` | `/System/Library/Sounds/Basso.aiff` | tone when nothing was captured |
+| `SPEAK_INPUT_DEVICE` | — | record from this input only, instead of searching |
 | `SPEAK_COMMAND` | — | required when `SPEAK_ENGINE=command` |
 | `SPEAK_NEMO_AUTOSTART` | `1` | set `0` to start and stop the speech server yourself |
 | `SPEAK_NEMO_BIN` | `nemo-speech` | binary the supervisor spawns |
@@ -208,7 +244,7 @@ linking it, so editing the checkout changes nothing Claude Code loads. Run
 `scripts/install-local.sh` to sync the working tree into that copy — it refuses to
 write anywhere outside the plugin cache — then restart Claude Code.
 
-327 tests, no network, no audio and no microphone: the queue and the recording cues
+352 tests, no network, no audio and no microphone: the queue and the recording cues
 run against a fake spawner, the NeMo engine and the transcriber against a mock HTTP
 transport, the supervisor and the microphone lock against injected spawn, liveness and
 kill callables over a temporary state directory, and the end-to-end tests drive the real server

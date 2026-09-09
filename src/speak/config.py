@@ -88,6 +88,9 @@ class Settings:
     # None means the sound `cue` picks for itself; only an override lands here.
     listen_cue_start: Path | None = None
     listen_cue_end: Path | None = None
+    listen_cue_empty: Path | None = None
+    # A named input is never fallen back off; unset means search from the OS default.
+    input_device: str | None = None
     nemo_binary: str = "nemo-speech"
     nemo_autostart: bool = True
     seed: int | None = None
@@ -130,6 +133,8 @@ class Settings:
             listen_cue=_flag(env, "SPEAK_LISTEN_CUE", default=True),
             listen_cue_start=_path(env, "SPEAK_LISTEN_CUE_START"),
             listen_cue_end=_path(env, "SPEAK_LISTEN_CUE_END"),
+            listen_cue_empty=_path(env, "SPEAK_LISTEN_CUE_EMPTY"),
+            input_device=_text(env, "SPEAK_INPUT_DEVICE"),
             nemo_binary=_text(env, "SPEAK_NEMO_BIN") or "nemo-speech",
             nemo_autostart=_text(env, "SPEAK_NEMO_AUTOSTART") != "0",
             seed=None if seed is None else int(seed),

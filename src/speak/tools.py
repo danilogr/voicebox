@@ -45,9 +45,15 @@ LISTEN_SECONDS = (
 )
 
 NO_ASR = """The speech server is running without a transcription model, so there is nothing
-to listen with. Either the model was never downloaded - run /speak:setup to pull it -
-or another Claude Code session started this shared server without voice input enabled,
-in which case restarting that session will let the server come back with transcription."""
+to listen with. A server's models are chosen when it starts and cannot change while it
+runs, so this one will not gain transcription on its own.
+
+Either the model was never downloaded - run /speak:setup to pull it - or this shared
+server was started by a session that had voice input switched off. It stops only when
+the last session using it exits, so restarting one session does not help while others
+are still attached: close the other Claude Code sessions using speak, or stop the
+server process recorded in server.json in the speak state directory. The next listen
+then starts one with transcription."""
 
 SERVER_STARTING = (
     "the speech server is starting up and has not loaded its models yet, so there is "

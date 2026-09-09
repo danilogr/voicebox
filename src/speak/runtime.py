@@ -6,7 +6,7 @@ import sys
 
 import httpx2
 
-from speak.capture import TrackerSettings
+from speak.capture import MicrophoneRecorder, TrackerSettings
 from speak.config import Settings
 from speak.cue import Cue
 from speak.supervisor import Probe
@@ -76,4 +76,10 @@ def build_cue(settings: Settings) -> Cue:
         enabled=settings.listen_cue,
         start=settings.listen_cue_start,
         end=settings.listen_cue_end,
+        empty=settings.listen_cue_empty,
     )
+
+
+def build_recorder(settings: Settings) -> MicrophoneRecorder:
+    """The microphone, built the same way by both entry points."""
+    return MicrophoneRecorder(device=settings.input_device)

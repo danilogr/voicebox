@@ -14,13 +14,21 @@ from speak.capture import (
     FINAL,
     MicrophoneRecorder,
     RecorderUnavailable,
+    Recording,
     SilenceTracker,
     State,
     TrackerSettings,
+    describe,
     drive,
+    order_candidates,
     rms,
     to_wav,
 )
+
+# A real microphone in a silent room still carries a noise floor; only a muted one
+# reads as exact zero. The suite used 0.0 for both, which is the confusion that let a
+# muted default device spend the whole start timeout and then report "heard nothing".
+QUIET = 0.0005
 
 LIMITS = TrackerSettings(
     block_ms=100.0,
@@ -58,7 +66,7 @@ def run(energies: list[float], limits: TrackerSettings = LIMITS) -> tuple[State,
 def test_a_quiet_room_calibrates_to_the_floor():
     tracker = SilenceTracker(LIMITS)
     for _ in range(3):
-        tracker.feed(0.0)
+        tracker.feed(QUIET)
     assert tracker.threshold == LIMITS.floor
     assert tracker.state is State.WAITING
 
@@ -87,35 +95,64 @@ def test_the_gate_is_clamped_from_above():
 
 
 def test_silence_throughout_gives_up_once_the_start_timeout_passes():
-    assert run([0.0] * 100) == (State.SILENT, 20)
+    assert run([QUIET] * 100) == (State.SILENT, 20)
 
 
 def test_speech_followed_by_silence_finishes():
-    assert run([0.0] * 3 + [0.5] * 5 + [0.0] * 5) == (State.DONE, 13)
+    assert run([QUIET] * 3 + [0.5] * 5 + [0.0] * 5) == (State.DONE, 13)
 
 
 def test_a_short_pause_does_not_end_the_utterance():
     tracker = SilenceTracker(LIMITS)
-    for energy in [0.0] * 3 + [0.5] * 3 + [0.0] * 4 + [0.5] + [0.0] * 4 + [0.5]:
+    for energy in [QUIET] * 3 + [0.5] * 3 + [0.0] * 4 + [0.5] + [0.0] * 4 + [0.5]:
         state = tracker.feed(energy)
     assert state is State.SPEAKING
 
 
 def test_speech_that_never_stops_hits_the_cap():
-    assert run([0.0] * 3 + [0.5] * 100) == (State.CAPPED, 50)
+    assert run([QUIET] * 3 + [0.5] * 100) == (State.CAPPED, 50)
 
 
 def test_the_cap_also_bounds_a_recording_that_never_starts():
-    assert run([0.0] * 100, PATIENT) == (State.CAPPED, 50)
+    assert run([QUIET] * 100, PATIENT) == (State.CAPPED, 50)
 
 
 def test_a_final_state_is_sticky():
     tracker = SilenceTracker(LIMITS)
     for _ in range(20):
-        tracker.feed(0.0)
+        tracker.feed(QUIET)
     assert tracker.state is State.SILENT
     for _ in range(5):
-        assert tracker.feed(0.0) is State.SILENT
+        assert tracker.feed(QUIET) is State.SILENT
+
+
+def test_a_muted_device_is_deaf_rather_than_silent():
+    """Exact zeros are not a quiet room. Calling them one costs the whole start
+    timeout and then blames the user for not speaking, when the input is muted."""
+    tracker = SilenceTracker(LIMITS)
+    for _ in range(3):
+        tracker.feed(0.0)
+    assert tracker.state is State.DEAF
+
+
+def test_deafness_is_decided_before_the_start_timeout_runs():
+    assert run([0.0] * 100) == (State.DEAF, 3)
+
+
+def test_one_live_block_in_calibration_is_enough_to_keep_a_device():
+    """Conservative on purpose: skipping a device that is merely nearly silent would
+    abandon a working microphone, which is worse than recording from a quiet one."""
+    tracker = SilenceTracker(LIMITS)
+    for energy in (0.0, 0.0, QUIET):
+        tracker.feed(energy)
+    assert tracker.state is State.WAITING
+
+
+def test_the_peak_is_carried_so_a_failure_can_say_how_close_it_came():
+    tracker = SilenceTracker(LIMITS)
+    for energy in (QUIET, 0.008, QUIET):
+        tracker.feed(energy)
+    assert tracker.peak == pytest.approx(0.008)
 
 
 def block(amplitude: int, samples: int = 480) -> bytes:
@@ -144,11 +181,11 @@ def test_to_wav_produces_a_readable_mono_16khz_file():
 
 
 def test_drive_returns_the_audio_and_why_it_stopped():
-    blocks = iter([block(0)] * 3 + [block(20000)] * 5 + [block(0)] * 5)
-    pcm, reason, heard_speech = drive(lambda: next(blocks), LIMITS)
-    assert reason is State.DONE
-    assert heard_speech is True
-    assert len(pcm) == 13 * 960
+    blocks = iter([block(1)] * 3 + [block(20000)] * 5 + [block(0)] * 5)
+    captured = drive(lambda: next(blocks), LIMITS)
+    assert captured.reason is State.DONE
+    assert captured.has_speech is True
+    assert len(captured.pcm) == 13 * 960
 
 
 def test_drive_stops_when_it_is_told_to_and_keeps_what_it_heard():
@@ -161,9 +198,9 @@ def test_drive_stops_when_it_is_told_to_and_keeps_what_it_heard():
         cancel.set()
         return heard
 
-    pcm, reason, _heard_speech = drive(read, LIMITS, cancel)
-    assert reason is State.CANCELLED
-    assert len(pcm) == 960
+    captured = drive(read, LIMITS, cancel)
+    assert captured.reason is State.CANCELLED
+    assert len(captured.pcm) == 960
 
 
 def test_drive_that_is_cancelled_before_it_starts_reads_nothing():
@@ -173,14 +210,22 @@ def test_drive_that_is_cancelled_before_it_starts_reads_nothing():
     def read() -> bytes:
         raise AssertionError("the device must not be read after cancellation")
 
-    assert drive(read, LIMITS, cancel) == (b"", State.CANCELLED, False)
+    captured = drive(read, LIMITS, cancel)
+    assert (captured.pcm, captured.reason, captured.has_speech) == (b"", State.CANCELLED, False)
 
 
 def test_drive_reports_a_recording_that_was_silence_throughout():
+    blocks = iter([block(1)] * 100)
+    captured = drive(lambda: next(blocks), LIMITS)
+    assert captured.reason is State.SILENT
+    assert captured.has_speech is False
+
+
+def test_drive_reports_a_muted_device_apart_from_a_silent_room():
     blocks = iter([block(0)] * 100)
-    _pcm, reason, heard_speech = drive(lambda: next(blocks), LIMITS)
-    assert reason is State.SILENT
-    assert heard_speech is False
+    captured = drive(lambda: next(blocks), LIMITS)
+    assert captured.reason is State.DEAF
+    assert captured.has_speech is False
 
 
 def test_the_cap_does_not_turn_a_silent_recording_into_speech():
@@ -188,17 +233,17 @@ def test_the_cap_does_not_turn_a_silent_recording_into_speech():
     start timeout, so an empty room ends CAPPED whenever the cap is the shorter of
     the two - and CAPPED used to mean speech. That combination sends room tone to
     the transcriber and returns its stock phrase as the user's own words."""
-    silent_room = iter([block(0)] * 200)
-    _pcm, reason, heard_speech = drive(lambda: next(silent_room), CAP_BEFORE_TIMEOUT)
-    assert reason is State.CAPPED
-    assert heard_speech is False
+    silent_room = iter([block(1)] * 200)
+    captured = drive(lambda: next(silent_room), CAP_BEFORE_TIMEOUT)
+    assert captured.reason is State.CAPPED
+    assert captured.has_speech is False
 
 
 def test_a_recording_capped_mid_sentence_still_counts_as_speech():
-    blocks = iter([block(0)] * 3 + [block(20000)] * 200)
-    _pcm, reason, heard_speech = drive(lambda: next(blocks), LIMITS)
-    assert reason is State.CAPPED
-    assert heard_speech is True
+    blocks = iter([block(1)] * 3 + [block(20000)] * 200)
+    captured = drive(lambda: next(blocks), LIMITS)
+    assert captured.reason is State.CAPPED
+    assert captured.has_speech is True
 
 
 class FakePortAudioError(Exception):
@@ -208,8 +253,11 @@ class FakePortAudioError(Exception):
 class FakeStream:
     """A RawInputStream that yields silence, without touching audio hardware."""
 
-    def __init__(self, fail_at: str | None = None) -> None:
+    def __init__(self, fail_at: str | None = None, amplitude: int = 1) -> None:
         self._fail_at = fail_at
+        # Non-zero by default: a live microphone always has a noise floor, and a
+        # stream of exact zeros now means a muted device rather than a quiet room.
+        self._amplitude = amplitude
         self.started = False
         self.closed = False
 
@@ -221,7 +269,7 @@ class FakeStream:
     def read(self, frames: int) -> tuple[bytes, bool]:
         if self._fail_at == "read":
             raise FakePortAudioError("device disconnected")
-        return block(0, frames), False
+        return block(self._amplitude, frames), False
 
     def close(self) -> None:
         self.closed = True
@@ -299,7 +347,7 @@ class SlowStream(FakeStream):
     def read(self, frames: int) -> tuple[bytes, bool]:
         self.reading.set()
         time.sleep(self._block_seconds)
-        return block(0, frames), False
+        return block(self._amplitude, frames), False
 
 
 async def closes_within(stream: FakeStream, timeout: float) -> bool:
@@ -329,3 +377,143 @@ async def test_a_cancelled_recording_lets_the_microphone_go(monkeypatch):
         await recording
 
     assert await closes_within(stream, 5.0) is True
+
+
+# --- choosing which input to record from ---
+
+DEVICES = ["Built-in Mic", "USB Headset", "Webcam"]
+
+
+def test_the_os_default_leads_the_search():
+    """The setting the user can see wins on the first recording of every session."""
+    assert order_candidates(DEVICES, default="USB Headset", remembered=None) == [
+        "USB Headset",
+        "Built-in Mic",
+        "Webcam",
+    ]
+
+
+def test_a_remembered_device_is_tried_before_the_default():
+    """Only so a session that already fell back does not pay the dead default's
+    calibration window on every utterance."""
+    assert order_candidates(DEVICES, default="Built-in Mic", remembered="Webcam") == [
+        "Webcam",
+        "Built-in Mic",
+        "USB Headset",
+    ]
+
+
+def test_a_remembered_device_that_has_been_unplugged_is_dropped():
+    assert order_candidates(DEVICES, default="Built-in Mic", remembered="AirPods") == [
+        "Built-in Mic",
+        "USB Headset",
+        "Webcam",
+    ]
+
+
+def test_a_default_that_is_also_the_remembered_one_is_tried_once():
+    assert order_candidates(DEVICES, default="Webcam", remembered="Webcam") == [
+        "Webcam",
+        "Built-in Mic",
+        "USB Headset",
+    ]
+
+
+def test_with_nothing_to_enumerate_the_system_default_is_still_offered():
+    assert order_candidates([], default=None, remembered=None) == [None]
+
+
+def fake_inputs(monkeypatch, levels: dict[str, int], default: str) -> list[object]:
+    """A sounddevice whose inputs yield the given amplitudes; 0 stands for muted.
+
+    `levels` is read when a stream is opened, so a test can mute or restore a device
+    between recordings the way unplugging one does.
+    """
+    names = list(levels)
+    opened: list[object] = []
+
+    def query_devices(index: int | None = None) -> object:
+        if index is None:
+            return [{"name": name, "max_input_channels": 1} for name in names]
+        return {"name": names[index], "max_input_channels": 1}
+
+    def open_stream(**kwargs: object) -> FakeStream:
+        device = kwargs["device"]
+        opened.append(device)
+        return FakeStream(amplitude=levels[str(device)])
+
+    monkeypatch.setitem(
+        sys.modules,
+        "sounddevice",
+        SimpleNamespace(
+            PortAudioError=FakePortAudioError,
+            RawInputStream=open_stream,
+            query_devices=query_devices,
+            default=SimpleNamespace(device=(names.index(default), 1)),
+        ),
+    )
+    return opened
+
+
+async def test_a_muted_default_falls_through_to_a_live_input(monkeypatch):
+    opened = fake_inputs(monkeypatch, {"Built-in Mic": 0, "USB Headset": 1}, default="Built-in Mic")
+    recording = await MicrophoneRecorder().record(LIMITS)
+    assert opened == ["Built-in Mic", "USB Headset"]
+    assert recording.device == "USB Headset"
+    assert recording.reason is State.SILENT
+
+
+async def test_the_input_that_worked_is_reused_without_searching_again(monkeypatch):
+    opened = fake_inputs(monkeypatch, {"Built-in Mic": 0, "USB Headset": 1}, default="Built-in Mic")
+    recorder = MicrophoneRecorder()
+    await recorder.record(LIMITS)
+    opened.clear()
+    await recorder.record(LIMITS)
+    assert opened == ["USB Headset"]
+
+
+async def test_a_remembered_input_that_goes_mute_restarts_the_search(monkeypatch):
+    """And restarts it from the default, so a microphone fixed mid-session is used."""
+    levels = {"Built-in Mic": 0, "USB Headset": 1}
+    opened = fake_inputs(monkeypatch, levels, default="Built-in Mic")
+    recorder = MicrophoneRecorder()
+    await recorder.record(LIMITS)
+    levels["USB Headset"] = 0
+    levels["Built-in Mic"] = 1
+    opened.clear()
+    recording = await recorder.record(LIMITS)
+    assert opened == ["USB Headset", "Built-in Mic"]
+    assert recording.device == "Built-in Mic"
+
+
+async def test_every_input_muted_says_so_rather_than_reporting_silence(monkeypatch):
+    fake_inputs(monkeypatch, {"Built-in Mic": 0, "USB Headset": 0}, default="Built-in Mic")
+    with pytest.raises(RecorderUnavailable, match="no microphone is delivering any audio"):
+        await MicrophoneRecorder().record(LIMITS)
+
+
+async def test_a_named_input_is_never_quietly_swapped_for_another(monkeypatch):
+    """Recording from a device the user did not ask for is worse than saying theirs
+    is mute, so an explicit SPEAK_INPUT_DEVICE ends the search rather than starting it."""
+    opened = fake_inputs(monkeypatch, {"Built-in Mic": 0, "USB Headset": 1}, default="Built-in Mic")
+    with pytest.raises(RecorderUnavailable, match="SPEAK_INPUT_DEVICE"):
+        await MicrophoneRecorder(device="Built-in Mic").record(LIMITS)
+    assert opened == ["Built-in Mic"]
+
+
+async def test_a_binding_that_cannot_enumerate_still_records(monkeypatch):
+    fake_binding(monkeypatch)
+    recording = await MicrophoneRecorder().record(LIMITS)
+    assert recording.device is None
+
+
+def test_describe_names_the_input_and_what_the_gate_made_of_it():
+    recording = Recording(
+        wav=b"",
+        reason=State.SILENT,
+        has_speech=False,
+        device="USB Headset",
+        threshold=0.0108,
+        peak=0.0041,
+    )
+    assert describe(recording) == "USB Headset: silent (gate 0.0108, peak 0.0041)"

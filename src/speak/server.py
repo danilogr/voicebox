@@ -14,7 +14,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from speak import tools
-from speak.capture import Recorder, RecorderUnavailable, TrackerSettings
+from speak.capture import Recorder, RecorderUnavailable, TrackerSettings, describe
 from speak.config import Settings
 from speak.cue import Cue
 from speak.engines.asr import Liveness, Transcriber, TranscriptionFailed
@@ -321,8 +321,10 @@ def create_server(
                     # The cues bracket the recording and nothing else: they say the
                     # microphone is open and that it has shut, which is the moment
                     # recording stops rather than the moment the transcript lands.
-                    async with ears.cue.around_recording():
+                    async with ears.cue.around_recording() as outcome:
                         recording = await ears.recorder.record(_limits(ears.limits, max_seconds))
+                        outcome.heard = recording.has_speech
+                    logger.info("capture: %s", describe(recording))
                     if not recording.has_speech:
                         return tools.HEARD_NOTHING
                     heard = await ears.transcriber.transcribe(
