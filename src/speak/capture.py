@@ -23,8 +23,9 @@ logger = logging.getLogger(__name__)
 
 
 class State(Enum):
-    """Where a recording is: the first three continue, the rest stop."""
+    """Where a recording is: the first four continue, the rest stop."""
 
+    WARMING = "warming"
     CALIBRATING = "calibrating"
     WAITING = "waiting"
     SPEAKING = "speaking"
@@ -44,6 +45,11 @@ class TrackerSettings:
 
     block_ms: float = 30.0
     calibrate_ms: float = 300.0
+    # How long a device gets to produce its first sample before it is called mute.
+    # CoreAudio hands over exact zeros while an input primes, and a Bluetooth one can
+    # take most of a second: measured at 630 ms for AirPods. Judging deafness inside
+    # the 300 ms calibration window rejected exactly the microphone that worked.
+    deaf_ms: float = 1500.0
     silence_ms: float = 3000.0
     start_timeout_ms: float = 10_000.0
     max_ms: float = 240_000.0
@@ -63,10 +69,11 @@ class SilenceTracker:
     def __init__(self, settings: TrackerSettings) -> None:
         self._settings = settings
         self._elapsed_ms = 0.0
+        self._signal_at_ms = 0.0
         self._ambient: list[float] = []
         self._threshold = settings.floor
         self._silence_ms = 0.0
-        self._state = State.CALIBRATING
+        self._state = State.WARMING
         self._heard_speech = False
         self._peak = 0.0
 
@@ -104,23 +111,35 @@ class SilenceTracker:
             self._state = State.CAPPED
             return self._state
 
+        if self._state is State.WARMING:
+            return self._warm(energy)
         if self._state is State.CALIBRATING:
             return self._calibrate(energy)
         if self._state is State.WAITING:
             return self._wait(energy)
         return self._speak(energy)
 
+    def _warm(self, energy: float) -> State:
+        """Wait for the device to deliver anything at all before judging it.
+
+        A live microphone always carries a noise floor, so the first non-zero sample
+        is proof the input is real - but it does not arrive immediately. Calibration
+        starts from that sample rather than from the stream opening, which also keeps
+        priming silence out of the ambient average: a gate calibrated on zeros lands
+        at the floor, and in a noisy room a floor-level gate opens on the room and
+        never closes again.
+        """
+        if energy > 0.0:
+            self._state = State.CALIBRATING
+            self._signal_at_ms = self._elapsed_ms - self._settings.block_ms
+            return self._calibrate(energy)
+        if self._elapsed_ms >= self._settings.deaf_ms:
+            self._state = State.DEAF
+        return self._state
+
     def _calibrate(self, energy: float) -> State:
         self._ambient.append(energy)
-        if self._elapsed_ms >= self._settings.calibrate_ms:
-            # Exact zeros, every sample, are not a quiet room: a live microphone
-            # always carries a noise floor, so digital silence means the OS handed
-            # this process a muted stream. Treating it as a quiet room is what makes
-            # a dead default device cost the whole start timeout and then report
-            # "heard nothing", whose remedies are all about speaking louder.
-            if not any(self._ambient):
-                self._state = State.DEAF
-                return self._state
+        if self._elapsed_ms - self._signal_at_ms >= self._settings.calibrate_ms:
             ambient = sum(self._ambient) / len(self._ambient)
             gate = ambient * self._settings.noise_multiple
             # Clamped from above as well as below. Talking immediately is what a

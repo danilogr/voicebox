@@ -130,22 +130,42 @@ def test_a_muted_device_is_deaf_rather_than_silent():
     """Exact zeros are not a quiet room. Calling them one costs the whole start
     timeout and then blames the user for not speaking, when the input is muted."""
     tracker = SilenceTracker(LIMITS)
-    for _ in range(3):
+    for _ in range(int(LIMITS.deaf_ms / LIMITS.block_ms)):
         tracker.feed(0.0)
     assert tracker.state is State.DEAF
 
 
 def test_deafness_is_decided_before_the_start_timeout_runs():
-    assert run([0.0] * 100) == (State.DEAF, 3)
+    assert run([0.0] * 100) == (State.DEAF, 15)
 
 
-def test_one_live_block_in_calibration_is_enough_to_keep_a_device():
-    """Conservative on purpose: skipping a device that is merely nearly silent would
-    abandon a working microphone, which is worse than recording from a quiet one."""
+def test_a_device_that_wakes_late_is_not_called_mute():
+    """Measured at 630 ms for AirPods: CoreAudio hands over exact zeros while an
+    input primes. Judging deafness inside the 300 ms calibration window rejected the
+    one microphone on this machine that worked, then fell through to three dead ones."""
+    state, _blocks = run([0.0] * 6 + [QUIET] * 3 + [0.5] * 3 + [0.0] * 6)
+    assert state is State.DONE
+
+
+def test_a_device_still_silent_after_the_warmup_window_is_mute():
+    """The window has to end somewhere, or a dead default holds up every recording."""
     tracker = SilenceTracker(LIMITS)
-    for energy in (0.0, 0.0, QUIET):
-        tracker.feed(energy)
+    for _ in range(14):
+        assert tracker.feed(0.0) is State.WARMING
+    assert tracker.feed(0.0) is State.DEAF
+
+
+def test_priming_silence_stays_out_of_the_gate():
+    """Calibration runs from the first real sample, not from the stream opening. An
+    ambient average diluted by priming zeros lands the gate at the floor, and in a
+    noisy room a floor-level gate opens on the room and never closes again."""
+    tracker = SilenceTracker(LIMITS)
+    for _ in range(6):
+        tracker.feed(0.0)
+    for _ in range(3):
+        tracker.feed(0.01)
     assert tracker.state is State.WAITING
+    assert tracker.threshold == pytest.approx(0.03)
 
 
 def test_the_peak_is_carried_so_a_failure_can_say_how_close_it_came():
