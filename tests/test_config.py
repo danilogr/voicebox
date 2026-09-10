@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from speak.config import Settings
+from speak.text import DEFAULT_MAX_CHARS
 
 
 def test_defaults_when_nothing_is_set():
@@ -115,3 +116,98 @@ def test_random_is_recognised_case_insensitively():
 
 def test_random_is_never_treated_as_a_literal_voice_name():
     assert Settings.from_env({"SPEAK_VOICE": "random"}).voice is None
+
+
+def test_listen_is_off_unless_asked_for():
+    assert Settings.from_env({}).listen is False
+
+
+def test_listen_accepts_the_usual_truthy_spellings():
+    for raw in ("1", "true", "TRUE", "yes", "on"):
+        assert Settings.from_env({"SPEAK_LISTEN": raw}).listen is True, raw
+
+
+def test_listen_treats_anything_else_as_off():
+    for raw in ("0", "false", "no", "off", ""):
+        assert Settings.from_env({"SPEAK_LISTEN": raw}).listen is False, raw
+
+
+def test_the_listen_cue_is_on_unless_it_is_turned_off():
+    assert Settings.from_env({}).listen_cue is True
+    for raw in ("0", "false", "FALSE", "no", "off"):
+        assert Settings.from_env({"SPEAK_LISTEN_CUE": raw}).listen_cue is False, raw
+
+
+def test_anything_else_leaves_the_listen_cue_on():
+    for raw in ("1", "true", "on", "", "maybe"):
+        assert Settings.from_env({"SPEAK_LISTEN_CUE": raw}).listen_cue is True, raw
+
+
+def test_the_cue_sounds_can_be_pointed_elsewhere():
+    """The defaults are macOS paths, so an override is the only way this works off it."""
+    settings = Settings.from_env(
+        {"SPEAK_LISTEN_CUE_START": "/sounds/in.wav", "SPEAK_LISTEN_CUE_END": "/sounds/out.wav"}
+    )
+    assert settings.listen_cue_start == Path("/sounds/in.wav")
+    assert settings.listen_cue_end == Path("/sounds/out.wav")
+
+
+def test_unset_cue_sounds_are_left_to_the_cue_module():
+    settings = Settings.from_env({"SPEAK_LISTEN_CUE_START": ""})
+    assert settings.listen_cue_start is None
+    assert settings.listen_cue_end is None
+    assert settings.listen_cue_empty is None
+
+
+def test_the_empty_capture_sound_can_be_pointed_elsewhere():
+    settings = Settings.from_env({"SPEAK_LISTEN_CUE_EMPTY": "/sounds/nothing.wav"})
+    assert settings.listen_cue_empty == Path("/sounds/nothing.wav")
+
+
+def test_an_input_device_can_be_named():
+    settings = Settings.from_env({"SPEAK_INPUT_DEVICE": "USB Headset"})
+    assert settings.input_device == "USB Headset"
+
+
+def test_no_named_input_device_means_search_from_the_default():
+    assert Settings.from_env({}).input_device is None
+
+
+def test_asr_model_defaults_and_overrides():
+    assert Settings.from_env({}).nemo_asr_model == "nemotron-3.5"
+    assert Settings.from_env({"NEMO_ASR_MODEL": "parakeet-tdt"}).nemo_asr_model == "parakeet-tdt"
+
+
+def test_listen_numbers_have_defaults():
+    settings = Settings.from_env({})
+    assert settings.listen_silence_ms == 3000
+    assert settings.listen_max_seconds == 240
+    assert settings.listen_timeout == 10
+
+
+def test_unparsable_listen_numbers_fall_back_to_the_default():
+    settings = Settings.from_env({"SPEAK_LISTEN_SILENCE_MS": "soon"})
+    assert settings.listen_silence_ms == 3000
+
+
+def test_non_positive_listen_numbers_fall_back_to_the_default():
+    settings = Settings.from_env({"SPEAK_LISTEN_MAX_SECONDS": "-5"})
+    assert settings.listen_max_seconds == 240
+
+
+def test_listen_language_is_optional():
+    assert Settings.from_env({}).listen_language is None
+    assert Settings.from_env({"SPEAK_LISTEN_LANGUAGE": "en"}).listen_language == "en"
+
+
+def test_a_non_finite_listen_number_falls_back_to_the_default():
+    """nan passes every `<= 0` check, and a nan limit records forever."""
+    for raw in ("nan", "inf", "-inf"):
+        assert Settings.from_env({"SPEAK_LISTEN_MAX_SECONDS": raw}).listen_max_seconds == 240, raw
+        assert Settings.from_env({"SPEAK_LISTEN_TIMEOUT": raw}).listen_timeout == 10, raw
+
+
+def test_a_non_finite_number_never_reaches_the_settings():
+    assert Settings.from_env({"SPEAK_MAX_CHARS": "nan"}).max_chars == DEFAULT_MAX_CHARS
+    assert Settings.from_env({"SPEAK_SEED": "inf"}).seed is None
+    assert Settings.from_env({"SPEAK_RATE": "nan"}).rate is None

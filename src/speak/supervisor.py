@@ -57,6 +57,7 @@ class NemoSupervisor:
         port: int = 8082,
         binary: str = "nemo-speech",
         model: str = "magpie",
+        asr_model: str | None = None,
         seed: int | None = None,
         pid: int | None = None,
         stale_lock_seconds: float = STALE_LOCK_SECONDS,
@@ -72,6 +73,7 @@ class NemoSupervisor:
         self._port = port
         self._binary = binary
         self._model = model
+        self._asr_model = asr_model
         self._seed = seed
         self._pid = pid if pid is not None else os.getpid()
         self._stale_lock_seconds = stale_lock_seconds
@@ -89,6 +91,8 @@ class NemoSupervisor:
             "cpu",
             "--no-ui",
         ]
+        if self._asr_model is not None:
+            args += ["--asr-model", self._asr_model]
         if self._seed is not None:
             args += ["--tts.seed", str(self._seed)]
         return args
@@ -111,9 +115,31 @@ class NemoSupervisor:
         (self._clients_dir / str(self._pid)).touch()
 
     async def ensure_running(self) -> bool:
-        """Start the server unless another session is already starting it."""
+        """Start the server unless one is already running or being started.
+
+        Returns True only when this call spawned it. Either way the caller is left
+        with a server that has answered, because both early returns still probe: a
+        server spawned a moment ago by another session has not bound its port yet,
+        and returning before it does turns a ten-second cold start into "there is no
+        transcription model" at the call site, whose remedies are then all wrong.
+
+        The recorded server is checked here rather than only at the call sites,
+        because a caller cannot always tell a dead server from a busy one: the TTS
+        fallback fires on any HTTP failure, a 5xx or a timeout from a loaded server
+        included. Spawning then would write a second, doomed pid — it cannot bind the
+        port — over the record of the server that is still answering, and the probe
+        that followed would be answered by the first server and report success. The
+        real server would be orphaned and the last session out would stop a pid that
+        is already gone, leaving a gigabyte resident.
+        """
         self._state_dir.mkdir(parents=True, exist_ok=True)
+        if self._recorded_server_is_alive():
+            logger.info("a speech server is already running; not starting another")
+            await self._probe()
+            return False
         if not self._take_lock():
+            logger.info("another session is starting the speech server; waiting for it")
+            await self._probe()
             return False
         try:
             server_pid = await self._spawn(self._binary, self._server_args())
@@ -124,6 +150,15 @@ class NemoSupervisor:
             return True
         finally:
             shutil.rmtree(self._lock_dir, ignore_errors=True)
+
+    def _recorded_server_is_alive(self) -> bool:
+        """True when `server.json` names a process that still exists."""
+        try:
+            recorded = json.loads(self._server_file.read_text())
+        except (OSError, ValueError):
+            return False
+        pid = recorded.get("pid") if isinstance(recorded, dict) else None
+        return isinstance(pid, int) and self._is_alive(pid)
 
     async def release(self) -> bool:
         """Leave, and stop the server if this was the last session using it."""

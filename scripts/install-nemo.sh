@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install NeMo-Speech.cpp and the MagpieTTS model for the speak plugin.
+# Install NeMo-Speech.cpp and the models the speak plugin uses.
 # Idempotent: safe to run again. Downloads about 1.2 GB the first time.
 set -euo pipefail
 
@@ -14,10 +14,14 @@ else
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
-echo "pulling the MagpieTTS model (about 500 MB, skipped if present)"
+echo "pulling the MagpieTTS model (520 MB with its codec, skipped if present)"
 "$BIN" pull magpie
+
+echo "pulling the transcription model (710 MB, skipped if present)"
+"$BIN" pull nemotron-3.5
 
 echo
 "$BIN" doctor
 echo
 echo "Done. Set SPEAK_ENGINE=nemo and the plugin will start the server on first use."
+echo "Add SPEAK_LISTEN=1 as well if you want voice input."

@@ -1,24 +1,39 @@
 ---
-description: Install NeMo-Speech.cpp and the MagpieTTS model so the speak plugin can use a neural voice
+description: Install NeMo-Speech.cpp and the models the speak plugin needs for a neural voice and for voice input
 ---
 
 # Set up neural speech for the speak plugin
 
 Install the local speech server this plugin can talk to. Explain the cost before
-you start: about 1.2 GB of models on disk and roughly 1 GB of memory whenever the
-server is running.
+you start: about 1.2 GB of models on disk, and, measured on an M5 with the CPU
+backend, roughly 800 MB of resident memory for the voice alone or 1.5 GB when the
+transcription model is loaded alongside it.
 
 1. Run `${CLAUDE_PLUGIN_ROOT}/scripts/install-nemo.sh` and show the output. It
-   installs `nemo-speech` if it is missing, pulls the MagpieTTS model, and runs
-   `nemo-speech doctor`. It is idempotent.
+   installs `nemo-speech` if it is missing, pulls the MagpieTTS voice and the
+   nemotron-3.5 transcription model, and runs `nemo-speech doctor`. It is
+   idempotent. Both models are pulled whether or not the user wants voice input;
+   only the server flags depend on that.
 2. If the script fails, report the failure verbatim rather than working around
    it. A partial install is worse than none.
 3. On success, tell the user to set `SPEAK_ENGINE=nemo` in their environment,
    and that the plugin starts and stops the server on its own from then on.
-4. Mention that the first sentence after a cold start is spoken by the macOS
+4. For voice input, tell the user to set `SPEAK_LISTEN=1` as well. Explain that
+   it makes the plugin start the speech server when the session opens rather
+   than on first use, so `/talk` does not pay a cold start, and that this costs
+   memory from session start.
+5. On macOS the first recording asks for microphone access for the app running
+   Claude Code — the terminal, not Claude Code itself. Warn that a denied
+   microphone usually opens and returns silence rather than failing, so the
+   symptom is `/talk` and `listen` answering "heard nothing" rather than any
+   error. The switch is in System Settings > Privacy & Security > Microphone.
+   Say that "heard nothing" only means the gate never opened, so a muted
+   microphone, the wrong input device, or simply not talking before the recording
+   ran out give the same answer: check the permission first, then the device.
+6. Mention that the first sentence after a cold start is spoken by the macOS
    `say` voice while the server warms up (about 10 seconds), and every sentence
    after that uses the neural voice.
-5. Offer to list the available voices with the `list_voices` tool and to set one
+7. Offer to list the available voices with the `list_voices` tool and to set one
    with `set_voice`.
 
 Do not start the server yourself and do not edit the user's shell profile

@@ -1,6 +1,7 @@
 """Configuration, read once from the environment and validated at that boundary."""
 
 import logging
+import math
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -26,10 +27,43 @@ def _number(env: Mapping[str, str], key: str, default: float | None) -> float | 
     if raw is None:
         return default
     try:
-        return float(raw)
+        value = float(raw)
     except ValueError:
         logger.warning("ignoring %s=%r: not a number", key, raw)
         return default
+    if not math.isfinite(value):
+        # nan passes every `<= 0` check downstream and int(nan) raises, so it is
+        # rejected here rather than left to whichever caller trips over it first.
+        logger.warning("ignoring %s=%r: not a finite number", key, raw)
+        return default
+    return value
+
+
+TRUTHY = frozenset({"1", "true", "yes", "on"})
+FALSY = frozenset({"0", "false", "no", "off"})
+
+
+def _flag(env: Mapping[str, str], key: str, *, default: bool = False) -> bool:
+    """A yes/no setting. Anything unrecognised, the empty string included, is the default."""
+    raw = (_text(env, key) or "").lower()
+    if raw in TRUTHY:
+        return True
+    if raw in FALSY:
+        return False
+    return default
+
+
+def _path(env: Mapping[str, str], key: str) -> Path | None:
+    raw = _text(env, key)
+    return None if raw is None else Path(raw)
+
+
+def _positive(env: Mapping[str, str], key: str, default: float) -> float:
+    value = _number(env, key, default)
+    if value is None or value <= 0:
+        logger.warning("ignoring %s: must be a positive number", key)
+        return default
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +78,19 @@ class Settings:
     nemo_url: str = DEFAULT_NEMO_URL
     nemo_api_key: str | None = None
     nemo_model: str = "magpie"
+    listen: bool = False
+    nemo_asr_model: str = "nemotron-3.5"
+    listen_silence_ms: float = 3000.0
+    listen_max_seconds: float = 240.0
+    listen_timeout: float = 10.0
+    listen_language: str | None = None
+    listen_cue: bool = True
+    # None means the sound `cue` picks for itself; only an override lands here.
+    listen_cue_start: Path | None = None
+    listen_cue_end: Path | None = None
+    listen_cue_empty: Path | None = None
+    # A named input is never fallen back off; unset means search from the OS default.
+    input_device: str | None = None
     nemo_binary: str = "nemo-speech"
     nemo_autostart: bool = True
     seed: int | None = None
@@ -77,6 +124,17 @@ class Settings:
             nemo_url=_text(env, "NEMO_HTTP_URL") or DEFAULT_NEMO_URL,
             nemo_api_key=_text(env, "NEMO_API_KEY"),
             nemo_model=_text(env, "NEMO_TTS_MODEL") or "magpie",
+            listen=_flag(env, "SPEAK_LISTEN"),
+            nemo_asr_model=_text(env, "NEMO_ASR_MODEL") or "nemotron-3.5",
+            listen_silence_ms=_positive(env, "SPEAK_LISTEN_SILENCE_MS", 3000.0),
+            listen_max_seconds=_positive(env, "SPEAK_LISTEN_MAX_SECONDS", 240.0),
+            listen_timeout=_positive(env, "SPEAK_LISTEN_TIMEOUT", 10.0),
+            listen_language=_text(env, "SPEAK_LISTEN_LANGUAGE"),
+            listen_cue=_flag(env, "SPEAK_LISTEN_CUE", default=True),
+            listen_cue_start=_path(env, "SPEAK_LISTEN_CUE_START"),
+            listen_cue_end=_path(env, "SPEAK_LISTEN_CUE_END"),
+            listen_cue_empty=_path(env, "SPEAK_LISTEN_CUE_EMPTY"),
+            input_device=_text(env, "SPEAK_INPUT_DEVICE"),
             nemo_binary=_text(env, "SPEAK_NEMO_BIN") or "nemo-speech",
             nemo_autostart=_text(env, "SPEAK_NEMO_AUTOSTART") != "0",
             seed=None if seed is None else int(seed),

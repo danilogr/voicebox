@@ -21,6 +21,17 @@ async def probe_ok() -> bool:
     return True
 
 
+class Probes:
+    """Counts how often the supervisor waited for the server to answer."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def __call__(self) -> bool:
+        self.calls += 1
+        return True
+
+
 def build(tmp_path, **kwargs: object) -> NemoSupervisor:
     defaults = dict(
         state_dir=tmp_path,
@@ -79,6 +90,61 @@ async def test_ensure_running_records_the_server_pid_and_port(tmp_path):
 async def test_ensure_running_releases_the_lock_when_it_finishes(tmp_path):
     await build(tmp_path).ensure_running()
     assert not (tmp_path / "starting").exists()
+
+
+async def test_a_server_that_is_already_running_is_not_replaced(tmp_path):
+    """The TTS fallback calls this on any HTTP failure, a 5xx from a busy server included.
+
+    A second `nemo-speech` cannot bind the port, so spawning would only overwrite the
+    record of the server that is still answering and orphan it.
+    """
+    (tmp_path / "server.json").write_text(json.dumps({"pid": 4242, "port": 8082}))
+    spawns = Spawns(pid=9999)
+
+    supervisor = build(tmp_path, spawn=spawns, is_alive=lambda pid: pid == 4242)
+
+    assert await supervisor.ensure_running() is False
+    assert spawns.calls == []
+    assert json.loads((tmp_path / "server.json").read_text())["pid"] == 4242
+
+
+async def test_a_server_another_session_is_starting_is_waited_for(tmp_path):
+    """The caller's next move is to transcribe against it. Returning the moment the
+    record exists hands back a server that has not bound its port, and the call site
+    then reports a missing transcription model for a ten-second cold start."""
+    (tmp_path / "server.json").write_text(json.dumps({"pid": 4242, "port": 8082}))
+    probes = Probes()
+
+    supervisor = build(tmp_path, probe=probes, is_alive=lambda pid: pid == 4242)
+
+    assert await supervisor.ensure_running() is False
+    assert probes.calls == 1
+
+
+async def test_a_session_that_loses_the_start_race_waits_for_the_winner(tmp_path):
+    (tmp_path / "starting").mkdir(parents=True)
+    probes = Probes()
+
+    assert await build(tmp_path, probe=probes).ensure_running() is False
+    assert probes.calls == 1
+
+
+async def test_a_recorded_server_that_has_died_is_replaced(tmp_path):
+    (tmp_path / "server.json").write_text(json.dumps({"pid": 4242, "port": 8082}))
+    spawns = Spawns(pid=9999)
+
+    supervisor = build(tmp_path, spawn=spawns, is_alive=lambda pid: False)
+
+    assert await supervisor.ensure_running() is True
+    assert json.loads((tmp_path / "server.json").read_text())["pid"] == 9999
+
+
+async def test_an_unreadable_server_record_does_not_block_a_start(tmp_path):
+    (tmp_path / "server.json").write_text("half a json file")
+    spawns = Spawns(pid=9999)
+
+    assert await build(tmp_path, spawn=spawns).ensure_running() is True
+    assert len(spawns.calls) == 1
 
 
 async def test_only_one_session_wins_the_right_to_start(tmp_path):
@@ -174,3 +240,18 @@ async def test_release_survives_a_server_that_is_already_gone(tmp_path):
 
 async def test_release_before_register_is_harmless(tmp_path):
     assert await build(tmp_path).release() is False
+
+
+async def test_no_asr_model_is_served_unless_one_is_configured(tmp_path):
+    spawns = Spawns()
+    await build(tmp_path, spawn=spawns).ensure_running()
+    _binary, args = spawns.calls[0]
+    assert "--asr-model" not in args
+
+
+async def test_the_configured_asr_model_is_served_alongside_speech(tmp_path):
+    spawns = Spawns()
+    await build(tmp_path, spawn=spawns, asr_model="nemotron-3.5").ensure_running()
+    _binary, args = spawns.calls[0]
+    assert args[args.index("--asr-model") + 1] == "nemotron-3.5"
+    assert "--tts-model" in args

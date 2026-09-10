@@ -7,12 +7,16 @@ whole path without producing audio.
 import json
 import os
 import sys
+import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+
+from speak.__main__ import build_supervisor
+from speak.config import Settings
 
 RECORDER = """#!{python}
 import json, sys, pathlib
@@ -32,20 +36,50 @@ def recorder(tmp_path):
     return script, log
 
 
-@asynccontextmanager
-async def connected(command: str, extra_env: dict[str, str] | None = None):
-    env = {
+def server_env(command: str, state_dir: str, extra_env: dict[str, str] | None = None):
+    """The environment one subprocess server runs in.
+
+    The developer's shell is inherited, so everything that decides whether a session
+    manages the shared speech server is pinned here. With `SPEAK_LISTEN=1` exported —
+    which the README tells anyone using voice input to do — each of these subprocesses
+    would otherwise register in the real state directory and, on teardown, SIGTERM the
+    pid in the real `server.json`: running the suite would stop the speech server the
+    developer's other Claude Code windows are using.
+    """
+    return {
         **os.environ,
         "SPEAK_ENGINE": "command",
         "SPEAK_COMMAND": command,
+        "SPEAK_LISTEN": "",
+        "SPEAK_NEMO_AUTOSTART": "0",
+        "SPEAK_STATE_DIR": state_dir,
         **(extra_env or {}),
     }
-    parameters = StdioServerParameters(
-        command=sys.executable, args=["-m", "speak"], env=env, cwd=str(Path.cwd())
-    )
-    async with stdio_client(parameters) as (read, write), ClientSession(read, write) as session:
-        await session.initialize()
-        yield session
+
+
+@asynccontextmanager
+async def connected(command: str, extra_env: dict[str, str] | None = None):
+    with tempfile.TemporaryDirectory() as state_dir:
+        parameters = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "speak"],
+            env=server_env(command, state_dir, extra_env),
+            cwd=str(Path.cwd()),
+        )
+        async with stdio_client(parameters) as (read, write), ClientSession(read, write) as sess:
+            await sess.initialize()
+            yield sess
+
+
+def test_the_suite_cannot_reach_the_machine_wide_speech_server(monkeypatch, tmp_path):
+    """Every subprocess this file starts is hermetic, whatever the shell exports."""
+    monkeypatch.setenv("SPEAK_LISTEN", "1")
+    monkeypatch.delenv("SPEAK_NEMO_AUTOSTART", raising=False)
+
+    settings = Settings.from_env(server_env("true", str(tmp_path)))
+
+    assert build_supervisor(settings) is None
+    assert settings.state_dir == tmp_path
 
 
 async def text_of(session, name, **arguments: object) -> str:

@@ -1,0 +1,68 @@
+"""What the composition root decides: who gets a speech server, and with which models."""
+
+from pathlib import Path
+
+from speak.__main__ import build_ears, build_supervisor
+from speak.config import Settings
+from speak.cue import END_SOUND
+from speak.runtime import transcription_timeout
+
+
+def test_a_plain_say_session_needs_no_speech_server():
+    assert build_supervisor(Settings()) is None
+
+
+def test_listening_starts_the_speech_server_whatever_the_speech_engine_is():
+    assert build_supervisor(Settings(listen=True)) is not None
+
+
+def test_autostart_off_leaves_the_speech_server_to_the_user():
+    assert build_supervisor(Settings(listen=True, nemo_autostart=False)) is None
+    assert build_supervisor(Settings(engine="nemo", nemo_autostart=False)) is None
+
+
+def test_a_session_that_never_listens_is_served_no_asr_model():
+    """A missing transcription model must not break a session that only speaks."""
+    supervisor = build_supervisor(Settings(engine="nemo"))
+    assert supervisor is not None
+    assert "--asr-model" not in supervisor._server_args()
+
+
+def test_a_listening_session_is_served_the_configured_asr_model():
+    supervisor = build_supervisor(Settings(listen=True, nemo_asr_model="parakeet-tdt"))
+    assert supervisor is not None
+    args = supervisor._server_args()
+    assert args[args.index("--asr-model") + 1] == "parakeet-tdt"
+
+
+def test_there_are_no_ears_when_voice_input_is_off():
+    assert build_ears(Settings()) is None
+
+
+def test_the_ears_carry_the_configured_capture_limits():
+    ears = build_ears(Settings(listen=True, listen_max_seconds=5.0, listen_timeout=2.0))
+    assert ears is not None
+    assert ears.limits.max_ms == 5_000
+    assert ears.limits.start_timeout_ms == 2_000
+
+
+def test_the_transcriber_is_given_a_timeout_the_recording_cap_cannot_outlast():
+    """Nothing else sets it, and the default cap is four minutes of audio."""
+    settings = Settings(listen=True, listen_max_seconds=240.0)
+    ears = build_ears(settings)
+    assert ears is not None
+    assert ears.transcriber._timeout == transcription_timeout(settings)
+
+
+def test_the_ears_carry_a_cue_that_is_on_by_default():
+    ears = build_ears(Settings(listen=True))
+    assert ears is not None
+    assert ears.cue._enabled is True
+
+
+def test_the_ears_carry_the_configured_cue_sounds():
+    """The defaults are macOS paths, so the override is the only way off it."""
+    ears = build_ears(Settings(listen=True, listen_cue=False, listen_cue_start=Path("/s/in.wav")))
+    assert ears is not None
+    assert ears.cue._enabled is False
+    assert (ears.cue._start, ears.cue._end) == (Path("/s/in.wav"), END_SOUND)
