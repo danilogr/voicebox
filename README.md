@@ -22,8 +22,8 @@ the plugin syncs its own environment from `uv.lock` on first launch, and uv fetc
 Python 3.12 interpreter if the machine has none.
 
 For the neural voice, run `/speak:setup` once. It installs NeMo-Speech.cpp and pulls
-MagpieTTS and the transcription model — 1.2 GB together, measured — then the plugin
-manages the server for you.
+MagpieTTS and the transcription model — 1.2 GB together — then the plugin manages the
+server for you.
 
 ## Tools
 
@@ -126,10 +126,10 @@ the words.
 
 `SPEAK_LISTEN=1` also changes when the speech server starts. A session that can
 listen claims it as the session opens rather than at the first sentence, because
-`/talk` runs as its own short-lived process and would otherwise pay a ten-second
-cold start every time. The trade is that the memory is held from session start:
-measured on an M5 with the CPU backend, 1.5 GB of resident memory once the server
-answers, against 780 MB for a voice-only server.
+`/talk` runs as its own short-lived process and would otherwise pay a cold start
+every time. The trade is that the memory is held from session start, and a server
+carrying both models holds about twice what a voice-only one does — figures in
+[harness/performance.md](harness/performance.md).
 
 ### Which microphone
 
@@ -216,18 +216,12 @@ not hardcoded. The OpenAI-compatible names (`nova`, `alloy`, …) are accepted b
 resolve to the model's default speaker, so the plugin defaults to `John` explicitly
 instead.
 
-Measured on an M5 with the CPU backend: 10 s to start, then about 1.7 s per sentence
-against 0.7 s for `say`. Resident memory once the server answers `/health` is 780 MB
-with the voice alone and 1.5 GB when `SPEAK_LISTEN` adds the transcription model.
-Both grow in use, and not by the same amount: one spoken sentence added 120 MB to the
-voice-only server but only 45 MB to the one carrying both models, and a single
-transcription took that one to 2.4 GB. The first sentence after a cold start is spoken
-by `say` while the server warms up, so speech is never delayed and never silently
-dropped.
-
-The supervisor always passes `--device cpu`. Metal works, but on Apple silicon it runs
-this workload *slower* than the CPU backend — about 1.5x realtime against 2.0x — so CPU
-is both the simpler and the faster choice here.
+It is slower per sentence than `say` and takes a few seconds to start, so the first
+sentence after a cold start is spoken by `say` while the server warms up: speech is
+never delayed waiting for a model and never silently dropped. The supervisor always
+passes `--device cpu`, because Metal runs this workload slower on Apple silicon.
+Latency, memory and disk figures are in
+[harness/performance.md](harness/performance.md).
 
 **`command`** — hands the sentence to any binary as its last argument. Useful for
 piper, espeak, a shell script, or a remote speaker:
@@ -272,6 +266,7 @@ scripts/install-local.sh         sync this checkout into the plugin cache Claude
 commands/setup.md                the /speak:setup command
 commands/talk.md                 the /talk command, and how to read a transcript
 harness/architecture.md          system shape and the decisions behind it
+harness/performance.md           measured latency, memory, disk, and audio levels
 src/speak/__main__.py            entry point: environment to objects, then serve
 src/speak/config.py              settings, parsed and validated from the environment
 src/speak/server.py              the tools over the queue, the engine, and the ears
