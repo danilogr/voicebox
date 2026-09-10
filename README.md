@@ -77,9 +77,9 @@ local server does both.
 Set it *before* Claude Code starts. The plugin reads its environment once, when the
 session opens, so exporting it in your shell profile has no effect on a session that
 is already running — you need a new one, started from a shell that has the variable.
-The symptom is silent: `listen` simply is not among the tools, and `/talk` refuses.
-`claude mcp list` will show the plugin either way; what tells you is whether `listen`
-is there.
+Getting this wrong is quiet: `listen` is simply not among the tools and `/talk`
+refuses. `claude mcp list` shows the plugin either way; what tells you is whether
+`listen` is there.
 
 Two ways in:
 
@@ -141,19 +141,17 @@ fix mid-session is picked straight up.
 
 "Delivers nothing" means exact digital silence, and only that. A live microphone
 always carries a noise floor, so a stream of pure zeros is a muted input rather
-than a quiet room — it is a fact, not a guess, which is why a device is never
-skipped merely for being quiet. An input whose level slider sits at zero, a built-in
+than a quiet room — a fact, not a guess, which is why a device is never skipped
+merely for being quiet. An input whose level slider sits at zero, a built-in
 microphone disabled because the lid is shut, and the virtual devices Teams and Zoom
-install all look identical from here, and all used to cost a full start timeout
-before answering "heard nothing".
+install are indistinguishable from here, and all of them read as muted.
 
-A device gets 1.5 seconds to produce its first sample before it is called mute.
-CoreAudio hands over exact zeros while an input primes, and a Bluetooth one can take
-most of a second — measured at 630 ms for AirPods. Judging deafness inside the
-300 ms calibration window rejected exactly the microphone that worked. Calibration
-runs from that first real sample rather than from the stream opening, so priming
-silence stays out of the ambient average; a gate diluted by zeros lands at the floor,
-and in a noisy room a floor-level gate opens on the room and never closes.
+A device gets 1.5 seconds to produce its first sample before it is called mute:
+CoreAudio hands over exact zeros while an input primes, and a Bluetooth microphone
+can take most of a second to start. Calibration runs from that first real sample
+rather than from the stream opening, so priming silence stays out of the ambient
+average — a gate diluted by zeros lands at the floor, and in a noisy room a
+floor-level gate opens on the room and never closes.
 
 Nothing is remembered between sessions and nothing is written to disk, so a fresh
 session always looks at your current default first. Name one device with
