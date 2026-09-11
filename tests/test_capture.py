@@ -80,9 +80,9 @@ def test_a_noisy_room_calibrates_above_the_floor():
 
 
 def test_talking_through_calibration_does_not_poison_the_gate():
-    """Nothing cues the user to wait, so calibrating against their voice is the
-    first-run case. An unclamped gate lands near three times speech level and the
-    recording ends SILENT - the symptom the docs teach means a denied microphone."""
+    """Nothing cues the user to wait, so calibrating against their own voice is the
+    ordinary first run. An unclamped gate lands near three times speech level, which no
+    microphone reaches, and the utterance is lost with nothing to show for it."""
     state, _blocks = run([0.2] * 10 + [0.0] * 10)
     assert state is State.DONE
 
@@ -249,10 +249,10 @@ def test_drive_reports_a_muted_device_apart_from_a_silent_room():
 
 
 def test_the_cap_does_not_turn_a_silent_recording_into_speech():
-    """The two halves the suite used to pin apart: `feed` checks the cap before the
-    start timeout, so an empty room ends CAPPED whenever the cap is the shorter of
-    the two - and CAPPED used to mean speech. That combination sends room tone to
-    the transcriber and returns its stock phrase as the user's own words."""
+    """`feed` checks the cap before the start timeout, so an empty room ends CAPPED
+    whenever the cap is the shorter of the two. CAPPED must therefore not imply speech:
+    room tone reaching the transcriber comes back as its stock phrase, which the caller
+    then treats as the user's own words."""
     silent_room = iter([block(1)] * 200)
     captured = drive(lambda: next(silent_room), CAP_BEFORE_TIMEOUT)
     assert captured.reason is State.CAPPED

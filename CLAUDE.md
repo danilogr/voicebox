@@ -21,50 +21,18 @@ If a rule here conflicts with a harness/ doc, this file wins.
 - Read the relevant doc at the START of any non-trivial task:
   - harness/architecture.md — system shape, boundaries, data model, key decisions.
   - harness/user-flow.md — request/response and business flows, states, edge cases.
+  - harness/design-guidelines.md — environment, naming, layering, errors, logging,
+    comments, tests. Includes the uv commands and the code standards.
   - harness/performance.md — measured latency, memory, disk, and audio levels.
-  - harness/design-guidelines.md — naming, layering, error/logging/test conventions.
 - Update the matching doc AFTER an agreed change (e.g. approved architectural
   decision -> architecture.md). Never record such changes in CLAUDE.md.
 
-## Environment: uv only
-- Manage everything with uv. NEVER use pip, bare `python`, or bare `pytest`.
-- Do not create or use requirements.txt unless the repo already forces it.
-| Task            | Command                          |
-|-----------------|----------------------------------|
-| Install/sync    | `uv sync`                        |
-| Add dependency  | `uv add <pkg>` / `uv add --dev <pkg>` |
-| Remove          | `uv remove <pkg>`                |
-| Run app/script  | `uv run <cmd>`                   |
-| Tests           | `uv run pytest`                  |
-| Lint            | `uv run ruff check .`            |
-| Format          | `uv run ruff format .`           |
-| Type check      | `uv run <typechecker> .`         |
-| One-off tool    | `uvx <tool>`                     |
-- Commit uv.lock. In CI use `uv sync --frozen`.
-
-## Defaults (swap per project — state the swap in design-guidelines.md)
-- Python 3.12+. Test runner: pytest. Lint+format: ruff. Type checker: mypy (or pyright).
-- These are defaults, not mandates; follow whatever this repo already uses.
-
-## Code standards
-- Type-annotate every function signature. Use modern syntax: `X | None`,
-  `list[str]`, `dict[str, Any]`.
-- Small units: functions do one thing; split when they stop fitting on a screen.
-- No `print()` in library code — use `logging.getLogger(__name__)`.
-- Catch specific exceptions, never bare `except:`. No silent `except: pass`.
-- Validate external input at boundaries (API/CLI/queue); trust internal calls.
-- No secrets in code or logs. Read config from env/settings.
-- Match existing patterns in the file/module you are editing.
-
-## SOLID / DRY / YAGNI (checkable, not slogans)
-- YAGNI: build only what the current task needs. No speculative abstractions,
-  unused config flags, unused parameters, or "for future use" code paths.
-- DRY: apply the Rule of Three — do not extract a shared abstraction until the
-  third real duplication. Duplicated-looking code with different reasons stays split.
-- SRP: one reason to change per module/class. Keep I/O, business logic, and
-  transport/serialization in separate layers.
-- DIP: depend on the abstraction the codebase already uses; don't invent an
-  interface for a single implementation.
+## Document the present, never the past
+- Comments and docs describe what the code does now, a constraint it must keep, or a
+  limitation a reader will hit. Not how it came to be that way.
+- No "we used to do X", no "this was a bug where", no dated decisions. git has that.
+- The one exception is a past that is still load-bearing — an active limitation, a
+  live bug, an expectation that breaks if changed. State it as the constraint.
 
 ## Decide WITH me vs proceed
 Stop and present 2-3 options with trade-offs before acting when:

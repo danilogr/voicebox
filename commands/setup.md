@@ -5,9 +5,9 @@ description: Install NeMo-Speech.cpp and the models the speak plugin needs for a
 # Set up neural speech for the speak plugin
 
 Install the local speech server this plugin can talk to. Explain the cost before
-you start: about 1.2 GB of models on disk, and, measured on an M5 with the CPU
-backend, roughly 800 MB of resident memory for the voice alone or 1.5 GB when the
-transcription model is loaded alongside it.
+you start: about 1.2 GB of models on disk, and while the server runs, roughly 800 MB
+of resident memory for the voice alone or 1.5 GB with the transcription model beside
+it.
 
 1. Run `${CLAUDE_PLUGIN_ROOT}/scripts/install-nemo.sh` and show the output. It
    installs `nemo-speech` if it is missing, pulls the MagpieTTS voice and the
@@ -23,13 +23,13 @@ transcription model is loaded alongside it.
    than on first use, so `/talk` does not pay a cold start, and that this costs
    memory from session start.
 5. On macOS the first recording asks for microphone access for the app running
-   Claude Code — the terminal, not Claude Code itself. Warn that a denied
-   microphone usually opens and returns silence rather than failing, so the
-   symptom is `/talk` and `listen` answering "heard nothing" rather than any
-   error. The switch is in System Settings > Privacy & Security > Microphone.
-   Say that "heard nothing" only means the gate never opened, so a muted
-   microphone, the wrong input device, or simply not talking before the recording
-   ran out give the same answer: check the permission first, then the device.
+   Claude Code — the terminal, not Claude Code itself. The switch is in System
+   Settings > Privacy & Security > Microphone. Warn that a denied microphone opens
+   the stream and delivers silence rather than failing, so it reads the same as a
+   muted input: the plugin reports that no microphone is delivering audio and lists
+   the devices it tried, with permission among the causes to check. Say that "heard
+   nothing" means something different — a live microphone whose gate never opened,
+   so either nothing was said or the recording ran out first.
 6. Mention that the first sentence after a cold start is spoken by the macOS
    `say` voice while the server warms up (about 10 seconds), and every sentence
    after that uses the neural voice.

@@ -287,8 +287,8 @@ async def test_release_still_stops_a_server_it_can_read(tmp_path):
 
 async def test_a_stale_lock_that_cannot_be_removed_gives_up(tmp_path, monkeypatch):
     """`rmtree` ignores its errors, so a lock directory that cannot be deleted leaves
-    the mtime stale forever. Retrying on that used to recurse until the stack ran out,
-    and RecursionError is not in the set of exceptions the callers catch."""
+    the mtime stale forever. Retrying that without a bound exhausts the stack, and
+    RecursionError is not in the set of exceptions the callers catch."""
     lock = tmp_path / "starting"
     lock.mkdir(parents=True)
     long_ago = time.time() - 3600
