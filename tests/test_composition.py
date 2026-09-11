@@ -66,3 +66,47 @@ def test_the_ears_carry_the_configured_cue_sounds():
     assert ears is not None
     assert ears.cue._enabled is False
     assert (ears.cue._start, ears.cue._end) == (Path("/s/in.wav"), END_SOUND)
+
+
+async def test_talk_builds_its_collaborators_the_way_the_server_does(monkeypatch):
+    """`/talk` wires up its own objects, and nothing else exercises that.
+
+    The transcriber block is character-identical to the one in `__main__`, which is the
+    risk: `nemo_model` and `nemo_asr_model` are both `str`, so handing the speech model
+    to the transcriber would transcribe against a voice and is caught by neither mypy
+    nor any other test. Two call sites, so the answer is to pin it rather than extract
+    a shared builder.
+    """
+    import speak.talk as talk
+
+    seen: dict[str, object] = {}
+
+    async def capture_arguments(settings, **collaborators: object) -> str:
+        seen.update(collaborators)
+        return "a transcript"
+
+    monkeypatch.setattr(talk, "dictate", capture_arguments)
+    settings = Settings(
+        listen=True,
+        nemo_url="http://127.0.0.1:9999",
+        nemo_model="magpie",
+        nemo_asr_model="parakeet-tdt",
+        listen_max_seconds=30.0,
+        state_dir=Path("/tmp/speak-test"),
+    )
+
+    assert await talk._run(settings) == "a transcript"
+
+    transcriber = seen["transcriber"]
+    assert transcriber._base_url == "http://127.0.0.1:9999"
+    assert transcriber._model == "parakeet-tdt"
+    assert transcriber._timeout == transcription_timeout(settings)
+
+    supervisor = seen["supervisor"]
+    assert supervisor._asr_model == "parakeet-tdt"
+    assert supervisor._model == "magpie"
+    assert supervisor._port == 9999
+
+    assert seen["lock"]._dir == Path("/tmp/speak-test") / "mic"
+    assert seen["cue"]._end == END_SOUND
+    assert seen["recorder"]._device is None

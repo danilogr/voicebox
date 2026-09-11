@@ -64,8 +64,11 @@ class Cue:
         self._end = end if end is not None else END_SOUND
         self._empty = empty if empty is not None else EMPTY_SOUND
         # Resolved here rather than at import, because which players exist is a fact
-        # about the machine and not about this module.
-        self._player = player if player is not None else resolve_player()
+        # about the machine and not about this module - and not at all when cues are
+        # off, which would be a search over six binaries for sounds never played.
+        if player is None and enabled:
+            player = resolve_player()
+        self._player = player
         self._spawn = spawn
 
     @asynccontextmanager

@@ -10,7 +10,7 @@ import logging
 import shutil
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class Player:
     """A command that plays one sound file and exits when it has finished."""
 
     binary: str
-    args: tuple[str, ...] = field(default=())
+    args: tuple[str, ...] = ()
     script: str | None = None
 
     def command_for(self, path: str) -> tuple[str, list[str]]:

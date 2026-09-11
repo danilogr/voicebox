@@ -255,3 +255,46 @@ async def test_the_configured_asr_model_is_served_alongside_speech(tmp_path):
     _binary, args = spawns.calls[0]
     assert args[args.index("--asr-model") + 1] == "nemotron-3.5"
     assert "--tts-model" in args
+
+
+@pytest.mark.parametrize(
+    "written",
+    ['{"port": 8082}', "[1, 2]", '"8082"', "null", '{"pid": "4242"}'],
+    ids=["no-pid", "a-list", "a-string", "null", "pid-not-an-int"],
+)
+async def test_release_survives_a_server_record_it_did_not_write(tmp_path, written):
+    """`release` runs in a `finally` whose caller catches a fixed set of exceptions, so
+    anything else raised there reaches the user as a traceback - and on the /talk path
+    a traceback lands where the user's own words are read from. The file is on disk,
+    so its shape is not this code's to assume: it parsed, which is not the same thing."""
+    (tmp_path / "server.json").write_text(written)
+    supervisor = build(tmp_path)
+    await supervisor.register()
+
+    assert await supervisor.release() is False
+
+
+async def test_release_still_stops_a_server_it_can_read(tmp_path):
+    """The guard above must not have turned every release into a no-op."""
+    killed: list[tuple[int, int]] = []
+    (tmp_path / "server.json").write_text(json.dumps({"pid": 4242, "port": 8082}))
+    supervisor = build(tmp_path, kill=lambda pid, sig: killed.append((pid, sig)))
+    await supervisor.register()
+
+    assert await supervisor.release() is True
+    assert [pid for pid, _signal in killed] == [4242]
+
+
+async def test_a_stale_lock_that_cannot_be_removed_gives_up(tmp_path, monkeypatch):
+    """`rmtree` ignores its errors, so a lock directory that cannot be deleted leaves
+    the mtime stale forever. Retrying on that used to recurse until the stack ran out,
+    and RecursionError is not in the set of exceptions the callers catch."""
+    lock = tmp_path / "starting"
+    lock.mkdir(parents=True)
+    long_ago = time.time() - 3600
+    os.utime(lock, (long_ago, long_ago))
+    monkeypatch.setattr("speak.supervisor.shutil.rmtree", lambda *_a, **_k: None)
+
+    spawns = Spawns()
+    assert await build(tmp_path, spawn=spawns).ensure_running() is False
+    assert spawns.calls == []

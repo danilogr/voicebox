@@ -335,7 +335,7 @@ def create_server(
                 finally:
                     ears.mic_lock.release()
 
-            return heard or tools.HEARD_NOTHING
+                return heard or tools.HEARD_NOTHING
 
     return server
 

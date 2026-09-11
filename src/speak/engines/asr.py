@@ -61,13 +61,11 @@ class NemoTranscriber:
         api_key: str | None = None,
         model: str = "nemotron-3.5",
         timeout: float = DEFAULT_TIMEOUT,
-        probe_timeout: float = PROBE_TIMEOUT,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._client = client or httpx2.AsyncClient(timeout=timeout)
         self._model = model
         self._timeout = timeout
-        self._probe_timeout = probe_timeout
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
     async def transcribe(self, wav: bytes, *, language: str | None = None) -> str:
@@ -104,7 +102,7 @@ class NemoTranscriber:
         """
         try:
             response = await self._client.get(
-                f"{self._base_url}/health", headers=self._headers, timeout=self._probe_timeout
+                f"{self._base_url}/health", headers=self._headers, timeout=PROBE_TIMEOUT
             )
         except httpx2.HTTPError:
             return Liveness.ABSENT
@@ -125,7 +123,7 @@ class NemoTranscriber:
         """True when the running server reports a transcription model."""
         try:
             response = await self._client.get(
-                f"{self._base_url}/v1/models", headers=self._headers, timeout=self._probe_timeout
+                f"{self._base_url}/v1/models", headers=self._headers, timeout=PROBE_TIMEOUT
             )
             response.raise_for_status()
             payload = response.json()

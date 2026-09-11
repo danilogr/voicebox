@@ -136,7 +136,7 @@ class Settings:
             listen_cue_empty=_path(env, "SPEAK_LISTEN_CUE_EMPTY"),
             input_device=_text(env, "SPEAK_INPUT_DEVICE"),
             nemo_binary=_text(env, "SPEAK_NEMO_BIN") or "nemo-speech",
-            nemo_autostart=_text(env, "SPEAK_NEMO_AUTOSTART") != "0",
+            nemo_autostart=_flag(env, "SPEAK_NEMO_AUTOSTART", default=True),
             seed=None if seed is None else int(seed),
             state_dir=_state_dir(env, platform if platform is not None else sys.platform),
         )

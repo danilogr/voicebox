@@ -39,11 +39,17 @@ class State(Enum):
 FINAL = frozenset({State.DONE, State.SILENT, State.CAPPED, State.CANCELLED, State.DEAF})
 
 
+SAMPLE_RATE = 16_000
+BLOCK_MS = 30.0
+
+
 @dataclass(frozen=True, slots=True)
 class TrackerSettings:
     """Limits for one recording, in milliseconds."""
 
-    block_ms: float = 30.0
+    # Must match the recorder's real block size, or every limit below skews by the
+    # ratio between them: these are stated in milliseconds but counted in blocks.
+    block_ms: float = BLOCK_MS
     calibrate_ms: float = 300.0
     # How long a device gets to produce its first sample before it is called mute.
     # CoreAudio hands over exact zeros while an input primes, and a Bluetooth one can
@@ -172,8 +178,6 @@ class SilenceTracker:
         return self._state
 
 
-SAMPLE_RATE = 16_000
-BLOCK_MS = 30.0
 FULL_SCALE = 32768.0
 
 
@@ -196,7 +200,7 @@ class Recording:
     wav: bytes
     reason: State
     has_speech: bool
-    device: str | int | None = None
+    device: str | None = None
     threshold: float = 0.0
     peak: float = 0.0
 
@@ -307,15 +311,8 @@ class MicrophoneRecorder:
     would silently override the setting the user can actually see.
     """
 
-    def __init__(
-        self,
-        *,
-        sample_rate: int = SAMPLE_RATE,
-        block_ms: float = BLOCK_MS,
-        device: str | int | None = None,
-    ) -> None:
-        self._sample_rate = sample_rate
-        self._block_frames = int(sample_rate * block_ms / 1000)
+    def __init__(self, *, device: str | None = None) -> None:
+        self._block_frames = int(SAMPLE_RATE * BLOCK_MS / 1000)
         # An explicitly named device is never fallen back off: the user asked for that
         # microphone, and quietly recording from a different one would be worse than
         # saying the named one is mute.
@@ -360,9 +357,9 @@ class MicrophoneRecorder:
                 failures.append(error)
                 continue
             if captured.reason is not State.DEAF:
-                self._remembered = candidate if isinstance(candidate, str) else None
+                self._remembered = candidate
                 return Recording(
-                    wav=to_wav(captured.pcm, self._sample_rate),
+                    wav=to_wav(captured.pcm, SAMPLE_RATE),
                     reason=captured.reason,
                     has_speech=captured.has_speech,
                     device=candidate,
@@ -378,12 +375,15 @@ class MicrophoneRecorder:
             raise RecorderUnavailable(_silence_hint(deaf, explicit=self._device is not None))
         if failures:
             raise failures[0]
+        # Unreachable: `_candidates` never returns an empty list, so the loop always
+        # returns or fills one of the two lists above. Kept because the type checker
+        # cannot prove that, and without it this function appears to fall off the end.
         raise RecorderUnavailable("no input device was available to record from.")
 
     def _capture(
         self,
         sounddevice: ModuleType,
-        device: str | int | None,
+        device: str | None,
         settings: TrackerSettings,
         cancel: threading.Event,
     ) -> Capture:
@@ -403,7 +403,7 @@ class MicrophoneRecorder:
                     "Check that the input device is still connected."
                 ) from error
 
-    def _candidates(self, sounddevice: ModuleType) -> list[str | int | None]:
+    def _candidates(self, sounddevice: ModuleType) -> list[str | None]:
         if self._device is not None:
             return [self._device]
         try:
@@ -416,12 +416,12 @@ class MicrophoneRecorder:
         except Exception as error:  # a binding too old to enumerate can still record
             logger.debug("could not enumerate input devices: %s", error)
             return [None]
-        return list(order_candidates(devices, default=default, remembered=self._remembered))
+        return order_candidates(devices, default=default, remembered=self._remembered)
 
-    def _open(self, sounddevice: ModuleType, device: str | int | None) -> Any:
+    def _open(self, sounddevice: ModuleType, device: str | None) -> Any:
         try:
             return sounddevice.RawInputStream(
-                samplerate=self._sample_rate,
+                samplerate=SAMPLE_RATE,
                 blocksize=self._block_frames,
                 dtype="int16",
                 channels=1,
@@ -454,7 +454,7 @@ def describe(recording: Recording) -> str:
     )
 
 
-def _label(device: str | int | None) -> str:
+def _label(device: str | None) -> str:
     return SYSTEM_DEFAULT if device is None else str(device)
 
 

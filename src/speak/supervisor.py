@@ -60,7 +60,6 @@ class NemoSupervisor:
         asr_model: str | None = None,
         seed: int | None = None,
         pid: int | None = None,
-        stale_lock_seconds: float = STALE_LOCK_SECONDS,
         is_alive: Callable[[int], bool] = process_is_alive,
         kill: Callable[[int, int], None] = os.kill,
     ) -> None:
@@ -76,7 +75,6 @@ class NemoSupervisor:
         self._asr_model = asr_model
         self._seed = seed
         self._pid = pid if pid is not None else os.getpid()
-        self._stale_lock_seconds = stale_lock_seconds
         self._is_alive = is_alive
         self._kill = kill
 
@@ -98,17 +96,24 @@ class NemoSupervisor:
         return args
 
     def _take_lock(self) -> bool:
-        """Claim the right to start the server. `mkdir` is atomic, so exactly one wins."""
-        try:
-            self._lock_dir.mkdir(parents=True)
-        except FileExistsError:
-            age = time.time() - self._lock_dir.stat().st_mtime
-            if age < self._stale_lock_seconds:
-                return False
-            logger.info("taking over a start lock left by a session that never finished")
-            shutil.rmtree(self._lock_dir, ignore_errors=True)
-            return self._take_lock()
-        return True
+        """Claim the right to start the server. `mkdir` is atomic, so exactly one wins.
+
+        One retry, not recursion: `rmtree` ignores errors, so a lock directory that
+        cannot be removed - a read-only parent, or one owned by another user - would
+        otherwise be retried forever against an mtime that never changes.
+        """
+        for last_attempt in (False, True):
+            try:
+                self._lock_dir.mkdir(parents=True)
+            except FileExistsError:
+                age = time.time() - self._lock_dir.stat().st_mtime
+                if age < STALE_LOCK_SECONDS or last_attempt:
+                    return False
+                logger.info("taking over a start lock left by a session that never finished")
+                shutil.rmtree(self._lock_dir, ignore_errors=True)
+            else:
+                return True
+        return False
 
     async def register(self) -> None:
         self._clients_dir.mkdir(parents=True, exist_ok=True)
@@ -151,14 +156,25 @@ class NemoSupervisor:
         finally:
             shutil.rmtree(self._lock_dir, ignore_errors=True)
 
-    def _recorded_server_is_alive(self) -> bool:
-        """True when `server.json` names a process that still exists."""
+    def _recorded_pid(self) -> int | None:
+        """The pid in `server.json`, or None when there is no usable one.
+
+        Both readers need the same guards, and `release` runs in a `finally` whose
+        caller catches a fixed set of exceptions: a file that parses but is not the
+        shape this code wrote used to raise from there, which on the `/talk` path puts
+        a traceback where the user's own words are read from.
+        """
         try:
             recorded = json.loads(self._server_file.read_text())
         except (OSError, ValueError):
-            return False
+            return None
         pid = recorded.get("pid") if isinstance(recorded, dict) else None
-        return isinstance(pid, int) and self._is_alive(pid)
+        return pid if isinstance(pid, int) else None
+
+    def _recorded_server_is_alive(self) -> bool:
+        """True when `server.json` names a process that still exists."""
+        pid = self._recorded_pid()
+        return pid is not None and self._is_alive(pid)
 
     async def release(self) -> bool:
         """Leave, and stop the server if this was the last session using it."""
@@ -167,14 +183,13 @@ class NemoSupervisor:
         if not self._prune_dead_clients():
             return False
 
-        try:
-            recorded = json.loads(self._server_file.read_text())
-        except (OSError, ValueError):
+        pid = self._recorded_pid()
+        if pid is None:
             return False
 
-        logger.info("last session out, stopping speech server %s", recorded["pid"])
+        logger.info("last session out, stopping speech server %s", pid)
         try:
-            self._kill(recorded["pid"], signal.SIGTERM)
+            self._kill(pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError) as error:
             logger.info("speech server was already gone: %s", error)
         self._server_file.unlink(missing_ok=True)
