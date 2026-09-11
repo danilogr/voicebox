@@ -5,4 +5,6 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 *.log
+.coverage
+htmlcov/
 docs/
