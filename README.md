@@ -83,6 +83,10 @@ refuses. `claude mcp list` shows the plugin either way; what tells you is whethe
 
 Two ways in:
 
+- **`/speak:converse`** — turn the whole session into a spoken conversation: Claude
+  says its answers aloud and calls `listen` when it needs an answer from you, rather
+  than ending the turn and waiting for typing. It is one instruction file and no code,
+  so it lasts for the session and stops when you ask it to.
 - **`/talk`** — say your prompt instead of typing it. The transcript is injected
   into your message, prefixed with a note that it came from a local speech model
   and may contain errors, so Claude reads a garbled word charitably and confirms
@@ -102,12 +106,16 @@ on a keypress, so without the second chime you never learn when it decided you h
 finished. The opening chime is played to completion *before* the microphone opens —
 the gate calibrates on the first 300 ms of audio, and a sound still playing then
 would be averaged into it. Turn the pair off with `SPEAK_LISTEN_CUE=0`, or replace
-them with `SPEAK_LISTEN_CUE_START` and `SPEAK_LISTEN_CUE_END`; the defaults are macOS
-system sounds played with `afplay`, so anywhere else the overrides are the way in.
+them with `SPEAK_LISTEN_CUE_START` and `SPEAK_LISTEN_CUE_END`.
+
+The cue sounds ship with the plugin as 16-bit PCM WAV, synthesised by
+`scripts/make-cues.py` rather than borrowed from the operating system — a system sound
+lives at a different path on every platform, and carrying someone else's audio is not
+ours to do. Any WAV works as an override.
 A chime that cannot be played is logged and skipped — it never costs you a recording.
 
 A capture that caught nothing closes with an error tone instead of the usual chime
-(`Basso`, overridable with `SPEAK_LISTEN_CUE_EMPTY`). Recording stops on silence
+(overridable with `SPEAK_LISTEN_CUE_EMPTY`). Recording stops on silence
 either way, so without a different sound an empty capture is indistinguishable from
 one that worked until the transcript fails to arrive.
 
@@ -191,9 +199,9 @@ All optional, set in your shell or in the plugin's `.mcp.json`:
 | `SPEAK_LISTEN_TIMEOUT` | `10` | seconds to wait for you to start talking |
 | `SPEAK_LISTEN_LANGUAGE` | — | language hint for transcription, e.g. `en` |
 | `SPEAK_LISTEN_CUE` | `1` | set `0` to open and close the microphone silently |
-| `SPEAK_LISTEN_CUE_START` | `/System/Library/Sounds/Tink.aiff` | chime as the microphone opens |
-| `SPEAK_LISTEN_CUE_END` | `/System/Library/Sounds/Purr.aiff` | chime as it closes |
-| `SPEAK_LISTEN_CUE_EMPTY` | `/System/Library/Sounds/Basso.aiff` | tone when nothing was captured |
+| `SPEAK_LISTEN_CUE_START` | shipped `cue-open.wav` | chime as the microphone opens |
+| `SPEAK_LISTEN_CUE_END` | shipped `cue-close.wav` | chime as it closes |
+| `SPEAK_LISTEN_CUE_EMPTY` | shipped `cue-empty.wav` | tone when nothing was captured |
 | `SPEAK_INPUT_DEVICE` | — | record from this input only, instead of searching |
 | `SPEAK_COMMAND` | — | required when `SPEAK_ENGINE=command` |
 | `SPEAK_NEMO_AUTOSTART` | `1` | set `0` to start and stop the speech server yourself |
@@ -230,6 +238,25 @@ piper, espeak, a shell script, or a remote speaker:
 SPEAK_ENGINE=command SPEAK_COMMAND="/usr/local/bin/piper --model en_US.onnx"
 ```
 
+### Other platforms
+
+Voice input is portable: the microphone goes through PortAudio, and the cue sounds ship
+with the plugin as WAV. Playback needs a player, found on the machine at startup —
+`afplay` on macOS, PowerShell's `SoundPlayer` on Windows, and on Linux the first of
+`paplay`, `aplay`, `ffplay`, `play` or `mpv` that is installed. With none of them, cues
+are skipped and a recording still works.
+
+Speech output is the part that is not portable by default: `SPEAK_ENGINE=say` is macOS
+only, and on any other platform the plugin says so once at startup. Use
+`SPEAK_ENGINE=nemo` for the local speech server, which is cross-platform, or
+`SPEAK_ENGINE=command` with whatever that machine has — `espeak-ng` and `spd-say` both
+take the sentence as their last argument.
+
+None of this reaches a session whose process runs in the cloud. There is no speaker or
+microphone attached to a remote container, and `/talk` injects a local command's output
+into your prompt, which has no meaning in a remote runtime. Install it wherever Claude
+Code runs on hardware you own.
+
 ## Development
 
 ```bash
@@ -244,7 +271,7 @@ linking it, so editing the checkout changes nothing Claude Code loads. Run
 `scripts/install-local.sh` to sync the working tree into that copy — it refuses to
 write anywhere outside the plugin cache — then restart Claude Code.
 
-352 tests, no network, no audio and no microphone: the queue and the recording cues
+369 tests, no network, no audio and no microphone: the queue and the recording cues
 run against a fake spawner, the NeMo engine and the transcriber against a mock HTTP
 transport, the supervisor and the microphone lock against injected spawn, liveness and
 kill callables over a temporary state directory, and the end-to-end tests drive the real server
@@ -267,6 +294,10 @@ commands/setup.md                the /speak:setup command
 commands/talk.md                 the /talk command, and how to read a transcript
 harness/architecture.md          system shape and the decisions behind it
 harness/performance.md           measured latency, memory, disk, and audio levels
+commands/converse.md             the /speak:converse instruction for spoken sessions
+scripts/make-cues.py             regenerates the three shipped cue sounds
+src/speak/assets/                the cue sounds, synthesised and shipped as WAV
+src/speak/player.py              finds something on this machine that plays a WAV
 src/speak/__main__.py            entry point: environment to objects, then serve
 src/speak/config.py              settings, parsed and validated from the environment
 src/speak/server.py              the tools over the queue, the engine, and the ears

@@ -11,6 +11,7 @@ import httpx2
 
 from speak.engines.base import Engine, Utterance
 from speak.engines.say import SayEngine
+from speak.player import Player, resolve_player
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class NemoEngine:
         timeout: float = DEFAULT_TIMEOUT,
         fallback: Engine | None = None,
         on_unavailable: Callable[[], None] | None = None,
+        player: Player | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._client = client or httpx2.AsyncClient(timeout=timeout)
@@ -46,6 +48,7 @@ class NemoEngine:
         self.default_voice = default_voice
         self._timeout = timeout
         self._fallback = fallback or SayEngine()
+        self._player = player if player is not None else resolve_player()
         self._on_unavailable = on_unavailable
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
@@ -58,13 +61,20 @@ class NemoEngine:
                 self._on_unavailable()
             return await self._fallback.prepare(text, voice=None, rate=rate)
 
+        if self._player is None:
+            # Audio we cannot play is worse than no audio: the sentence would be
+            # silently lost. The fallback speaks it instead.
+            logger.warning("no sound player on this machine, using say instead")
+            return await self._fallback.prepare(text, voice=None, rate=rate)
+
         path = Path(tempfile.gettempdir()) / f"speak-{uuid.uuid4().hex}.wav"
         await asyncio.to_thread(path.write_bytes, audio)
 
         async def cleanup() -> None:
             await asyncio.to_thread(path.unlink, True)
 
-        return Utterance(command="afplay", args=[str(path)], cleanup=cleanup)
+        command, args = self._player.command_for(str(path))
+        return Utterance(command=command, args=args, cleanup=cleanup)
 
     async def _synthesize(self, text: str, voice: str | None) -> bytes:
         response = await self._client.post(

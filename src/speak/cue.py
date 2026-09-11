@@ -13,22 +13,23 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from speak.player import Player, resolve_player
 from speak.queue import Spawn, spawn_detached
 
 logger = logging.getLogger(__name__)
 
-PLAYER = "/usr/bin/afplay"
-
-# macOS system sounds, and the reason the paths are configurable: Tink is bright and
-# half a second long, Purr is softer and lower, so the two are told apart without
-# being looked at.
-START_SOUND = Path("/System/Library/Sounds/Tink.aiff")
-END_SOUND = Path("/System/Library/Sounds/Purr.aiff")
-# Recording stops on silence, so a capture that caught nothing ends exactly like one
-# that worked. Basso is the macOS error tone and is not mistakable for Purr, which
-# is why it replaces the closing chime rather than following it: hearing "got it"
+# Synthesised and shipped with the plugin rather than borrowed from the operating
+# system: the paths a system sound lives at differ per platform and carrying someone
+# else's audio is not ours to do. `scripts/make-cues.py` regenerates them.
+#
+# The open cue is bright and short, the close cue lower and softer, so the two are
+# told apart without being looked at. The empty cue falls in pitch, which reads as
+# "no", and it replaces the closing cue rather than following it - hearing "got it"
 # and then "that failed" is worse than hearing only the second.
-EMPTY_SOUND = Path("/System/Library/Sounds/Basso.aiff")
+ASSETS = Path(__file__).resolve().parent / "assets"
+START_SOUND = ASSETS / "cue-open.wav"
+END_SOUND = ASSETS / "cue-close.wav"
+EMPTY_SOUND = ASSETS / "cue-empty.wav"
 
 
 @dataclass(slots=True)
@@ -53,7 +54,7 @@ class Cue:
         start: Path | None = None,
         end: Path | None = None,
         empty: Path | None = None,
-        player: str = PLAYER,
+        player: Player | None = None,
         spawn: Spawn = spawn_detached,
     ) -> None:
         # The paths default here rather than in `config`, so an unset override can be
@@ -62,7 +63,9 @@ class Cue:
         self._start = start if start is not None else START_SOUND
         self._end = end if end is not None else END_SOUND
         self._empty = empty if empty is not None else EMPTY_SOUND
-        self._player = player
+        # Resolved here rather than at import, because which players exist is a fact
+        # about the machine and not about this module.
+        self._player = player if player is not None else resolve_player()
         self._spawn = spawn
 
     @asynccontextmanager
@@ -82,10 +85,11 @@ class Cue:
             await self._play(self._end if outcome.heard else self._empty)
 
     async def _play(self, sound: Path) -> None:
-        if not self._enabled:
+        if not self._enabled or self._player is None:
             return
         try:
-            player = await self._spawn(self._player, [str(sound)])
+            command, args = self._player.command_for(str(sound))
+            player = await self._spawn(command, args)
             code = await player.wait()
         except OSError as error:
             logger.debug("no cue played: %s", error)

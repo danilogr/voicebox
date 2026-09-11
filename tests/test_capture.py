@@ -140,9 +140,9 @@ def test_deafness_is_decided_before_the_start_timeout_runs():
 
 
 def test_a_device_that_wakes_late_is_not_called_mute():
-    """Measured at 630 ms for AirPods: CoreAudio hands over exact zeros while an
-    input primes. Judging deafness inside the 300 ms calibration window rejected the
-    one microphone on this machine that worked, then fell through to three dead ones."""
+    """CoreAudio hands over exact zeros while an input primes, and a Bluetooth
+    microphone can take most of a second. Judging deafness inside the 300 ms
+    calibration window rejects a working microphone that is merely slow to start."""
     state, _blocks = run([0.0] * 6 + [QUIET] * 3 + [0.5] * 3 + [0.0] * 6)
     assert state is State.DONE
 
@@ -424,7 +424,7 @@ def test_a_remembered_device_is_tried_before_the_default():
 
 
 def test_a_remembered_device_that_has_been_unplugged_is_dropped():
-    assert order_candidates(DEVICES, default="Built-in Mic", remembered="AirPods") == [
+    assert order_candidates(DEVICES, default="Built-in Mic", remembered="Desk Mic") == [
         "Built-in Mic",
         "USB Headset",
         "Webcam",

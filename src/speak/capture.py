@@ -47,8 +47,8 @@ class TrackerSettings:
     calibrate_ms: float = 300.0
     # How long a device gets to produce its first sample before it is called mute.
     # CoreAudio hands over exact zeros while an input primes, and a Bluetooth one can
-    # take most of a second: measured at 630 ms for AirPods. Judging deafness inside
-    # the 300 ms calibration window rejected exactly the microphone that worked.
+    # take most of a second. Judging deafness inside the 300 ms calibration window
+    # therefore rejects a working microphone that is merely slow to start.
     deaf_ms: float = 1500.0
     silence_ms: float = 3000.0
     start_timeout_ms: float = 10_000.0

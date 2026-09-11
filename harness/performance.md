@@ -51,9 +51,9 @@ decision record in `architecture.md`.
 
 ## Microphone warmup
 
-CoreAudio delivers exact zeros while an input primes. A Bluetooth microphone
-(AirPods) produced its first non-zero sample **630 ms** after the stream opened; a
-muted or disabled input never produces one at all. The deafness window is 1.5 s,
+CoreAudio delivers exact zeros while an input primes. A Bluetooth earbud produced
+its first non-zero sample **630 ms** after the stream opened; a muted or disabled
+input never produces one at all. The deafness window is 1.5 s,
 which is a little over twice the slowest start measured — short enough that stepping
 past a dead default is not felt, long enough that a slow device is not mistaken for
 a dead one.

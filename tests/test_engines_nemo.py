@@ -5,6 +5,7 @@ import httpx2
 
 from speak.engines.nemo import NemoEngine
 from speak.engines.say import SayEngine
+from speak.player import Player
 
 WAV = b"RIFF\x00\x00\x00\x00WAVEfmt "
 
@@ -16,8 +17,14 @@ MODELS = {
 }
 
 
+# An explicit player, so these tests assert the same thing on every platform rather
+# than whichever binary this machine happens to have.
+PLAYER = Player("testplay", ("-q",))
+
+
 def engine_over(handler, **kwargs: object) -> NemoEngine:
     client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
+    kwargs.setdefault("player", PLAYER)
     return NemoEngine(base_url="http://127.0.0.1:8082", client=client, **kwargs)
 
 
@@ -25,13 +32,23 @@ def speech_ok(request: httpx2.Request) -> httpx2.Response:
     return httpx2.Response(200, content=WAV)
 
 
-async def test_writes_the_wav_and_plays_it_with_afplay():
+async def test_writes_the_wav_and_hands_it_to_the_resolved_player():
     utterance = await engine_over(speech_ok).prepare("hello", voice=None, rate=None)
-    assert utterance.command == "afplay"
-    written = Path(utterance.args[0])
+    assert utterance.command == "testplay"
+    written = Path(utterance.args[-1])
+    assert utterance.args[:-1] == ["-q"]
     assert written.read_bytes() == WAV
     assert written.suffix == ".wav"
     await utterance.cleanup()
+
+
+async def test_a_machine_with_no_player_speaks_through_the_fallback(monkeypatch):
+    """Audio that cannot be played is worse than no audio: the sentence would go
+    missing silently, where the fallback at least says it."""
+    monkeypatch.setattr("speak.engines.nemo.resolve_player", lambda: None)
+    engine = engine_over(speech_ok, player=None)
+    utterance = await engine.prepare("hello", voice=None, rate=None)
+    assert utterance.command == "say"
 
 
 async def test_cleanup_removes_the_temporary_file():
@@ -153,7 +170,7 @@ async def test_trailing_slash_in_the_base_url_does_not_double_up():
         return httpx2.Response(200, content=WAV)
 
     client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
-    engine = NemoEngine(base_url="http://127.0.0.1:8082/", client=client)
+    engine = NemoEngine(base_url="http://127.0.0.1:8082/", client=client, player=PLAYER)
     utterance = await engine.prepare("hello", voice=None, rate=None)
     await utterance.cleanup()
     assert seen == ["http://127.0.0.1:8082/v1/audio/speech"]
