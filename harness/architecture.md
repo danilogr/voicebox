@@ -400,12 +400,21 @@ bytes for the length of one transcription and is never written to disk.
   indistinguishable until the transcript fails to arrive. It replaces the closing cue
   rather than following it: "got it" then "that failed" is worse than only the second.
 
-- **The cue sounds are synthesised and shipped, and the player is
-  resolved.** Absolute paths into `/System/Library/Sounds` and a hardcoded `afplay`
-  made the plugin macOS-only for no good reason — the microphone half was already
-  portable. Generating the sounds keeps them reproducible and carries no one else's
-  assets; resolving the player keeps playback a subprocess, which the queue needs
-  because it stops an utterance by terminating it.
+- **The cue sounds ship with the plugin, and the player is resolved.** A path into a
+  system sound directory or a fixed player binary would tie playback to one operating
+  system, while the microphone half is portable. Generated sounds are reproducible and
+  carry no one else's assets; a resolved player keeps playback a subprocess, which the
+  queue needs because it stops an utterance by terminating it.
+
+- **Conversation mode is served as an MCP prompt, from its command file.** Claude Code
+  reads `commands/*.md` itself; every other MCP client sees only what the server
+  offers. The `converse` prompt serves that same file with its frontmatter removed, and
+  takes its description from the frontmatter, so both have one copy whichever app asks.
+  It is read once at startup, like the tool descriptions, and a checkout without the
+  file loses the prompt and nothing else. It is offered only when `listen` is
+  registered, because its instruction is to call it. `/talk` stays a slash command: it
+  records before the user's message exists, and a prompt handler blocked on a
+  microphone for seconds is what a client's timeout cuts off.
 
 - **The microphone is cued open and cued shut, and the opening cue is
   awaited.** Nothing else told the user the microphone was open; `/talk` is the acute

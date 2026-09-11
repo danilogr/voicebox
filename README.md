@@ -257,6 +257,34 @@ microphone attached to a remote container, and `/talk` injects a local command's
 into your prompt, which has no meaning in a remote runtime. Install it wherever Claude
 Code runs on hardware you own.
 
+### From another MCP client
+
+The server is a standard stdio MCP server, so any MCP client — another editor, a desktop
+app, an agent built on the MCP SDK — can launch it and get the same tools. Point the
+client at the checkout rather than `${CLAUDE_PLUGIN_ROOT}`, which only Claude Code
+expands, and pass settings through the client's own environment block, which also means
+nothing has to be exported before the client starts:
+
+```json
+{
+  "mcpServers": {
+    "speak": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/speak", "--quiet", "speak-mcp"],
+      "env": { "SPEAK_ENGINE": "nemo", "SPEAK_LISTEN": "1" }
+    }
+  }
+}
+```
+
+With voice input on, the server also offers conversation mode as an MCP prompt named
+`converse`, served from the same file as `/speak:converse`, for clients that surface
+prompts. `/talk` has no equivalent outside Claude Code: it records before your message
+exists, through a slash command that runs a local script.
+
+`listen` holds its tool call open until you stop talking. A client that times out long
+tool calls will cut it off mid-recording, so in those, ask for a short `max_seconds`.
+
 ## Development
 
 ```bash
@@ -271,7 +299,7 @@ linking it, so editing the checkout changes nothing Claude Code loads. Run
 `scripts/install-local.sh` to sync the working tree into that copy — it refuses to
 write anywhere outside the plugin cache — then restart Claude Code.
 
-369 tests, no network, no audio and no microphone: the queue and the recording cues
+384 tests, no network, no audio and no microphone: the queue and the recording cues
 run against a fake spawner, the NeMo engine and the transcriber against a mock HTTP
 transport, the supervisor and the microphone lock against injected spawn, liveness and
 kill callables over a temporary state directory, and the end-to-end tests drive the real server
@@ -295,7 +323,7 @@ commands/talk.md                 the /talk command, and how to read a transcript
 harness/architecture.md          system shape and the decisions behind it
 harness/user-flow.md             every path, state and early exit, end to end
 harness/performance.md           measured latency, memory, disk, and audio levels
-commands/converse.md             the /speak:converse instruction for spoken sessions
+commands/converse.md             conversation mode: /speak:converse, and the converse MCP prompt
 scripts/make-cues.py             regenerates the three shipped cue sounds
 src/speak/assets/                the cue sounds, synthesised and shipped as WAV
 src/speak/player.py              finds something on this machine that plays a WAV

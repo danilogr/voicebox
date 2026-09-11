@@ -361,3 +361,62 @@ async def test_listening_can_start_again_after_a_failure():
         await call_listen(rig.server)
     rig.transcriber._error = None
     assert await call_listen(rig.server) == "run the tests"
+
+
+# --- conversation mode, served to every MCP client ---
+
+
+async def prompt_names(server) -> set[str]:
+    return {prompt.name for prompt in await server.list_prompts()}
+
+
+async def test_conversation_mode_is_offered_to_every_client_when_voice_input_is_on():
+    """Claude Code reads commands/*.md itself; any other MCP client sees only what the
+    server offers, so without the prompt conversation mode exists in one app."""
+    assert "converse" in await prompt_names(build().server)
+
+
+async def test_conversation_mode_is_not_offered_without_a_listen_tool():
+    """Its instruction is to call `listen`, which exists only with voice input on."""
+    assert "converse" not in await prompt_names(build(listen=False).server)
+
+
+async def test_the_prompt_is_the_command_file_without_its_frontmatter():
+    """One copy of the instruction and of its description, whichever app asks."""
+    description, body = server_module.split_frontmatter(
+        server_module.CONVERSE_COMMAND.read_text(encoding="utf-8")
+    )
+    server = build().server
+
+    result = await server.get_prompt("converse")
+    served = result.messages[0].content.text
+    assert served == body
+    assert not served.startswith("---")
+    assert "listen" in served
+
+    listed = {prompt.name: prompt.description for prompt in await server.list_prompts()}
+    assert description
+    assert listed["converse"] == description
+
+
+async def test_a_missing_command_file_costs_the_prompt_and_nothing_else(monkeypatch, tmp_path):
+    """A checkout without the file must still speak and listen."""
+    monkeypatch.setattr(server_module, "CONVERSE_COMMAND", tmp_path / "gone.md")
+    rig = build()
+    assert "converse" not in await prompt_names(rig.server)
+    assert "listen" in await tool_names(rig.server)
+
+
+def test_frontmatter_is_split_into_its_description_and_the_body():
+    text = "---\ndescription: Talk: out loud\nallowed-tools: Bash\n---\n\nThe body.\n"
+    assert server_module.split_frontmatter(text) == ("Talk: out loud", "The body.\n")
+
+
+def test_a_file_without_frontmatter_is_all_body():
+    assert server_module.split_frontmatter("Just text.\n") == ("", "Just text.\n")
+
+
+def test_an_unclosed_frontmatter_block_is_left_in_the_body():
+    """Stripping to the end of the file would serve an empty instruction."""
+    text = "---\ndescription: never closed\nThe body.\n"
+    assert server_module.split_frontmatter(text) == ("", text)

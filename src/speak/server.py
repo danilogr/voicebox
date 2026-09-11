@@ -7,6 +7,7 @@ import random
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Annotated, Protocol
 
 from mcp.server.mcpserver import MCPServer
@@ -27,6 +28,11 @@ logger = logging.getLogger(__name__)
 VERSION = "1.0.0"
 
 DRAIN_TIMEOUT = 60.0
+
+# Claude Code reads `commands/*.md` on its own. Every other MCP client sees only what
+# this server offers, so conversation mode is served from that same file as a prompt:
+# one copy of the instruction, whichever app is asking for it.
+CONVERSE_COMMAND = Path(__file__).resolve().parents[2] / "commands" / "converse.md"
 
 # Long enough to cover a cold start, which is about ten seconds; `listen` waits it
 # out rather than reporting a server that this very session is still starting.
@@ -167,6 +173,26 @@ async def settle(warmup: "asyncio.Task[bool] | None") -> None:
     await asyncio.wait({warmup}, timeout=WARMUP_TIMEOUT)
 
 
+def split_frontmatter(text: str) -> tuple[str, str]:
+    """A command file's `description` and its body, with the frontmatter removed.
+
+    Only `description` is read, because it is the only key a prompt has a place for.
+    A block that never closes is left in the body: stripping to the end of the file
+    would serve an empty instruction.
+    """
+    if not text.startswith("---\n"):
+        return "", text
+    end = text.find("\n---\n", 4)
+    if end == -1:
+        return "", text
+    description = ""
+    for line in text[4:end].splitlines():
+        key, _, value = line.partition(":")
+        if key.strip() == "description":
+            description = value.strip()
+    return description, text[end + 5 :].lstrip("\n")
+
+
 def create_server(
     *,
     settings: Settings,
@@ -277,6 +303,18 @@ def create_server(
         # two calls inside this one process; without this second gate a concurrent
         # pair would open the microphone together and release the lock out from under
         # each other. Refusing rather than queueing keeps the answer immediate.
+        # Offered only alongside `listen`: the instruction is to call it, and a model
+        # told to use a tool that is not there is worse off than one never told.
+        try:
+            description, body = split_frontmatter(CONVERSE_COMMAND.read_text(encoding="utf-8"))
+        except OSError as error:
+            logger.warning("conversation mode is not offered as a prompt: %s", error)
+        else:
+
+            @server.prompt(name="converse", description=description)
+            def converse() -> str:
+                return body
+
         listening = asyncio.Lock()
 
         @server.tool(name="listen", description=tools.LISTEN)
