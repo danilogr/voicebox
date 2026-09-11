@@ -212,3 +212,19 @@ async def test_closing_the_session_kills_a_playing_utterance(tmp_path):
         await asyncio.sleep(0.02)
     os.kill(child, signal.SIGKILL)
     raise AssertionError(f"player {child} survived the session")
+
+
+async def test_a_client_sees_conversation_mode_over_stdio_when_voice_input_is_on(recorder):
+    """The prompt exists for MCP clients other than Claude Code, so it is checked the way
+    they receive it: a real client, over stdio, from a separate server process. Only
+    one prompt is expected, so no other command file can leak out as one."""
+    script, _ = recorder
+    async with connected(f"{sys.executable} {script}", {"SPEAK_LISTEN": "1"}) as session:
+        listed = (await session.list_prompts()).prompts
+        prompts = {prompt.name: prompt.description for prompt in listed}
+        assert set(prompts) == {"converse"}
+        assert prompts["converse"]
+
+        served = (await session.get_prompt("converse")).messages[0].content.text
+        assert not served.startswith("---")
+        assert "listen" in served
