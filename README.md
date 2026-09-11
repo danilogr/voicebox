@@ -293,6 +293,7 @@ scripts/install-local.sh         sync this checkout into the plugin cache Claude
 commands/setup.md                the /speak:setup command
 commands/talk.md                 the /talk command, and how to read a transcript
 harness/architecture.md          system shape and the decisions behind it
+harness/user-flow.md             every path, state and early exit, end to end
 harness/performance.md           measured latency, memory, disk, and audio levels
 commands/converse.md             the /speak:converse instruction for spoken sessions
 scripts/make-cues.py             regenerates the three shipped cue sounds

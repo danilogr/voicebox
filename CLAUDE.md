@@ -21,6 +21,7 @@ If a rule here conflicts with a harness/ doc, this file wins.
 - Read the relevant doc at the START of any non-trivial task:
   - harness/architecture.md — system shape, boundaries, data model, key decisions.
   - harness/user-flow.md — request/response and business flows, states, edge cases.
+  - harness/performance.md — measured latency, memory, disk, and audio levels.
   - harness/design-guidelines.md — naming, layering, error/logging/test conventions.
 - Update the matching doc AFTER an agreed change (e.g. approved architectural
   decision -> architecture.md). Never record such changes in CLAUDE.md.

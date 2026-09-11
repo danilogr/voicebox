@@ -55,10 +55,15 @@ the script behind it refuses at once with one line on stderr.
   normalizes, delegates, and formats the reply. `listen` is defined only when the
   factory is given an `Ears`, which bundles the recorder, the transcriber, the
   microphone lock, the capture limits and the recording cue into one presence check.
-- **`cue`** — the two chimes that bracket one recording, played through `afplay` with
-  the same detached-spawn helper the speech queue uses. It must not know why the
-  microphone is opening, and it must never fail a recording: a missing sound file, a
-  missing player or a non-zero exit is a debug log and nothing else.
+- **`cue`** — the three sounds that bracket one recording: open, close, and the error
+  tone that replaces the close when nothing was captured. Played through the resolved
+  player with the same detached-spawn helper the speech queue uses. It must not know
+  why the microphone is opening, and it must never fail a recording: a missing sound
+  file, a missing player or a non-zero exit is a debug log and nothing else.
+- **`player`** — resolves one command that plays a WAV, per platform, from the binaries
+  actually present. Pure apart from the injected `which`, so the search is testable on
+  any machine. Used by both `cue` and the `nemo` engine, which are the two places that
+  need to make sound from a file.
 - **`capture`** — the microphone. `SilenceTracker` is a pure state machine fed block
   energies and decides when an utterance has ended; `MicrophoneRecorder` is a thin
   shell that opens a `sounddevice` stream and feeds it. The split is what lets every
@@ -114,10 +119,17 @@ bytes for the length of one transcription and is never written to disk.
   a working PortAudio still runs the speech half of the plugin.
 - **`uv`** — environment and dependency management, and the launcher. Must be
   resolvable at startup; `scripts/speak-mcp` finds it.
-- **macOS `say` and `afplay`** — the default engine and the audio player. `afplay`
-  also sounds the recording cues, whose default sounds are `/System/Library/Sounds`
-  files. The plugin is macOS-only in practice; `SPEAK_LISTEN_CUE_START` and
-  `SPEAK_LISTEN_CUE_END` are what a port would point elsewhere.
+- **macOS `say`** — the default engine, and the fallback whenever the speech server
+  cannot be reached. macOS-only, which is the one part of the plugin that is: on any
+  other platform it is reported once at startup, and `SPEAK_ENGINE=nemo` or
+  `SPEAK_ENGINE=command` is the way through.
+- **A WAV player** — discovered, not assumed: `afplay`, PowerShell's `SoundPlayer`, or
+  one of `paplay`, `aplay`, `ffplay`, `play`, `mpv`. Not a hard dependency; with none
+  present the cues are skipped and the `nemo` engine speaks through the fallback rather
+  than writing audio nothing can play.
+- **The cue sounds** — synthesised by `scripts/make-cues.py` and committed under
+  `src/speak/assets`. Not taken from the host operating system: the paths differ per
+  platform, and shipping another vendor's audio is not ours to do.
 - **NeMo-Speech.cpp** (optional) — a local neural speech server, installed by
   `scripts/install-nemo.sh` and managed by the supervisor. Not vendored: it is a
   per-platform binary plus 1.2 GB of models — MagpieTTS and its codec at 520 MB,
@@ -370,6 +382,36 @@ bytes for the length of one transcription and is never written to disk.
   "heard nothing", which the documentation used to attribute to a denied microphone
   alone. A gate that is too low costs a longer recording; one that is too high loses
   the utterance and misdirects the user.
+
+- 2026-09-11 — **The default input is tried first, and a silent device is stepped
+  over.** A stream of exact zeros is not a quiet room: a live microphone always carries
+  a noise floor, so digital silence means a muted or disabled input. The OS default
+  leads the search, so the device chosen in system settings wins on the first recording
+  of every session; whatever answers is kept for the rest of the session, in memory
+  only. Rejected: persisting the choice, which would let a remembered device silently
+  override the setting the user can see. A device is skipped only for exact silence,
+  never for being quiet, or a pause would cascade through every input at ten seconds
+  each.
+
+- 2026-09-11 — **Deafness is judged on its own window, not the calibration window.**
+  CoreAudio hands over exact zeros while an input primes, and a Bluetooth microphone
+  can take most of a second, so a 300 ms verdict rejects a working device that is
+  merely slow. A device gets 1.5 s to produce anything; calibration then runs from its
+  first real sample, which also keeps priming silence out of the ambient average — a
+  gate diluted by zeros lands at the floor, and in a noisy room a floor-level gate
+  opens on the room and never closes.
+
+- 2026-09-11 — **An empty capture ends on a different sound.** Recording stops on
+  silence whether or not anyone spoke, so without a distinct tone the two are
+  indistinguishable until the transcript fails to arrive. It replaces the closing cue
+  rather than following it: "got it" then "that failed" is worse than only the second.
+
+- 2026-09-11 — **The cue sounds are synthesised and shipped, and the player is
+  resolved.** Absolute paths into `/System/Library/Sounds` and a hardcoded `afplay`
+  made the plugin macOS-only for no good reason — the microphone half was already
+  portable. Generating the sounds keeps them reproducible and carries no one else's
+  assets; resolving the player keeps playback a subprocess, which the queue needs
+  because it stops an utterance by terminating it.
 
 - 2026-09-07 — **The microphone is cued open and cued shut, and the opening cue is
   awaited.** Nothing else told the user the microphone was open; `/talk` is the acute

@@ -1,0 +1,127 @@
+# User flow
+
+> What happens on each path through the plugin, the states a recording moves
+> through, and every branch that ends it early. Update when a flow or a terminal
+> state changes. The *why* behind these choices lives in `architecture.md`;
+> measured figures live in `performance.md`.
+
+## Speaking
+
+`speak` returns as soon as the sentence is accepted, so Claude never blocks on audio.
+
+1. The text is normalised: whitespace collapsed to one line, capped at
+   `SPEAK_MAX_CHARS` (400) at a word boundary. Empty after collapsing is an error.
+2. The utterance is queued. `size` counts it from here until playback ends.
+3. The worker asks the engine to prepare it. For `nemo` that is an HTTP request for
+   audio, written to a temp file; for `say` and `command` it is just a command line.
+4. The generation counter is re-checked. If `stop_speaking` ran during preparation,
+   the work is discarded and cleaned up rather than played late.
+5. The player is spawned, and the generation checked **again** — a stop landing while
+   the spawn was in flight would otherwise leave an utterance neither discarded nor
+   terminated.
+6. On exit, the temp file is cleaned up whether playback succeeded or not.
+
+A speech server that cannot be reached is not an error: the `nemo` engine logs it,
+signals the supervisor, and the sentence is spoken by `say` instead. A missing player
+binary is caught at spawn, logged, and costs only that sentence.
+
+## One recording, state by state
+
+`SilenceTracker` is fed one block energy at a time and decides when to stop. The cap
+is checked before anything else, so it bounds every phase.
+
+| State | Leaves when | Goes to |
+|---|---|---|
+| `WARMING` | any non-zero sample arrives | `CALIBRATING` |
+| | `deaf_ms` (1.5 s) passes with only exact zeros | `DEAF` |
+| `CALIBRATING` | `calibrate_ms` (300 ms) of audio **since the first real sample** | `WAITING` |
+| `WAITING` | a block reaches the gate | `SPEAKING` |
+| | `start_timeout_ms` (10 s) passes | `SILENT` |
+| `SPEAKING` | `silence_ms` (3 s) below the gate | `DONE` |
+| any | `max_ms` (240 s) total | `CAPPED` |
+| any | the caller sets the cancel event | `CANCELLED` |
+
+Leaving `CALIBRATING` sets the gate to `ambient × 3`, clamped between a floor of
+`0.01` and a ceiling of `0.05`.
+
+What each terminal state means to the caller:
+
+| Terminal | Spoke? | What the caller does |
+|---|---|---|
+| `DONE` | yes | transcribe |
+| `CAPPED` | maybe — read `has_speech` | transcribe only if it is set |
+| `SILENT` | no | report that nothing was heard |
+| `DEAF` | no | try the next input device |
+| `CANCELLED` | maybe | the caller has already gone away |
+
+`has_speech` is carried by the tracker, never inferred from the terminal state:
+`CAPPED` is reached by an empty room whenever the cap is shorter than the start
+timeout, and a transcription model handed silence returns a stock phrase that would
+then be read as the user's words.
+
+## Choosing an input
+
+Tried in order, and the first one that is not `DEAF` is used and remembered for the
+rest of the process:
+
+1. `SPEAK_INPUT_DEVICE`, if set — and *only* that. A named device that is mute is an
+   error, never a reason to record from one the user did not ask for.
+2. The device already remembered by this process, if it is still present.
+3. The OS default input.
+4. Every other input, in enumeration order.
+
+If all of them are `DEAF`, the result is `RecorderUnavailable` naming each one tried.
+If none could even be opened, the first open error is raised instead. A binding too
+old to enumerate devices falls back to recording from the default.
+
+## `listen` — Claude asks, you answer
+
+Ends the turn only when it has a transcript or an error.
+
+1. Already listening in this session → refused, naming that fact.
+2. The speech queue is drained, so the microphone cannot hear Claude. A queue that
+   will not drain within 60 s logs a warning and recording goes ahead anyway — the
+   worst case is hearing ourselves, which is better than refusing the user.
+3. Any warmup started when the session opened is awaited.
+4. Liveness, then capability: a server that is absent, one still loading its models,
+   and one running without a transcription model each get their own message, because
+   the remedy for each is different and wrong for the other two.
+5. The microphone lock is claimed. Held by another session → refused, naming which.
+6. Open cue, played to completion, then record, then the closing cue — or the error
+   tone if nothing was captured.
+7. No speech → the heard-nothing sentinel. Otherwise the audio is transcribed.
+8. The lock is released on every path.
+
+## `/talk` — you speak, it becomes the prompt
+
+A separate short-lived process, so it can neither see nor drain the speech queue.
+
+1. Voice input off → one `speak:` line and a non-zero exit.
+2. It registers with the supervisor for the life of the process, so a standalone
+   `/talk` cannot leave a gigabyte of speech server behind it.
+3. If the server does not answer and autostart is off, that is reported rather than
+   a server being started behind the user's back. Otherwise it is started.
+4. Capture runs exactly as for `listen`, minus the drain.
+5. Heard nothing → the `(heard nothing)` sentinel on stdout.
+6. A transcript goes to stdout, which is the product: the slash command splices it
+   into the prompt.
+7. Any failure prints one `speak:`-prefixed line to **both** streams and exits
+   non-zero. Never a traceback — stdout is read as the user's own words.
+
+## The shared speech server
+
+One per machine, reference-counted on disk under the state directory.
+
+| Situation | What happens |
+|---|---|
+| `server.json` names a live pid | no spawn; the port is probed and the caller proceeds |
+| another session holds the start lock | no spawn; the port is probed and the caller waits for it |
+| neither | the lock is claimed, the server spawned, its pid recorded, the port probed |
+| a session leaves | its client file is removed |
+| the last client file goes | the server is stopped |
+
+The lock is an atomic `mkdir`, so exactly one starter wins. A recorded pid that no
+longer exists is reclaimed. Models are fixed when the server starts: a session that
+wants transcription and finds a voice-only server cannot upgrade it, and since the
+server only stops when the last client leaves, restarting one session does not help
+while others are attached.
