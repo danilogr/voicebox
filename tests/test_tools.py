@@ -18,7 +18,7 @@ async def tools_by_name() -> dict:
     return {tool.name: tool for tool in await server().list_tools()}
 
 
-async def test_exposes_exactly_the_four_tools():
+async def test_exposes_exactly_the_expected_tools():
     assert set(await tools_by_name()) == TOOL_NAMES
 
 
