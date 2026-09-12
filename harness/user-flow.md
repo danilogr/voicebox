@@ -11,20 +11,42 @@
 
 1. The text is normalised: whitespace collapsed to one line, capped at
    `SPEAK_MAX_CHARS` (400) at a word boundary. Empty after collapsing is an error.
-2. The utterance is queued. `size` counts it from here until playback ends.
-3. The worker asks the engine to prepare it. For `nemo` that is an HTTP request for
+2. The worker asks the engine to prepare it. For `nemo` that is an HTTP request for
    audio, written to a temp file; for `say` and `command` it is just a command line.
-4. The generation counter is re-checked. If `stop_speaking` ran during preparation,
-   the work is discarded and cleaned up rather than played late.
-5. The player is spawned, and the generation checked **again** — a stop landing while
-   the spawn was in flight would otherwise leave an utterance neither discarded nor
-   terminated.
-6. On exit, the temp file is cleaned up whether playback succeeded or not.
+3. The player is spawned and waited on. The generation counter is checked before the
+   spawn and again after it: a `stop_speaking` landing at either moment would otherwise
+   leave an utterance neither discarded nor terminated.
+4. Its temp file is deleted.
 
-The worker keeps one utterance prepared ahead of the one playing, so step 3 for the next
-utterance overlaps steps 5 and 6 of this one. Order is unaffected: with a single prefetch
-the queue itself decides what comes next. `speech_status` reports each stage — waiting,
-being prepared, prepared, playing — for a caller deciding whether to wait.
+```mermaid
+stateDiagram-v2
+    [*] --> waiting: speak
+    waiting --> preparing: the worker takes it
+    preparing --> prepared: synthesis returns
+    prepared --> playing: player spawned
+    playing --> [*]: player exits
+    preparing --> [*]: synthesis failed
+    prepared --> [*]: stop_speaking ran first
+```
+
+Every state in that diagram counts towards `size`, and `drain()` waits for `size` to
+reach zero. That is the whole reason `listen` cannot open the microphone over our own
+voice: an utterance is still counted while its temp file is being deleted, so there is no
+moment where the queue looks empty but audio is still to come.
+
+The worker keeps one utterance prepared ahead of the one playing, so synthesis costs
+nothing but the first one:
+
+```
+one    [ synthesis ][==== playback ====]
+two                 [ synthesis ]      [==== playback ====]
+three                                  [ synthesis ]      [==== playback ====]
+                    ^ prepared while the one before it is audible
+```
+
+Depth is exactly one — never two syntheses at once — so the deque alone decides what
+comes next and order is preserved for free. `speech_status` reports each stage for a
+caller deciding whether to wait.
 
 A speech server that cannot be reached is not an error: the `nemo` engine logs it,
 signals the supervisor, and the sentence is spoken by `say` instead. A missing player

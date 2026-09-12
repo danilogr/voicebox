@@ -85,6 +85,46 @@ Components communicate by direct async call. The only indirection is the supervi
 coordination between separate session processes, which happens through the filesystem —
 and the microphone lock, which coordinates the same way for the same reason.
 
+## Nothing leaves the queue without being released
+
+Every utterance the worker takes holds two things: a slot in `size`, and — for `nemo` — a
+temp WAV on disk. Both are released in one place, so no exit path can skip it.
+
+```mermaid
+flowchart TD
+    start([worker takes one prepared utterance])
+    stale{stop_speaking ran<br/>during synthesis?}
+    spawn[spawn the player]
+    started{did it start?}
+    late{stop_speaking ran<br/>during the spawn?}
+    kill[terminate it]
+    wait[wait for it to exit]
+    release[["one release point:<br/>delete the file,<br/>drop the slot,<br/>count it finished"]]
+
+    start --> stale
+    stale -- yes --> release
+    stale -- no --> spawn --> started
+    started -- "no, OSError" --> release
+    started -- yes --> late
+    late -- yes --> kill --> wait
+    late -- no --> wait
+    wait --> release
+```
+
+Two properties hold this together, both structural rather than remembered:
+
+- **In flight is a reference, not a tally.** `_ahead` holds the utterance being prepared,
+  `_inflight` the one the worker has taken, and `size` reads those references. A task
+  cancelled before its first step never runs its body at all, so a counter released by a
+  `finally` inside it leaks; a reference the caller clears cannot.
+- **Dropping the slot is nested inside deleting the file.** The delete is itself an
+  `await`, so a worker cancelled mid-delete may leave the file behind. The inner `finally`
+  still drops the reference, because a queue stuck at `size` 1 would refuse every later
+  `listen` for the life of the process.
+
+An utterance prepared ahead that never reaches playback is released by the worker's own
+`finally`, which cancels the prefetch and deletes whatever it produced.
+
 ## Data model
 
 Almost nothing is persistent.
@@ -162,9 +202,7 @@ bytes for the length of one transcription and is never written to disk.
   more than one utterance prepared ahead, the deque alone decides what comes next.
   Concurrent synthesis is not used: the speech server handles one request at a time, so
   three requests at once measured 1.05x against serial and gave up ordering to get it.
-  A prefetched utterance holds a temp file, so `stop` discards it through the same cleanup
-  path as one that played, and `size` counts it — a `drain` that released while a prepared
-  utterance waited would open the microphone over our own voice.
+  A prefetched utterance holds a temp file of its own; releasing it is covered above.
 
 - **Voice and rate are per connection and never persisted.** One server
   process per session means a plain attribute is already isolated. Not a

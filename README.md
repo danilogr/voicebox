@@ -300,7 +300,7 @@ linking it, so editing the checkout changes nothing Claude Code loads. Run
 `scripts/install-local.sh` to sync the working tree into that copy — it refuses to
 write anywhere outside the plugin cache — then restart Claude Code.
 
-408 tests, no network, no audio and no microphone: the queue and the recording cues
+412 tests, no network, no audio and no microphone: the queue and the recording cues
 run against a fake spawner, the NeMo engine and the transcriber against a mock HTTP
 transport, the supervisor and the microphone lock against injected spawn, liveness and
 kill callables over a temporary state directory, and the end-to-end tests drive the real server
@@ -332,7 +332,7 @@ src/speak/__main__.py            entry point: environment to objects, then serve
 src/speak/config.py              settings, parsed and validated from the environment
 src/speak/server.py              the tools over the queue, the engine, and the ears
 src/speak/tools.py               tool descriptions and the when-to-speak policy
-src/speak/queue.py               one process at a time, non-blocking enqueue
+src/speak/queue.py               one player at a time, the next prepared while it plays
 src/speak/engines/               say · nemo · command, and their voice lists
 src/speak/engines/asr.py         transcription against the shared speech server
 src/speak/capture.py             the microphone, and when an utterance has ended
