@@ -6,12 +6,13 @@
 ## Overview
 
 `speak` is a Claude Code plugin that gives the agent a voice. It runs as an MCP
-server over stdio and exposes four tools — `speak`, `stop_speaking`, `list_voices`,
-`set_voice` — so the model can say one short sentence out loud at the moments where a
-voice beats scrollback. Its single responsibility is turning a sentence into audible
-speech without ever blocking the agent and without letting two utterances overlap.
+server over stdio and exposes five tools — `speak`, `stop_speaking`, `list_voices`,
+`set_voice`, `speech_status` — so the model can say one short sentence out loud at the
+moments where a voice beats scrollback. Its single responsibility is turning a sentence
+into audible speech without ever blocking the agent and without letting two utterances
+overlap.
 
-With `SPEAK_LISTEN=1` it also hears. A fifth tool, `listen`, records the user and
+With `SPEAK_LISTEN=1` it also hears. A sixth tool, `listen`, records the user and
 returns a transcript, and the `/talk` slash command dictates a prompt instead of
 typing it. There are therefore two entry points into the same code: the long-lived
 MCP server (`__main__`) and a short-lived one-shot process (`talk`) that a slash
@@ -153,6 +154,17 @@ bytes for the length of one transcription and is never written to disk.
   with a queue position, and exactly one child process runs at a time, so the agent
   never waits on playback and two quick calls never talk over each other. Rejected:
   awaiting playback, which stalls the agent for seconds per sentence.
+
+- **The queue prepares the next utterance while one plays.** Synthesis costs about as much
+  wall clock as the audio it produces, so a serial queue leaves the speakers idle for
+  roughly half a spoken answer — a six-sentence answer measured 110 s that way against
+  about 58 s pipelined. Depth is one, which is what preserves order for free: with never
+  more than one utterance prepared ahead, the deque alone decides what comes next.
+  Concurrent synthesis is not used: the speech server handles one request at a time, so
+  three requests at once measured 1.05x against serial and gave up ordering to get it.
+  A prefetched utterance holds a temp file, so `stop` discards it through the same cleanup
+  path as one that played, and `size` counts it — a `drain` that released while a prepared
+  utterance waited would open the microphone over our own voice.
 
 - **Voice and rate are per connection and never persisted.** One server
   process per session means a plain attribute is already isolated. Not a

@@ -21,6 +21,11 @@
    terminated.
 6. On exit, the temp file is cleaned up whether playback succeeded or not.
 
+The worker keeps one utterance prepared ahead of the one playing, so step 3 for the next
+utterance overlaps steps 5 and 6 of this one. Order is unaffected: with a single prefetch
+the queue itself decides what comes next. `speech_status` reports each stage — waiting,
+being prepared, prepared, playing — for a caller deciding whether to wait.
+
 A speech server that cannot be reached is not an error: the `nemo` engine logs it,
 signals the supervisor, and the sentence is spoken by `say` instead. A missing player
 binary is caught at spawn, logged, and costs only that sentence.

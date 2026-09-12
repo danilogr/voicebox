@@ -29,11 +29,12 @@ sub-realtime; treat the ratio as a range, not a constant.
 
 Playback adds about 0.9 s per utterance for the player process to start and exit.
 
-The queue is serial — nothing is synthesised until the previous utterance has finished
-playing — so one spoken answer occupies it for the sum of every synthesis, every audio
-duration, and that per-utterance overhead. A six-sentence answer measured 110 s that way,
-of which roughly half was synthesis with the speakers idle. Any deadline that waits on
-the queue has to allow for the whole sum.
+The queue prepares the next utterance while the current one plays, so synthesis overlaps
+audio instead of adding to it. Over four sentences on an idle machine, depth-1 prefetch
+measured 41.9 s serial against 32.4 s pipelined — 1.30x — and the gain grows as synthesis
+slows, since more of it hides behind playback. A six-sentence answer moves from about
+110 s serial to about 58 s pipelined. Any deadline that waits on the queue has to allow
+for the pipelined sum, not the serial one.
 
 Concurrent synthesis does not help: the speech server handles one request at a time, so
 three requests fired together finished at 3.4 s, 7.3 s and 10.6 s for a wall clock of

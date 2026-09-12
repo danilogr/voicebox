@@ -33,9 +33,10 @@ server for you.
 | `stop_speaking()` | Silences what is playing and drops everything queued behind it. |
 | `list_voices()` | The voices the current engine can use, and which one is active. |
 | `set_voice(voice)` | Changes the voice for the rest of this session. |
+| `speech_status()` | Reports how many utterances are waiting, being prepared, prepared, or playing, and how many have finished. |
 | `listen(max_seconds?)` | Records you through the microphone and returns what you said. Waits for anything queued to finish playing first — `/talk`, in its own process, cannot. |
 
-`listen` only exists when `SPEAK_LISTEN=1`; the other four are always there.
+`listen` only exists when `SPEAK_LISTEN=1`; the other five are always there.
 
 Voice is per connection. Claude Code runs one plugin process per session, so
 `set_voice` in one window cannot be seen by another and nothing is written to disk.
@@ -299,7 +300,7 @@ linking it, so editing the checkout changes nothing Claude Code loads. Run
 `scripts/install-local.sh` to sync the working tree into that copy — it refuses to
 write anywhere outside the plugin cache — then restart Claude Code.
 
-390 tests, no network, no audio and no microphone: the queue and the recording cues
+408 tests, no network, no audio and no microphone: the queue and the recording cues
 run against a fake spawner, the NeMo engine and the transcriber against a mock HTTP
 transport, the supervisor and the microphone lock against injected spawn, liveness and
 kill callables over a temporary state directory, and the end-to-end tests drive the real server
