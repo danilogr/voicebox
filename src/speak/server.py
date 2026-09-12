@@ -356,10 +356,16 @@ def create_server(
                     # answer belongs, and the model acts on it as a request. An honest
                     # refusal can be retried; a fabricated answer cannot be taken back.
                     stats = queue.stats()
-                    pending = (
-                        f"{stats.waiting} waiting, {stats.preparing} being prepared, "
-                        f"{'one playing' if stats.playing else 'none playing'}"
-                    )
+                    held = []
+                    if stats.playing:
+                        held.append("one playing")
+                    if stats.prepared:
+                        held.append(f"{stats.prepared} prepared")
+                    if stats.preparing:
+                        held.append(f"{stats.preparing} being prepared")
+                    if stats.waiting:
+                        held.append(f"{stats.waiting} waiting")
+                    pending = ", ".join(held) if held else "nothing in hand"
                     logger.warning("speech queue is wedged; refusing to record over it")
                     raise ToolError(tools.STILL_SPEAKING.format(pending=pending)) from error
 

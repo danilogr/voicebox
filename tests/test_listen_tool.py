@@ -438,3 +438,31 @@ async def test_a_refusal_says_how_much_is_still_to_play(monkeypatch):
     )
     with pytest.raises(ToolError, match="2 waiting"):
         await call_listen(rig.server)
+
+
+async def test_a_refusal_with_nothing_in_hand_says_so(monkeypatch):
+    """All-zero stats can mean the queue went quiet between the timeout firing and the
+    stats() read, or a worker that died holding nothing - the message reports what was
+    observed, not which. It must not read as both wedged and empty of anything pending."""
+    monkeypatch.setattr(server_module, "DRAIN_BACKSTOP", 0.01)
+    rig = build(
+        queue=StuckQueue(
+            stats=QueueStats(waiting=0, preparing=0, prepared=0, playing=False, finished=4)
+        )
+    )
+    with pytest.raises(ToolError, match="nothing in hand") as excinfo:
+        await call_listen(rig.server)
+    assert "0 waiting" not in str(excinfo.value)
+
+
+async def test_a_refusal_names_the_prepared_utterance(monkeypatch):
+    """Audio ready but playback never started points at a dead player subprocess, not a
+    slow TTS backend - the two need `stats.prepared` to tell apart."""
+    monkeypatch.setattr(server_module, "DRAIN_BACKSTOP", 0.01)
+    rig = build(
+        queue=StuckQueue(
+            stats=QueueStats(waiting=0, preparing=0, prepared=1, playing=False, finished=4)
+        )
+    )
+    with pytest.raises(ToolError, match="1 prepared"):
+        await call_listen(rig.server)
