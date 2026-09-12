@@ -168,26 +168,51 @@ class SpeechQueue:
         costs about as much wall clock as the audio it produces, so overlapping the two
         nearly removes it from the total.
         """
-        while True:
-            await self._wake.wait()
-            self._wake.clear()
-            while self._waiting or self._ahead is not None:
-                if self._ahead is None:
-                    self._ahead = self._start_preparing(self._waiting.popleft())
-                prepared = await self._ahead
-                self._ahead = None
-                if self._waiting:
-                    self._ahead = self._start_preparing(self._waiting.popleft())
-                await self._play(prepared)
-            self._idle.set()
+        try:
+            while True:
+                await self._wake.wait()
+                self._wake.clear()
+                while self._waiting or self._ahead is not None:
+                    if self._ahead is None:
+                        self._ahead = self._start_preparing(self._waiting.popleft())
+                    prepared = await self._ahead
+                    self._ahead = None
+                    if self._waiting:
+                        self._ahead = self._start_preparing(self._waiting.popleft())
+                    await self._play(prepared)
+                self._idle.set()
+        finally:
+            # Cancelling this task (session teardown) abandons `_ahead` mid-flight
+            # otherwise: it would keep running detached, holding a temp file nobody
+            # plays or cleans up.
+            await self._discard_prefetch()
+
+    async def _discard_prefetch(self) -> None:
+        """Drop an utterance prepared ahead, and the temp file it is holding."""
+        ahead, self._ahead = self._ahead, None
+        if ahead is None:
+            return
+        ahead.cancel()
+        try:
+            prepared = await ahead
+        except asyncio.CancelledError:
+            return
+        if prepared is not None:
+            self._prepared -= 1
+            await self._cleanup(prepared.utterance)
 
     def _start_preparing(self, pending: _Pending) -> "asyncio.Task[_Prepared | None]":
         self._preparing += 1
-        return asyncio.create_task(self._prepare_one(pending))
+        return asyncio.create_task(self._prepare_one(pending, self._generation))
 
-    async def _prepare_one(self, pending: _Pending) -> _Prepared | None:
-        """Synthesize one utterance. None means it failed and was reported."""
-        generation = self._generation
+    async def _prepare_one(self, pending: _Pending, generation: int) -> _Prepared | None:
+        """Synthesize one utterance under the generation current when it was queued.
+
+        Sampled here, synchronously with the pop that took it off `_waiting`, not inside
+        the task body: a `stop()` can land before this task takes its first step, and by
+        then `self._generation` has already moved on. Reading it late would make a
+        discarded utterance look current and let it play.
+        """
         try:
             utterance = await self._prepare(pending.text, voice=pending.voice, rate=pending.rate)
         except Exception as error:

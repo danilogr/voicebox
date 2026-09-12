@@ -526,14 +526,25 @@ async def test_the_next_utterance_is_prepared_while_one_plays():
 
 
 async def test_order_is_preserved_with_a_prefetch_in_hand():
+    """FIFO order holds even while a prefetch is genuinely in hand, not just prepared
+    ahead of a play that had already finished by the time it ran."""
     stage = Controlled()
-    stage.release_prepare.set()
-    stage.release_play.set()
     queue = SpeechQueue(prepare=stage.prepare, spawn=stage.spawn)
     worker = asyncio.create_task(queue.run())
 
     for text in ("one", "two", "three", "four"):
         queue.enqueue(text, voice=None, rate=None)
+
+    await stage.preparing.wait()
+    stage.release_prepare.set()
+    await stage.playing.wait()
+    await asyncio.sleep(0)
+
+    # "one" is playing and "two" is already prepared and waiting: a real overlap.
+    assert queue.stats().prepared == 1
+    assert queue.stats().playing is True
+
+    stage.release_play.set()
     await queue.drain()
 
     assert stage.prepared_texts == ["one", "two", "three", "four"]
@@ -543,8 +554,8 @@ async def test_order_is_preserved_with_a_prefetch_in_hand():
 
 
 async def test_drain_does_not_release_while_a_prefetched_utterance_waits():
-    """The failure this queue has already had once: `drain` reporting idle while audio is
-    still to come, which opens the microphone over our own voice."""
+    """`drain` must not report idle while audio is still to come: the microphone would
+    then open over our own voice and hand it back as the user's answer."""
     stage = Controlled()
     queue = SpeechQueue(prepare=stage.prepare, spawn=stage.spawn)
     worker = asyncio.create_task(queue.run())
@@ -590,8 +601,12 @@ async def test_stop_discards_a_prepared_utterance_and_deletes_its_file():
 
 
 async def test_a_failure_preparing_the_next_one_does_not_disturb_this_one():
+    """A prefetch that fails while the previous utterance is still audibly playing must
+    not touch that playback, or the ones still queued behind it."""
     errors: list[BaseException] = []
     texts: list[str] = []
+    playing = asyncio.Event()
+    release_play = asyncio.Event()
 
     async def prepare(text: str, *, voice: str | None, rate: float | None) -> Utterance:
         texts.append(text)
@@ -599,19 +614,32 @@ async def test_a_failure_preparing_the_next_one_does_not_disturb_this_one():
             raise RuntimeError("synthesis failed")
         return Utterance(command="true", args=[text])
 
-    class Instant:
-        def terminate(self) -> None: ...
+    class Player:
+        def terminate(self) -> None:
+            release_play.set()
 
         async def wait(self) -> int:
+            await release_play.wait()
             return 0
 
-    async def spawn(command: str, args: object) -> Instant:
-        return Instant()
+    async def spawn(command: str, args: object) -> Player:
+        playing.set()
+        return Player()
 
     queue = SpeechQueue(prepare=prepare, spawn=spawn, on_error=errors.append)
     worker = asyncio.create_task(queue.run())
     for text in ("one", "two", "three"):
         queue.enqueue(text, voice=None, rate=None)
+
+    await playing.wait()
+    await asyncio.sleep(0)
+
+    # "one" is playing; the prefetch for "two" has already failed without disturbing it.
+    assert queue.stats().playing is True
+    assert texts == ["one", "two"]
+    assert len(errors) == 1
+
+    release_play.set()
     await queue.drain()
 
     assert texts == ["one", "two", "three"]
@@ -669,3 +697,88 @@ async def test_a_discarded_prefetch_is_counted_until_its_file_is_gone():
 
     worker.cancel()
     await asyncio.gather(worker, return_exceptions=True)
+
+
+async def test_stop_discards_an_utterance_whose_prepare_task_has_not_started():
+    """`stop()` landing between a prefetch task's creation and its first step must still
+    discard that utterance. Reading the generation inside the task body, rather than at
+    creation, would let a stop that races the task's first step capture the wrong value
+    and let the utterance play anyway."""
+    release_prepare = asyncio.Event()
+    spawn_calls: list[str] = []
+    cleaned: list[str] = []
+
+    async def prepare(text: str, *, voice: str | None, rate: float | None) -> Utterance:
+        await release_prepare.wait()
+
+        async def cleanup() -> None:
+            cleaned.append(text)
+
+        return Utterance(command="true", args=[text], cleanup=cleanup)
+
+    class Instant:
+        def terminate(self) -> None: ...
+
+        async def wait(self) -> int:
+            return 0
+
+    async def spawn(command: str, args: object) -> Instant:
+        spawn_calls.append(command)
+        return Instant()
+
+    queue = SpeechQueue(prepare=prepare, spawn=spawn)
+    worker = asyncio.create_task(queue.run())
+    await asyncio.sleep(0)  # let the worker park on `_wake`
+
+    go = asyncio.Event()
+
+    async def stopper() -> None:
+        await go.wait()
+        await queue.stop()
+
+    stop_task = asyncio.create_task(stopper())
+    await asyncio.sleep(0)  # let the stopper park on `go`
+
+    # One synchronous step: enqueue, then release the stopper. `_wake` was set first, so
+    # the worker runs before the stopper: it pops "one" and creates the prepare task,
+    # whose first step is scheduled behind the stopper's. `stop()` then runs before that
+    # task has read anything at all.
+    queue.enqueue("one", voice=None, rate=None)
+    go.set()
+
+    await stop_task
+    release_prepare.set()
+    await queue.drain()
+
+    assert spawn_calls == []
+    assert cleaned == ["one"]
+    assert queue.size == 0
+
+    worker.cancel()
+    await asyncio.gather(worker, return_exceptions=True)
+
+
+async def test_cancelling_the_worker_discards_a_prefetch_in_hand():
+    """Tearing down the worker while a prefetch is in hand must not orphan it: the temp
+    file it is holding is still cleaned up and it stops being counted, the same as any
+    other utterance `stop()` discards."""
+    stage = Controlled()
+    queue = SpeechQueue(prepare=stage.prepare, spawn=stage.spawn)
+    worker = asyncio.create_task(queue.run())
+
+    queue.enqueue("one", voice=None, rate=None)
+    queue.enqueue("two", voice=None, rate=None)
+
+    await stage.preparing.wait()
+    stage.release_prepare.set()
+    await stage.playing.wait()
+    await asyncio.sleep(0)
+
+    # "one" is playing; "two" is prepared and waiting to play next.
+    assert queue.stats().prepared == 1
+
+    worker.cancel()
+    await asyncio.gather(worker, return_exceptions=True)
+
+    assert "two" in stage.cleaned
+    assert queue.stats().prepared == 0
