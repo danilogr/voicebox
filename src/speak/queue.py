@@ -1,4 +1,4 @@
-"""Speech queue: prepares the next while one plays, one child process at a time, non-blocking."""
+"""Speech queue: one player at a time, with the next utterance prepared while one plays."""
 
 import asyncio
 import logging
@@ -60,6 +60,34 @@ class QueueStats:
     playing: bool
     finished: int
 
+    @property
+    def size(self) -> int:
+        """Utterances that have not left the queue, at whatever stage.
+
+        The one definition of busy. `_idle` derives from it, and so does every caller
+        deciding whether to wait, so a stage added to this class has to be added here
+        too or it goes uncounted.
+        """
+        return self.waiting + self.preparing + self.prepared + int(self.playing)
+
+
+def describe(stats: QueueStats) -> str:
+    """What the queue is holding, most advanced stage first.
+
+    One wording, shared by `speech_status` and by the refusal `listen` raises, so the two
+    never describe the same queue differently.
+    """
+    held = []
+    if stats.playing:
+        held.append("one playing")
+    if stats.prepared:
+        held.append(f"{stats.prepared} prepared")
+    if stats.preparing:
+        held.append(f"{stats.preparing} being prepared")
+    if stats.waiting:
+        held.append(f"{stats.waiting} waiting")
+    return ", ".join(held) if held else "nothing in hand"
+
 
 async def spawn_detached(command: str, args: Sequence[str]) -> Process:
     return await asyncio.create_subprocess_exec(
@@ -76,6 +104,12 @@ class SpeechQueue:
 
     `enqueue` is synchronous and returns immediately so the agent never waits on
     playback. A single worker task, started by `run`, drains the queue.
+
+    Every utterance in flight is held by a reference, never by a tally: `_ahead` while it
+    is being prepared, `_inflight` from the moment the worker takes it until its temp
+    file is gone. `size` reads those references, so no path can drop an utterance from
+    the count by forgetting to decrement - including a prefetch cancelled before its
+    task ever runs, whose `finally` would never fire.
     """
 
     def __init__(
@@ -92,13 +126,12 @@ class SpeechQueue:
         self._wake = asyncio.Event()
         self._idle = asyncio.Event()
         self._idle.set()
-        self._current: Process | None = None
-        self._preparing = 0
-        self._prepared = 0
+        self._player: Process | None = None
+        self._ahead: asyncio.Task[_Prepared | None] | None = None
+        self._inflight: _Prepared | None = None
         self._playing = False
         self._finished = 0
         self._generation = 0
-        self._ahead: asyncio.Task[_Prepared | None] | None = None
 
     @staticmethod
     def _log_error(error: BaseException) -> None:
@@ -106,15 +139,20 @@ class SpeechQueue:
 
     @property
     def size(self) -> int:
-        """Utterances that have not left the queue, at whatever stage."""
-        return len(self._waiting) + self._preparing + self._prepared + (1 if self._playing else 0)
+        return self.stats().size
 
     def stats(self) -> QueueStats:
         """A snapshot of every stage, for a caller deciding whether to wait."""
+        ahead = self._ahead
         return QueueStats(
             waiting=len(self._waiting),
-            preparing=self._preparing,
-            prepared=self._prepared,
+            preparing=int(ahead is not None and not ahead.done()),
+            # Everything synthesized but not currently audible: a prefetch, an
+            # utterance the worker holds before spawning its player, one whose file is
+            # still being deleted, and a synthesis that failed and is on its way out.
+            # `size` stays exact; the label is a summary, so it can read 2 at depth one.
+            prepared=int(ahead is not None and ahead.done())
+            + int(self._inflight is not None and not self._playing),
             playing=self._playing,
             finished=self._finished,
         )
@@ -132,9 +170,9 @@ class SpeechQueue:
         dropped = self.size
         self._generation += 1
         self._waiting.clear()
-        current, self._current = self._current, None
-        if current is not None:
-            current.terminate()
+        player, self._player = self._player, None
+        if player is not None:
+            player.terminate()
         if self.size == 0:
             # Anything still preparing or playing settles in the worker, which sets
             # _idle when it has nothing left in hand.
@@ -176,16 +214,37 @@ class SpeechQueue:
                     if self._ahead is None:
                         self._ahead = self._start_preparing(self._waiting.popleft())
                     prepared = await self._ahead
-                    self._ahead = None
+                    # Handed straight from one reference to the other, so the utterance
+                    # stays counted across the swap.
+                    self._ahead, self._inflight = None, prepared
                     if self._waiting:
                         self._ahead = self._start_preparing(self._waiting.popleft())
                     await self._play(prepared)
                 self._idle.set()
         finally:
-            # Cancelling this task (session teardown) abandons `_ahead` mid-flight
-            # otherwise: it would keep running detached, holding a temp file nobody
-            # plays or cleans up.
+            # Cancelling this task (session teardown) would otherwise abandon `_ahead`
+            # mid-flight: it keeps running detached, holding a temp file nobody plays or
+            # cleans up.
             await self._discard_prefetch()
+
+    def _start_preparing(self, pending: _Pending) -> asyncio.Task[_Prepared | None]:
+        """Begin synthesizing one utterance, under the generation current right now.
+
+        Sampled here, synchronously with the pop that took `pending` off `_waiting`,
+        rather than inside the task: a `stop()` can land before the task takes its first
+        step, and by then `self._generation` has moved on. Reading it late would make a
+        discarded utterance look current and let it play.
+        """
+        return asyncio.create_task(self._prepare_one(pending, self._generation))
+
+    async def _prepare_one(self, pending: _Pending, generation: int) -> _Prepared | None:
+        """Synthesize one utterance. None means it failed and was reported."""
+        try:
+            utterance = await self._prepare(pending.text, voice=pending.voice, rate=pending.rate)
+        except Exception as error:
+            self._on_error(error)
+            return None
+        return _Prepared(utterance=utterance, generation=generation)
 
     async def _discard_prefetch(self) -> None:
         """Drop an utterance prepared ahead, and the temp file it is holding."""
@@ -196,73 +255,57 @@ class SpeechQueue:
         try:
             prepared = await ahead
         except asyncio.CancelledError:
+            if not ahead.cancelled():
+                # The cancel was aimed at this worker, not at `ahead`; let it through.
+                raise
             return
         if prepared is not None:
-            self._prepared -= 1
             await self._cleanup(prepared.utterance)
 
-    def _start_preparing(self, pending: _Pending) -> "asyncio.Task[_Prepared | None]":
-        self._preparing += 1
-        return asyncio.create_task(self._prepare_one(pending, self._generation))
-
-    async def _prepare_one(self, pending: _Pending, generation: int) -> _Prepared | None:
-        """Synthesize one utterance under the generation current when it was queued.
-
-        Sampled here, synchronously with the pop that took it off `_waiting`, not inside
-        the task body: a `stop()` can land before this task takes its first step, and by
-        then `self._generation` has already moved on. Reading it late would make a
-        discarded utterance look current and let it play.
-        """
-        try:
-            utterance = await self._prepare(pending.text, voice=pending.voice, rate=pending.rate)
-        except Exception as error:
-            self._on_error(error)
-            return None
-        finally:
-            self._preparing -= 1
-        self._prepared += 1
-        return _Prepared(utterance=utterance, generation=generation)
-
     async def _play(self, prepared: _Prepared | None) -> None:
-        """Play one prepared utterance, or account for one that never got that far."""
+        """Play one prepared utterance, or account for one that never got that far.
+
+        Its temp file is released here and nowhere else: played, discarded by a `stop`,
+        or abandoned because the player would not start. Cleanup is itself an `await`, so
+        a worker cancelled inside it can still leave the file behind - but the utterance
+        leaves the count either way, or a dead queue would report work it will never do.
+        """
         try:
             if prepared is None:
                 return
             if prepared.generation != self._generation:
-                # stop() ran while this was being prepared; discard the work and the
-                # temp file that came with it. Counted until that file is gone: `_idle`
-                # is derived from `size`.
-                try:
-                    await self._cleanup(prepared.utterance)
-                finally:
-                    self._prepared -= 1
+                # stop() ran while this was being prepared; it is discarded rather than
+                # played late.
                 return
-            self._prepared -= 1
             self._playing = True
             try:
                 await self._spawn_and_wait(prepared.utterance, prepared.generation)
             finally:
                 self._playing = False
         finally:
-            self._finished += 1
+            try:
+                if prepared is not None:
+                    await self._cleanup(prepared.utterance)
+            finally:
+                self._inflight = None
+                self._finished += 1
 
     async def _spawn_and_wait(self, utterance: Utterance, generation: int) -> None:
+        """Start the player and wait for it to exit, killing it if a `stop` lands first."""
         try:
-            process = await self._spawn(utterance.command, utterance.args)
+            player = await self._spawn(utterance.command, utterance.args)
         except OSError as error:
             self._on_error(error)
-            await self._cleanup(utterance)
             return
 
-        self._current = process
+        self._player = player
         if generation != self._generation:
             # stop() ran while the player was starting; kill it before it is heard.
-            process.terminate()
+            player.terminate()
         try:
-            await process.wait()
+            await player.wait()
         finally:
-            self._current = None
-            await self._cleanup(utterance)
+            self._player = None
 
     async def _cleanup(self, utterance: Utterance) -> None:
         if utterance.cleanup is None:

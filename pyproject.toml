@@ -24,6 +24,7 @@ packages = ["src/speak"]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=1",
+    "pytest-timeout>=2.3",
     "ruff>=0.14",
     "mypy>=1.18",
 ]
@@ -42,6 +43,10 @@ ignore = ["ANN401"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# The queue's tests wait on events rather than sleeping, so a regression that stops
+# the worker hangs the test instead of failing it. A red test is worth more than a
+# job that runs until the CI limit.
+timeout = 30
 
 [tool.mypy]
 python_version = "3.12"

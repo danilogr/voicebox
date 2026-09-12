@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from speak.engines.base import Utterance
-from speak.queue import SpeechQueue
+from speak.queue import Process, SpeechQueue
 
 
 class FakeProcess:
@@ -781,4 +781,119 @@ async def test_cancelling_the_worker_discards_a_prefetch_in_hand():
     await asyncio.gather(worker, return_exceptions=True)
 
     assert "two" in stage.cleaned
-    assert queue.stats().prepared == 0
+    assert queue.size == 0
+
+
+async def test_a_prefetch_cancelled_before_it_starts_is_not_left_in_the_count():
+    """A task cancelled before its first step never runs its body, so a `finally` there
+    cannot release it. `size` reads the prefetch reference itself for that reason."""
+    started = asyncio.Event()
+
+    async def prepare(text: str, *, voice: str | None, rate: float | None) -> Utterance:
+        started.set()
+        return Utterance(command="true", args=[text])
+
+    queue = SpeechQueue(prepare=prepare, spawn=Spawner())
+    worker = asyncio.create_task(queue.run())
+    await settle()
+
+    cancel_now = asyncio.Event()
+
+    async def cancel_worker() -> None:
+        await cancel_now.wait()
+        worker.cancel()
+
+    canceller = asyncio.create_task(cancel_worker())
+    await settle()
+
+    # One synchronous step, so the canceller is queued ahead of the prepare task the
+    # worker is about to create: the worker pops, creates it, and suspends before it runs.
+    queue.enqueue("one", voice=None, rate=None)
+    cancel_now.set()
+    await asyncio.gather(worker, canceller, return_exceptions=True)
+
+    assert not started.is_set()
+    assert queue.stats().preparing == 0
+    assert queue.size == 0
+
+
+async def test_a_worker_cancelled_while_the_player_starts_still_deletes_the_file():
+    """Teardown can land in the window between asking for a player and getting one.
+    Cleanup belongs to `_play`, not to the spawn, so that window is covered too."""
+    cleaned: list[str] = []
+    spawning = asyncio.Event()
+
+    async def prepare(text: str, *, voice: str | None, rate: float | None) -> Utterance:
+        async def cleanup() -> None:
+            cleaned.append(text)
+
+        return Utterance(command="true", args=[text], cleanup=cleanup)
+
+    async def slow_spawn(command: str, args: object) -> Process:
+        spawning.set()
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    queue = SpeechQueue(prepare=prepare, spawn=slow_spawn)
+    worker = asyncio.create_task(queue.run())
+    queue.enqueue("one", voice=None, rate=None)
+    await spawning.wait()
+
+    worker.cancel()
+    await asyncio.gather(worker, return_exceptions=True)
+
+    assert cleaned == ["one"]
+    assert queue.size == 0
+
+
+async def test_a_worker_cancelled_mid_cleanup_does_not_strand_the_utterance():
+    """Deleting the temp file is an `await` in production, so teardown can land inside
+    it. The file may then survive, but the utterance still has to leave the count: a
+    queue stuck at `size` 1 refuses every later `listen` for the life of the process."""
+    cleaning = asyncio.Event()
+
+    async def prepare(text: str, *, voice: str | None, rate: float | None) -> Utterance:
+        async def cleanup() -> None:
+            cleaning.set()
+            await asyncio.Event().wait()
+
+        return Utterance(command="true", args=[text], cleanup=cleanup)
+
+    queue = SpeechQueue(prepare=prepare, spawn=Spawner())
+    worker = asyncio.create_task(queue.run())
+    queue.enqueue("one", voice=None, rate=None)
+    await cleaning.wait()
+
+    worker.cancel()
+    await asyncio.gather(worker, return_exceptions=True)
+
+    assert queue.size == 0
+    assert queue.stats().finished == 1
+
+
+async def test_size_never_dips_while_an_utterance_changes_hands():
+    """The worker hands an utterance straight from `_ahead` to `_inflight`. A yield
+    opening between the two would read as an empty queue with audio still to come."""
+    stage = Controlled()
+    stage.release_prepare.set()
+    stage.release_play.set()
+    queue = SpeechQueue(prepare=stage.prepare, spawn=stage.spawn)
+    worker = asyncio.create_task(queue.run())
+
+    sizes: list[int] = []
+
+    async def watch() -> None:
+        while queue.stats().finished == 0:
+            sizes.append(queue.size)
+            await asyncio.sleep(0)
+
+    queue.enqueue("one", voice=None, rate=None)
+    watcher = asyncio.create_task(watch())
+    await queue.drain()
+    await watcher
+
+    assert sizes
+    assert 0 not in sizes
+
+    worker.cancel()
+    await asyncio.gather(worker, return_exceptions=True)

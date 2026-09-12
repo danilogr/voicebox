@@ -22,6 +22,7 @@ from speak.engines.asr import Liveness, Transcriber, TranscriptionFailed
 from speak.engines.base import Engine
 from speak.miclock import MicLock, MicrophoneBusy
 from speak.queue import QueueStats
+from speak.queue import describe as describe_queue
 from speak.text import normalize
 
 logger = logging.getLogger(__name__)
@@ -307,18 +308,9 @@ def create_server(
     @server.tool(name="speech_status", description=tools.SPEECH_STATUS)
     async def speech_status() -> str:
         stats = queue.stats()
-        if stats.waiting + stats.preparing + stats.prepared == 0 and not stats.playing:
+        if stats.size == 0:
             return f"nothing queued; {stats.finished} spoken so far"
-        head = "playing" if stats.playing else "not playing"
-        held = []
-        if stats.preparing:
-            held.append(f"{stats.preparing} being prepared")
-        if stats.prepared:
-            held.append(f"{stats.prepared} prepared")
-        if stats.waiting:
-            held.append(f"{stats.waiting} waiting")
-        detail = f"{head}; {', '.join(held)}" if held else head
-        return f"{detail}; {stats.finished} spoken so far"
+        return f"{describe_queue(stats)}; {stats.finished} spoken so far"
 
     if ears is not None:
         # The microphone lock is re-entrant by pid, so it separates sessions but not
@@ -355,17 +347,7 @@ def create_server(
                     # Recording anyway puts this session's own voice where the user's
                     # answer belongs, and the model acts on it as a request. An honest
                     # refusal can be retried; a fabricated answer cannot be taken back.
-                    stats = queue.stats()
-                    held = []
-                    if stats.playing:
-                        held.append("one playing")
-                    if stats.prepared:
-                        held.append(f"{stats.prepared} prepared")
-                    if stats.preparing:
-                        held.append(f"{stats.preparing} being prepared")
-                    if stats.waiting:
-                        held.append(f"{stats.waiting} waiting")
-                    pending = ", ".join(held) if held else "nothing in hand"
+                    pending = describe_queue(queue.stats())
                     logger.warning("speech queue is wedged; refusing to record over it")
                     raise ToolError(tools.STILL_SPEAKING.format(pending=pending)) from error
 

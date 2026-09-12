@@ -162,4 +162,4 @@ async def test_speech_status_names_the_one_utterance_playing():
     """The commonest non-idle state: one utterance playing with nothing behind it."""
     busy = FakeQueue(stats=QueueStats(waiting=0, preparing=0, prepared=0, playing=True, finished=2))
     server, _, _ = build(queue=busy)
-    assert await call(server, "speech_status") == "playing; 2 spoken so far"
+    assert await call(server, "speech_status") == "one playing; 2 spoken so far"
