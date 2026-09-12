@@ -37,6 +37,22 @@ class _Pending:
     rate: float | None
 
 
+@dataclass(frozen=True, slots=True)
+class QueueStats:
+    """What the queue is holding right now.
+
+    Exposed because a slow machine is indistinguishable from a stuck one from the
+    outside: a caller that can see three utterances waiting and one being prepared knows
+    to wait, where a bare "still busy" leaves it guessing.
+    """
+
+    waiting: int
+    preparing: int
+    prepared: int
+    playing: bool
+    finished: int
+
+
 async def spawn_detached(command: str, args: Sequence[str]) -> Process:
     return await asyncio.create_subprocess_exec(
         command,
@@ -69,7 +85,9 @@ class SpeechQueue:
         self._idle = asyncio.Event()
         self._idle.set()
         self._current: Process | None = None
-        self._in_flight = False
+        self._preparing = 0
+        self._prepared = 0
+        self._playing = False
         self._finished = 0
         self._generation = 0
 
@@ -79,7 +97,18 @@ class SpeechQueue:
 
     @property
     def size(self) -> int:
-        return len(self._waiting) + (1 if self._in_flight else 0)
+        """Utterances that have not left the queue, at whatever stage."""
+        return len(self._waiting) + self._preparing + self._prepared + (1 if self._playing else 0)
+
+    def stats(self) -> QueueStats:
+        """A snapshot of every stage, for a caller deciding whether to wait."""
+        return QueueStats(
+            waiting=len(self._waiting),
+            preparing=self._preparing,
+            prepared=self._prepared,
+            playing=self._playing,
+            finished=self._finished,
+        )
 
     def enqueue(self, text: str, *, voice: str | None, rate: float | None) -> int:
         """Queue one utterance and return how many are ahead of it."""
@@ -132,12 +161,12 @@ class SpeechQueue:
             self._idle.set()
 
     async def _play(self, pending: _Pending) -> None:
-        """Play one utterance, counted by `size` for the whole of its life."""
-        self._in_flight = True
+        """Prepare and play one utterance, counted by `size` for the whole of its life."""
+        self._preparing += 1
         try:
             await self._synthesize_and_play(pending)
         finally:
-            self._in_flight = False
+            self._playing = False
             # Counted whether it played, failed or was discarded: `drain` only needs to
             # know the worker is moving, not that the audio was heard.
             self._finished += 1
@@ -149,12 +178,15 @@ class SpeechQueue:
         except Exception as error:
             self._on_error(error)
             return
+        finally:
+            self._preparing -= 1
 
         if generation != self._generation:
             # stop() ran while this was being synthesized; discard the work.
             await self._cleanup(utterance)
             return
 
+        self._playing = True
         try:
             process = await self._spawn(utterance.command, utterance.args)
         except OSError as error:

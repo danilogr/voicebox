@@ -405,3 +405,95 @@ async def test_drain_gives_up_when_nothing_finishes_at_all():
 
     worker.cancel()
     await aio.gather(worker, return_exceptions=True)
+
+
+class Controlled:
+    """A prepare/spawn pair whose stages the test releases one at a time.
+
+    Timing-free: each stage announces itself with an Event and waits for another, so a
+    test can observe the queue mid-flight without sleeping.
+    """
+
+    def __init__(self) -> None:
+        self.preparing = asyncio.Event()
+        self.release_prepare = asyncio.Event()
+        self.playing = asyncio.Event()
+        self.release_play = asyncio.Event()
+        self.prepared_texts: list[str] = []
+        self.cleaned: list[str] = []
+
+    async def prepare(self, text: str, *, voice: str | None, rate: float | None) -> Utterance:
+        self.prepared_texts.append(text)
+        self.preparing.set()
+        await self.release_prepare.wait()
+
+        async def cleanup() -> None:
+            self.cleaned.append(text)
+
+        return Utterance(command="true", args=[text], cleanup=cleanup)
+
+    async def spawn(self, command: str, args: object) -> "Controlled.Player":
+        self.playing.set()
+        return Controlled.Player(self.release_play)
+
+    class Player:
+        def __init__(self, release: asyncio.Event) -> None:
+            self._release = release
+
+        def terminate(self) -> None:
+            self._release.set()
+
+        async def wait(self) -> int:
+            await self._release.wait()
+            return 0
+
+
+def test_an_idle_queue_reports_nothing_in_hand():
+    stage = Controlled()
+    queue = SpeechQueue(prepare=stage.prepare, spawn=stage.spawn)
+    stats = queue.stats()
+    assert (stats.waiting, stats.preparing, stats.prepared, stats.playing) == (0, 0, 0, False)
+    assert stats.finished == 0
+
+
+async def test_stats_count_an_utterance_through_every_stage():
+    """`size` is derived from these, and `_idle` from `size`, so each stage has to be
+    counted or `drain` releases while audio is still to come."""
+    stage = Controlled()
+    queue = SpeechQueue(prepare=stage.prepare, spawn=stage.spawn)
+    worker = asyncio.create_task(queue.run())
+
+    queue.enqueue("one", voice=None, rate=None)
+    await stage.preparing.wait()
+    assert queue.stats().preparing == 1
+    assert queue.size == 1
+
+    stage.release_prepare.set()
+    await stage.playing.wait()
+    assert queue.stats().playing is True
+    assert queue.size == 1
+
+    stage.release_play.set()
+    await queue.drain()
+    stats = queue.stats()
+    assert (stats.waiting, stats.preparing, stats.prepared, stats.playing) == (0, 0, 0, False)
+    assert stats.finished == 1
+
+    worker.cancel()
+    await asyncio.gather(worker, return_exceptions=True)
+
+
+async def test_waiting_utterances_are_counted_before_they_are_prepared():
+    stage = Controlled()
+    queue = SpeechQueue(prepare=stage.prepare, spawn=stage.spawn)
+    worker = asyncio.create_task(queue.run())
+
+    for text in ("one", "two", "three"):
+        queue.enqueue(text, voice=None, rate=None)
+    await stage.preparing.wait()
+
+    assert queue.stats().waiting == 2
+    assert queue.size == 3
+
+    worker.cancel()
+    await asyncio.gather(worker, return_exceptions=True)
