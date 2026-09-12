@@ -187,11 +187,13 @@ def test_an_early_word_still_ends_the_recording_on_silence():
 
 
 def test_the_audio_of_an_early_word_is_kept_for_the_transcriber():
-    blocks = iter([block(1)] + [block(20000)] * 3 + [block(0)] * 5)
+    """Two loud blocks, so the word is over before calibration would have ended. With a
+    third, the clamped gate arms in time to catch it and the test passes either way."""
+    blocks = iter([block(1)] + [block(20000)] * 2 + [block(0)] * 25)
     captured = drive(lambda: next(blocks), LIMITS)
     assert captured.reason is State.DONE
     assert captured.has_speech is True
-    assert len(captured.pcm) == 9 * 960
+    assert len(captured.pcm) == 8 * 960
 
 
 def test_the_peak_is_carried_so_a_failure_can_say_how_close_it_came():
