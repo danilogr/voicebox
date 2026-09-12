@@ -355,8 +355,13 @@ def create_server(
                     # Recording anyway puts this session's own voice where the user's
                     # answer belongs, and the model acts on it as a request. An honest
                     # refusal can be retried; a fabricated answer cannot be taken back.
+                    stats = queue.stats()
+                    pending = (
+                        f"{stats.waiting} waiting, {stats.preparing} being prepared, "
+                        f"{'one playing' if stats.playing else 'none playing'}"
+                    )
                     logger.warning("speech queue is wedged; refusing to record over it")
-                    raise ToolError(tools.STILL_SPEAKING) from error
+                    raise ToolError(tools.STILL_SPEAKING.format(pending=pending)) from error
 
                 await settle(session.warmup)
 

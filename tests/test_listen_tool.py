@@ -12,6 +12,7 @@ from speak.capture import Recorder, RecorderUnavailable, Recording, State, Track
 from speak.config import Settings
 from speak.cue import Cue
 from speak.engines.asr import TranscriptionFailed
+from speak.queue import QueueStats
 from speak.server import Ears, create_server
 
 # Named for their stems, which is what the fake player logs when a cue finishes.
@@ -426,3 +427,14 @@ def test_an_unclosed_frontmatter_block_is_left_in_the_body():
     """Stripping to the end of the file would serve an empty instruction."""
     text = "---\ndescription: never closed\nThe body.\n"
     assert server_module.split_frontmatter(text) == ("", text)
+
+
+async def test_a_refusal_says_how_much_is_still_to_play(monkeypatch):
+    monkeypatch.setattr(server_module, "DRAIN_BACKSTOP", 0.01)
+    rig = build(
+        queue=StuckQueue(
+            stats=QueueStats(waiting=2, preparing=1, prepared=0, playing=True, finished=4)
+        )
+    )
+    with pytest.raises(ToolError, match="2 waiting"):
+        await call_listen(rig.server)

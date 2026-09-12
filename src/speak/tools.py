@@ -69,9 +69,9 @@ server process recorded in server.json in the speak state directory. The next li
 then starts one with transcription."""
 
 STILL_SPEAKING = (
-    "the speech queue is wedged - nothing finished playing while waiting for it - so the "
-    "microphone was not opened. Recording now would capture this session's own voice and "
-    "hand it back as the user's answer. Call stop_speaking, then listen again."
+    "the speech queue is wedged - nothing finished playing while waiting for it ({pending}) "
+    "- so the microphone was not opened. Recording now would capture this session's own "
+    "voice and hand it back as the user's answer. Call stop_speaking, then listen again."
 )
 
 SERVER_STARTING = (
