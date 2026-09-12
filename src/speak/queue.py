@@ -1,4 +1,4 @@
-"""Serial speech queue: one child process at a time, never blocking the caller."""
+"""Speech queue: prepares the next while one plays, one child process at a time, non-blocking."""
 
 import asyncio
 import logging

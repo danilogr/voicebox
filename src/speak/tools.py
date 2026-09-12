@@ -31,7 +31,8 @@ STOP_SPEAKING = """Stop talking immediately: silence the current utterance and d
 queued behind it."""
 
 SPEECH_STATUS = """Report what the speech queue is holding: how many utterances are
-waiting, being synthesized, prepared and ready, and whether one is playing.
+waiting, being synthesized, prepared and ready, whether one is playing, and how many
+have been spoken so far.
 
 Use it when speech seems slow or stuck, and before deciding to wait: synthesis costs
 about as much time as the audio it produces, so a long answer legitimately occupies the
