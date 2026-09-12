@@ -395,6 +395,14 @@ bytes for the length of one transcription and is never written to disk.
   gate diluted by zeros lands at the floor, and in a noisy room a floor-level gate
   opens on the room and never closes.
 
+- **A word spoken before the gate arms starts the utterance.** Calibration runs for
+  300 ms from the first real sample, and a one-word answer can be over before it ends.
+  Averaging that voice into the ambient puts the gate above the speech it exists to
+  detect, and the blocks are already buffered, so a block at or above the ceiling ends
+  calibration instead: the gate takes the floor and the utterance begins there. The
+  ceiling is the dividing line because no room delivers a block that loud, while a noisy
+  room can still push the computed gate above it.
+
 - **An empty capture ends on a different sound.** Recording stops on
   silence whether or not anyone spoke, so without a distinct tone the two are
   indistinguishable until the transcript fails to arrive. It replaces the closing cue

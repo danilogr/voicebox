@@ -35,14 +35,16 @@ is checked before anything else, so it bounds every phase.
 | `WARMING` | any non-zero sample arrives | `CALIBRATING` |
 | | `deaf_ms` (1.5 s) passes with only exact zeros | `DEAF` |
 | `CALIBRATING` | `calibrate_ms` (300 ms) of audio **since the first real sample** | `WAITING` |
+| | a block at or above the ceiling — louder than any room | `SPEAKING` |
 | `WAITING` | a block reaches the gate | `SPEAKING` |
 | | `start_timeout_ms` (10 s) passes | `SILENT` |
 | `SPEAKING` | `silence_ms` (3 s) below the gate | `DONE` |
 | any | `max_ms` (240 s) total | `CAPPED` |
 | any | the caller sets the cancel event | `CANCELLED` |
 
-Leaving `CALIBRATING` sets the gate to `ambient × 3`, clamped between a floor of
-`0.01` and a ceiling of `0.05`.
+Leaving `CALIBRATING` on time sets the gate to `ambient × 3`, clamped between a floor
+of `0.01` and a ceiling of `0.05`. Leaving it early — on a block already at the ceiling —
+sets the gate to the floor, because no ambient level was ever measured.
 
 What each terminal state means to the caller:
 

@@ -88,9 +88,12 @@ def test_talking_through_calibration_does_not_poison_the_gate():
 
 
 def test_the_gate_is_clamped_from_above():
+    """A noisy room, not a voice: every block stays under the ceiling while the computed
+    gate would exceed it. A block as loud as a voice starts the utterance instead."""
     tracker = SilenceTracker(LIMITS)
     for _ in range(3):
-        tracker.feed(0.2)
+        tracker.feed(0.02)
+    assert tracker.state is State.WAITING
     assert tracker.threshold == LIMITS.ceiling
 
 
@@ -166,6 +169,29 @@ def test_priming_silence_stays_out_of_the_gate():
         tracker.feed(0.01)
     assert tracker.state is State.WAITING
     assert tracker.threshold == pytest.approx(0.03)
+
+
+def test_a_word_spoken_before_the_gate_arms_starts_the_utterance():
+    """Calibration runs 300 ms from the first real sample, and a one-word answer can be
+    over before it ends. Averaging that voice into the ambient raises the gate above it,
+    and the blocks are already buffered, so the utterance begins there."""
+    tracker = SilenceTracker(LIMITS)
+    tracker.feed(QUIET)
+    assert tracker.feed(0.3) is State.SPEAKING
+    assert tracker.heard_speech is True
+    assert tracker.threshold == LIMITS.floor
+
+
+def test_an_early_word_still_ends_the_recording_on_silence():
+    assert run([QUIET] + [0.3] * 2 + [0.0] * 5) == (State.DONE, 8)
+
+
+def test_the_audio_of_an_early_word_is_kept_for_the_transcriber():
+    blocks = iter([block(1)] + [block(20000)] * 3 + [block(0)] * 5)
+    captured = drive(lambda: next(blocks), LIMITS)
+    assert captured.reason is State.DONE
+    assert captured.has_speech is True
+    assert len(captured.pcm) == 9 * 960
 
 
 def test_the_peak_is_carried_so_a_failure_can_say_how_close_it_came():

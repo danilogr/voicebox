@@ -144,6 +144,18 @@ class SilenceTracker:
         return self._state
 
     def _calibrate(self, energy: float) -> State:
+        if energy >= self._settings.ceiling:
+            # Louder than any room delivers: the user answered before the gate armed.
+            # Measuring the room from their voice would put the gate above the speech it
+            # exists to detect, and the blocks are already buffered, so the utterance
+            # starts here rather than being averaged away. The gate takes the floor,
+            # since no ambient level was ever measured.
+            self._threshold = self._settings.floor
+            self._heard_speech = True
+            self._silence_ms = 0.0
+            self._state = State.SPEAKING
+            return self._state
+
         self._ambient.append(energy)
         if self._elapsed_ms - self._signal_at_ms >= self._settings.calibrate_ms:
             ambient = sum(self._ambient) / len(self._ambient)
