@@ -337,3 +337,71 @@ async def test_drain_waits_out_an_utterance_stopped_while_it_was_spawning(runnin
     release.set()
     await asyncio.wait_for(drained, timeout=1)
     assert queue.size == 0
+
+
+async def test_drain_waits_as_long_as_the_queue_keeps_finishing():
+    """One spoken answer is several utterances, each costing its synthesis as well as its
+    audio, so a batch outlasts any fixed deadline. Every utterance that finishes resets
+    the window, so only a stall ends the wait."""
+    import asyncio as aio
+
+    from speak.engines.base import Utterance
+    from speak.queue import SpeechQueue
+
+    class Quick:
+        def terminate(self) -> None: ...
+
+        async def wait(self) -> int:
+            await aio.sleep(0.05)
+            return 0
+
+    async def prepare(text: str, *, voice: str | None, rate: float | None) -> Utterance:
+        return Utterance(command="true", args=[])
+
+    async def spawn(command: str, args: object) -> Quick:
+        return Quick()
+
+    queue = SpeechQueue(prepare=prepare, spawn=spawn)
+    worker = aio.create_task(queue.run())
+    for n in range(8):
+        queue.enqueue(f"line {n}", voice=None, rate=None)
+
+    # Eight at 50 ms each is 400 ms of work, far past the 120 ms window.
+    await queue.drain(stall_timeout=0.12)
+
+    assert queue.size == 0
+    worker.cancel()
+    await aio.gather(worker, return_exceptions=True)
+
+
+async def test_drain_gives_up_when_nothing_finishes_at_all():
+    """What a wedged worker looks like from here, and the only case that ends the wait."""
+    import asyncio as aio
+
+    import pytest as pt
+
+    from speak.engines.base import Utterance
+    from speak.queue import SpeechQueue
+
+    class Wedged:
+        def terminate(self) -> None: ...
+
+        async def wait(self) -> int:
+            await aio.Event().wait()
+            return 0
+
+    async def prepare(text: str, *, voice: str | None, rate: float | None) -> Utterance:
+        return Utterance(command="true", args=[])
+
+    async def spawn(command: str, args: object) -> Wedged:
+        return Wedged()
+
+    queue = SpeechQueue(prepare=prepare, spawn=spawn)
+    worker = aio.create_task(queue.run())
+    queue.enqueue("wedged", voice=None, rate=None)
+
+    with pt.raises(TimeoutError):
+        await queue.drain(stall_timeout=0.1)
+
+    worker.cancel()
+    await aio.gather(worker, return_exceptions=True)

@@ -331,13 +331,19 @@ async def test_the_configured_language_reaches_the_transcriber():
     assert rig.transcriber.languages == ["en"]
 
 
-async def test_a_queue_that_will_not_drain_records_anyway(monkeypatch, caplog):
-    monkeypatch.setattr(server_module, "DRAIN_TIMEOUT", 0.01)
+async def test_a_wedged_queue_is_refused_rather_than_recorded_over(monkeypatch, caplog):
+    """Recording while this session is still talking hands our own voice back where the
+    user's answer belongs, and the model acts on it as a request. A refusal can be
+    retried; a fabricated answer cannot be taken back. Nothing is cued or recorded."""
+    monkeypatch.setattr(server_module, "DRAIN_BACKSTOP", 0.01)
     rig = build(queue=StuckQueue())
-    with caplog.at_level(logging.WARNING, logger="speak.server"):
-        assert await call_listen(rig.server) == "run the tests"
-    assert rig.calls == ["drain", "cue-start", "record", "cue-end"]
-    assert "did not drain" in caplog.text
+    with (
+        caplog.at_level(logging.WARNING, logger="speak.server"),
+        pytest.raises(ToolError, match="stop_speaking"),
+    ):
+        await call_listen(rig.server)
+    assert rig.calls == ["drain"]
+    assert "wedged" in caplog.text
 
 
 async def test_a_second_listen_is_refused_while_the_first_is_recording():

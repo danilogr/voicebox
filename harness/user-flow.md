@@ -81,9 +81,12 @@ old to enumerate devices falls back to recording from the default.
 Ends the turn only when it has a transcript or an error.
 
 1. Already listening in this session → refused, naming that fact.
-2. The speech queue is drained, so the microphone cannot hear Claude. A queue that
-   will not drain within 60 s logs a warning and recording goes ahead anyway — the
-   worst case is hearing ourselves, which is better than refusing the user.
+2. The speech queue is drained, so the microphone cannot hear Claude. It waits as long
+   as utterances keep finishing: a spoken answer of several sentences costs its
+   synthesis as well as its audio, so a batch legitimately runs for minutes. Only a
+   stall — nothing finishing within 60 s — ends the wait, and then the call is refused
+   rather than recorded, because our own voice returned as the user's answer is worse
+   than being asked to try again.
 3. Any warmup started when the session opened is awaited.
 4. Liveness, then capability: a server that is absent, one still loading its models,
    and one running without a transcription model each get their own message, because

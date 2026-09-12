@@ -27,7 +27,10 @@ logger = logging.getLogger(__name__)
 
 VERSION = "1.0.0"
 
-DRAIN_TIMEOUT = 60.0
+# The queue decides when it is wedged, because only it can see its own progress. This
+# is the outer guard: a Queue implementation that neither finishes nor raises would
+# otherwise hold a tool call open for the life of the session.
+DRAIN_BACKSTOP = 600.0
 
 # Claude Code reads `commands/*.md` on its own. Every other MCP client sees only what
 # this server offers, so conversation mode is served from that same file as a prompt:
@@ -328,11 +331,13 @@ def create_server(
 
             async with listening:
                 try:
-                    await asyncio.wait_for(queue.drain(), timeout=DRAIN_TIMEOUT)
-                except TimeoutError:
-                    # A queue that will not drain is a reason to record anyway, not a
-                    # reason to refuse the user; the worst case is hearing ourselves.
-                    logger.warning("speech queue did not drain; opening the microphone anyway")
+                    await asyncio.wait_for(queue.drain(), timeout=DRAIN_BACKSTOP)
+                except TimeoutError as error:
+                    # Recording anyway puts this session's own voice where the user's
+                    # answer belongs, and the model acts on it as a request. An honest
+                    # refusal can be retried; a fabricated answer cannot be taken back.
+                    logger.warning("speech queue is wedged; refusing to record over it")
+                    raise ToolError(tools.STILL_SPEAKING) from error
 
                 await settle(session.warmup)
 

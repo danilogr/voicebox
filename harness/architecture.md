@@ -231,8 +231,12 @@ bytes for the length of one transcription and is never written to disk.
   `speak` returns immediately by design, so a question is usually still playing when
   the next tool call runs, and without the drain the recording captures the agent's
   own voice. `SpeechQueue.drain()` exists for this and waits out synthesis as well as
-  playback. A drain that does not finish inside a minute is logged and the microphone
-  is opened anyway: refusing the user is worse than the risk of hearing ourselves.
+  playback, and it waits as long as utterances keep finishing: one spoken answer is
+  several of them, and each costs its synthesis as well as its audio, so a batch runs
+  for minutes of legitimate work. Only a stall - nothing finishing inside a minute -
+  ends the wait, and then the call is refused rather than recorded. Our own voice handed
+  back as the user's answer is a fabricated request the model acts on, where a refusal
+  can simply be retried.
   Not a combined `ask(question)` tool, which duplicates `speak` to buy only the
   ordering the drain already gives.
 

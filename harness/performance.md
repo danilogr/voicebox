@@ -14,12 +14,18 @@ will move them.
 | | |
 |---|---|
 | `nemo` cold start, to first `/health` answer | ~10 s |
-| `nemo`, per sentence once warm | ~1.7 s |
+| `nemo` synthesis, per sentence once warm | roughly the length of the audio itself |
 | `say`, per sentence | ~0.7 s |
 
 The cold start is why the first sentence after a server start is spoken by `say`
 while the server warms: speech is never delayed waiting for a model to load, and
 never silently dropped.
+
+Synthesis scales with output length rather than being a fixed cost: a 25-word sentence
+took 8.9 s to synthesise and 9.9 s to speak, and a 34-word one took 11.6 s for 12.4 s of
+audio. Playback adds about 0.9 s per utterance for the player process to start and exit.
+So a six-sentence spoken answer occupies the queue for around 110 s — a figure worth
+knowing before choosing any deadline that waits on it.
 
 ## Resident memory
 

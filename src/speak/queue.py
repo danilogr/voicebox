@@ -11,6 +11,11 @@ from speak.engines.base import Utterance
 
 logger = logging.getLogger(__name__)
 
+# How long `drain` tolerates nothing at all finishing. Not a budget for the queue: a
+# spoken answer is several utterances and each costs its synthesis as well as its audio,
+# so a batch runs for minutes. This is the window that says the worker is wedged.
+STALL_TIMEOUT = 60.0
+
 
 class Process(Protocol):
     """The slice of a child process the queue uses."""
@@ -65,6 +70,7 @@ class SpeechQueue:
         self._idle.set()
         self._current: Process | None = None
         self._in_flight = False
+        self._finished = 0
         self._generation = 0
 
     @staticmethod
@@ -96,9 +102,24 @@ class SpeechQueue:
             self._idle.set()
         return dropped
 
-    async def drain(self) -> None:
-        """Wait until nothing is queued, being prepared, or playing."""
-        await self._idle.wait()
+    async def drain(self, *, stall_timeout: float = STALL_TIMEOUT) -> None:
+        """Wait until nothing is queued, being prepared, or playing.
+
+        Waits as long as the queue keeps making progress, however long that takes. A
+        fixed deadline cannot serve this: one spoken answer is several utterances, each
+        costing its synthesis as well as its audio, which is minutes of legitimate work.
+        Only a stall - nothing finishing inside the window - means the worker is wedged.
+
+        Raises:
+            TimeoutError: if no utterance finished within `stall_timeout`.
+        """
+        while not self._idle.is_set():
+            finished = self._finished
+            try:
+                await asyncio.wait_for(self._idle.wait(), timeout=stall_timeout)
+            except TimeoutError:
+                if self._finished == finished:
+                    raise
 
     async def run(self) -> None:
         """Drain the queue until cancelled."""
@@ -117,6 +138,9 @@ class SpeechQueue:
             await self._synthesize_and_play(pending)
         finally:
             self._in_flight = False
+            # Counted whether it played, failed or was discarded: `drain` only needs to
+            # know the worker is moving, not that the audio was heard.
+            self._finished += 1
 
     async def _synthesize_and_play(self, pending: _Pending) -> None:
         generation = self._generation

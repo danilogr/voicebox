@@ -61,6 +61,12 @@ are still attached: close the other Claude Code sessions using speak, or stop th
 server process recorded in server.json in the speak state directory. The next listen
 then starts one with transcription."""
 
+STILL_SPEAKING = (
+    "the speech queue is wedged - nothing finished playing while waiting for it - so the "
+    "microphone was not opened. Recording now would capture this session's own voice and "
+    "hand it back as the user's answer. Call stop_speaking, then listen again."
+)
+
 SERVER_STARTING = (
     "the speech server is starting up and has not loaded its models yet, so there is "
     "nothing to transcribe with for another few seconds. Wait, then ask again - nothing "
