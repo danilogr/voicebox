@@ -38,6 +38,14 @@ class _Pending:
 
 
 @dataclass(frozen=True, slots=True)
+class _Prepared:
+    """An utterance ready to play, and the generation it was prepared under."""
+
+    utterance: Utterance
+    generation: int
+
+
+@dataclass(frozen=True, slots=True)
 class QueueStats:
     """What the queue is holding right now.
 
@@ -90,6 +98,7 @@ class SpeechQueue:
         self._playing = False
         self._finished = 0
         self._generation = 0
+        self._ahead: asyncio.Task[_Prepared | None] | None = None
 
     @staticmethod
     def _log_error(error: BaseException) -> None:
@@ -127,7 +136,8 @@ class SpeechQueue:
         if current is not None:
             current.terminate()
         if self.size == 0:
-            # An utterance still in flight settles in the worker, which sets _idle then.
+            # Anything still preparing or playing settles in the worker, which sets
+            # _idle when it has nothing left in hand.
             self._idle.set()
         return dropped
 
@@ -151,42 +161,67 @@ class SpeechQueue:
                     raise
 
     async def run(self) -> None:
-        """Drain the queue until cancelled."""
+        """Play queued utterances in order, preparing the next while one plays.
+
+        Depth one, which is what preserves order for free: there is never more than one
+        utterance prepared ahead, so the deque alone decides what comes next. Synthesis
+        costs about as much wall clock as the audio it produces, so overlapping the two
+        nearly removes it from the total.
+        """
         while True:
             await self._wake.wait()
             self._wake.clear()
-            while self._waiting:
-                await self._play(self._waiting.popleft())
-            # Nothing waiting, preparing, or playing: release drain() waiters.
+            while self._waiting or self._ahead is not None:
+                if self._ahead is None:
+                    self._ahead = self._start_preparing(self._waiting.popleft())
+                prepared = await self._ahead
+                self._ahead = None
+                if self._waiting:
+                    self._ahead = self._start_preparing(self._waiting.popleft())
+                await self._play(prepared)
             self._idle.set()
 
-    async def _play(self, pending: _Pending) -> None:
-        """Prepare and play one utterance, counted by `size` for the whole of its life."""
+    def _start_preparing(self, pending: _Pending) -> "asyncio.Task[_Prepared | None]":
         self._preparing += 1
-        try:
-            await self._synthesize_and_play(pending)
-        finally:
-            self._playing = False
-            # Counted whether it played, failed or was discarded: `drain` only needs to
-            # know the worker is moving, not that the audio was heard.
-            self._finished += 1
+        return asyncio.create_task(self._prepare_one(pending))
 
-    async def _synthesize_and_play(self, pending: _Pending) -> None:
+    async def _prepare_one(self, pending: _Pending) -> _Prepared | None:
+        """Synthesize one utterance. None means it failed and was reported."""
         generation = self._generation
         try:
             utterance = await self._prepare(pending.text, voice=pending.voice, rate=pending.rate)
         except Exception as error:
             self._on_error(error)
-            return
+            return None
         finally:
             self._preparing -= 1
+        self._prepared += 1
+        return _Prepared(utterance=utterance, generation=generation)
 
-        if generation != self._generation:
-            # stop() ran while this was being synthesized; discard the work.
-            await self._cleanup(utterance)
-            return
+    async def _play(self, prepared: _Prepared | None) -> None:
+        """Play one prepared utterance, or account for one that never got that far."""
+        try:
+            if prepared is None:
+                return
+            if prepared.generation != self._generation:
+                # stop() ran while this was being prepared; discard the work and the
+                # temp file that came with it. Counted until that file is gone: `_idle`
+                # is derived from `size`.
+                try:
+                    await self._cleanup(prepared.utterance)
+                finally:
+                    self._prepared -= 1
+                return
+            self._prepared -= 1
+            self._playing = True
+            try:
+                await self._spawn_and_wait(prepared.utterance, prepared.generation)
+            finally:
+                self._playing = False
+        finally:
+            self._finished += 1
 
-        self._playing = True
+    async def _spawn_and_wait(self, utterance: Utterance, generation: int) -> None:
         try:
             process = await self._spawn(utterance.command, utterance.args)
         except OSError as error:
