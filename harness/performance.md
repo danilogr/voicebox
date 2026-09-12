@@ -14,18 +14,30 @@ will move them.
 | | |
 |---|---|
 | `nemo` cold start, to first `/health` answer | ~10 s |
-| `nemo` synthesis, per sentence once warm | roughly the length of the audio itself |
+| `nemo` synthesis, per sentence once warm | 0.5x to 0.9x the audio duration, load-dependent |
 | `say`, per sentence | ~0.7 s |
 
 The cold start is why the first sentence after a server start is spoken by `say`
 while the server warms: speech is never delayed waiting for a model to load, and
 never silently dropped.
 
-Synthesis scales with output length rather than being a fixed cost: a 25-word sentence
-took 8.9 s to synthesise and 9.9 s to speak, and a 34-word one took 11.6 s for 12.4 s of
-audio. Playback adds about 0.9 s per utterance for the player process to start and exit.
-So a six-sentence spoken answer occupies the queue for around 110 s — a figure worth
-knowing before choosing any deadline that waits on it.
+Synthesis scales with output length rather than being a fixed cost, and it is sensitive
+to what else the machine is doing. On an idle machine a 20-word sentence took 3.6 s to
+synthesise for 7.0 s of audio, about half realtime. With the test suite running
+alongside, a 25-word sentence took 8.9 s for 9.9 s of audio — near parity. Both are
+sub-realtime; treat the ratio as a range, not a constant.
+
+Playback adds about 0.9 s per utterance for the player process to start and exit.
+
+The queue is serial — nothing is synthesised until the previous utterance has finished
+playing — so one spoken answer occupies it for the sum of every synthesis, every audio
+duration, and that per-utterance overhead. A six-sentence answer measured 110 s that way,
+of which roughly half was synthesis with the speakers idle. Any deadline that waits on
+the queue has to allow for the whole sum.
+
+Concurrent synthesis does not help: the speech server handles one request at a time, so
+three requests fired together finished at 3.4 s, 7.3 s and 10.6 s for a wall clock of
+10.6 s against 11.1 s serially — a 1.05x difference, and a loss of ordering.
 
 ## Resident memory
 
