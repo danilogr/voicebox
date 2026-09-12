@@ -21,6 +21,7 @@ from speak.cue import Cue
 from speak.engines.asr import Liveness, Transcriber, TranscriptionFailed
 from speak.engines.base import Engine
 from speak.miclock import MicLock, MicrophoneBusy
+from speak.queue import QueueStats
 from speak.text import normalize
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,8 @@ class Queue(Protocol):
     async def run(self) -> None: ...
 
     async def drain(self) -> None: ...
+
+    def stats(self) -> QueueStats: ...
 
 
 class Supervisor(Protocol):
@@ -300,6 +303,22 @@ def create_server(
     async def stop_speaking() -> str:
         dropped = await queue.stop()
         return f"stopped; dropped {dropped} utterance{_plural(dropped)}"
+
+    @server.tool(name="speech_status", description=tools.SPEECH_STATUS)
+    async def speech_status() -> str:
+        stats = queue.stats()
+        if stats.waiting + stats.preparing + stats.prepared == 0 and not stats.playing:
+            return f"nothing queued; {stats.finished} spoken so far"
+        head = "playing" if stats.playing else "not playing"
+        held = []
+        if stats.preparing:
+            held.append(f"{stats.preparing} being prepared")
+        if stats.prepared:
+            held.append(f"{stats.prepared} prepared")
+        if stats.waiting:
+            held.append(f"{stats.waiting} waiting")
+        detail = f"{head}; {', '.join(held)}" if held else head
+        return f"{detail}; {stats.finished} spoken so far"
 
     if ears is not None:
         # The microphone lock is re-entrant by pid, so it separates sessions but not

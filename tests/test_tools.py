@@ -2,7 +2,7 @@ from fakes import FakeEngine, FakeQueue
 from speak.config import Settings
 from speak.server import create_server
 
-TOOL_NAMES = {"speak", "stop_speaking", "list_voices", "set_voice"}
+TOOL_NAMES = {"speak", "stop_speaking", "list_voices", "set_voice", "speech_status"}
 
 
 def server() -> object:

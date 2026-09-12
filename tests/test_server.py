@@ -96,6 +96,7 @@ async def test_initializes_and_reports_its_name(recorder):
             "stop_speaking",
             "list_voices",
             "set_voice",
+            "speech_status",
         }
 
 
@@ -148,6 +149,14 @@ async def test_stop_speaking_answers_even_when_nothing_is_playing(recorder):
     script, _ = recorder
     async with connected(f"{sys.executable} {script}") as session:
         assert "stopped" in await text_of(session, "stop_speaking")
+
+
+async def test_speech_status_is_offered_over_stdio(recorder):
+    """The tool exists for any MCP client, so it is checked the way they receive it."""
+    script, _ = recorder
+    async with connected(f"{sys.executable} {script}") as session:
+        assert "speech_status" in {tool.name for tool in (await session.list_tools()).tools}
+        assert "nothing queued" in await text_of(session, "speech_status")
 
 
 async def test_the_character_cap_is_honoured_end_to_end(recorder):

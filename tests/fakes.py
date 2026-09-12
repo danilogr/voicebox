@@ -8,6 +8,7 @@ from speak.capture import Recording, TrackerSettings
 from speak.engines.asr import Liveness
 from speak.engines.base import Utterance
 from speak.miclock import MicrophoneBusy
+from speak.queue import QueueStats
 
 
 class FakeEngine:
@@ -33,12 +34,23 @@ class FakeEngine:
 
 
 class FakeQueue:
-    def __init__(self, ahead: int = 0, dropped: int = 0, calls: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        ahead: int = 0,
+        dropped: int = 0,
+        calls: list[str] | None = None,
+        stats: QueueStats | None = None,
+    ) -> None:
         self.enqueued: list[tuple[str, str | None, float | None]] = []
         self.stopped = 0
         self.calls = calls if calls is not None else []
         self._ahead = ahead
         self._dropped = dropped
+        self._stats = (
+            stats
+            if stats is not None
+            else QueueStats(waiting=0, preparing=0, prepared=0, playing=False, finished=0)
+        )
 
     def enqueue(self, text: str, *, voice: str | None, rate: float | None) -> int:
         self.enqueued.append((text, voice, rate))
@@ -53,6 +65,9 @@ class FakeQueue:
 
     async def drain(self) -> None:
         self.calls.append("drain")
+
+    def stats(self) -> QueueStats:
+        return self._stats
 
 
 class FakeSupervisor:

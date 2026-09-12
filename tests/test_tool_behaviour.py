@@ -3,6 +3,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from fakes import FakeEngine, FakeQueue, FakeSupervisor
 from speak.config import Settings
+from speak.queue import QueueStats
 from speak.server import create_server
 
 
@@ -138,3 +139,27 @@ async def test_stop_speaking_uses_singular_wording_for_one():
 async def test_stop_speaking_on_silence_reports_zero():
     server, _, _ = build(queue=FakeQueue(dropped=0))
     assert await call(server, "stop_speaking") == "stopped; dropped 0 utterances"
+
+
+async def test_speech_status_reports_an_idle_queue():
+    server, _, _ = build()
+    assert "nothing queued" in await call(server, "speech_status")
+
+
+async def test_speech_status_reports_what_is_in_hand():
+    """A slow machine is indistinguishable from a stuck one without this: a caller that
+    can see three waiting and one playing knows to wait rather than to give up."""
+    busy = FakeQueue(stats=QueueStats(waiting=3, preparing=1, prepared=1, playing=True, finished=7))
+    server, _, _ = build(queue=busy)
+    said = await call(server, "speech_status")
+    assert "playing" in said
+    assert "3 waiting" in said
+    assert "1 prepared" in said
+    assert "7" in said
+
+
+async def test_speech_status_names_the_one_utterance_playing():
+    """The commonest non-idle state: one utterance playing with nothing behind it."""
+    busy = FakeQueue(stats=QueueStats(waiting=0, preparing=0, prepared=0, playing=True, finished=2))
+    server, _, _ = build(queue=busy)
+    assert await call(server, "speech_status") == "playing; 2 spoken so far"
