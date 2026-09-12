@@ -27,6 +27,7 @@ stateDiagram-v2
     playing --> [*]: player exits
     preparing --> [*]: synthesis failed
     prepared --> [*]: stop_speaking ran first
+    waiting --> [*]: stop_speaking cleared the queue
 ```
 
 Every state in that diagram counts towards `size`, and `drain()` waits for `size` to

@@ -27,6 +27,8 @@ Python 3.12+, pytest, ruff for lint and format, mypy for types.
 
 Ruff selects `E,F,I,N,UP,B,SIM,RUF,ANN,PTH,LOG,G` with `RUF100` on, so an unnecessary
 `# noqa` is itself an error — a suppression has to be justified where it sits.
+`ANN401` is off everywhere, and `tests/` also drops `ANN201` and `ANN001`, so a test
+needs no return or argument annotations — but a function nested inside one still does.
 
 ## Code standards
 
@@ -51,7 +53,9 @@ Ruff selects `E,F,I,N,UP,B,SIM,RUF,ANN,PTH,LOG,G` with `RUF100` on, so an unnece
 
 ## Naming and layering
 
-- Exception names end in `Error` (ruff `N818`), including ones that read as a state
+- Exception names end in `Error` (ruff `N818`). Three read better without it and
+  suppress the rule where they are defined, each with its reason: `MicrophoneBusy`,
+  `RecorderUnavailable`, `TranscriptionFailed`
   rather than a failure.
 - Pure logic is separated from the device or socket that feeds it: a state machine
   that takes values, wrapped in a thin shell that does the I/O. The shell is where
@@ -99,3 +103,7 @@ Ruff selects `E,F,I,N,UP,B,SIM,RUF,ANN,PTH,LOG,G` with `RUF100` on, so an unnece
   statement about the code, not about its history.
 - Fixtures must not depend on the machine running them. A test that asserts `afplay`
   passes only on a Mac; inject the player instead.
+- Tests wait on events rather than sleeping, so a regression that stops the worker
+  hangs instead of failing. `pytest-timeout` caps every test at 30 s to turn that
+  back into a red test. It sits below `STALL_TIMEOUT` (60 s) deliberately: a wedged
+  `drain()` has to redden rather than outlast the suite.

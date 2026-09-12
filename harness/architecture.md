@@ -20,13 +20,14 @@ command runs and whose stdout is injected into the user's message. Both transcri
 against the same shared speech server the supervisor already manages. With
 `SPEAK_LISTEN` unset the `listen` tool is never defined, so the tool list is
 unchanged; `/talk` is a static command file that still appears in the palette, and
-the script behind it refuses at once with one line on stderr.
+the script behind it refuses at once with one line on stdout and stderr both.
 
 ## Components & boundaries
 
 - **`__main__`** — the composition root for the MCP server. Reads the environment,
-  builds every other component, and starts the transport. It must not contain
-  behaviour worth testing on its own. Voice input added a second entry point, so the
+  builds every other component, and starts the transport. It must not contain speech
+  behaviour; the only logic it owns is which components to build at all, in
+  `build_ears` and `build_supervisor`, which `tests/test_composition.py` covers. Voice input added a second entry point, so the
   boundary rule now names both: `__main__` and `talk` are the only modules that read
   this plugin's configuration from `os.environ`, and neither installs a log handler
   itself — both call `runtime.configure_logging`. One other module touches the
@@ -129,12 +130,16 @@ An utterance prepared ahead that never reaches playback is released by the worke
 
 Almost nothing is persistent.
 
-- **Session state** (in memory, per process): the active voice and rate, and whether
-  this session has registered with the supervisor. Claude Code runs one server process
+- **Session state** (in memory, per process): the active voice and rate, whether the
+  voice is re-rolled per utterance, the warmup task, and whether this session has
+  registered with the supervisor. Claude Code runs one server process
   per session, so this is already isolated from every other window. Deliberately never
   written to disk.
-- **Speech queue** (in memory, per process): pending utterances and the running child
-  process.
+- **Speech queue** (in memory, per process): utterances waiting in a deque, the one
+  being prepared, the one the worker has taken, and the running child process. The
+  last three are references rather than counts — see above. Two counters go with
+  them: how many utterances have finished, and a generation that `stop` bumps to
+  invalidate work already in flight.
 - **Shared server state** (on disk, per machine), under `SPEAK_STATE_DIR`:
   - `clients/<pid>` — one empty file per live session. Source of truth for whether the
     speech server is still needed.

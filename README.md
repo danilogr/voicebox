@@ -208,7 +208,7 @@ All optional, set in your shell or in the plugin's `.mcp.json`:
 | `SPEAK_NEMO_AUTOSTART` | `1` | set `0` to start and stop the speech server yourself |
 | `SPEAK_NEMO_BIN` | `nemo-speech` | binary the supervisor spawns |
 | `SPEAK_SEED` | — | passed as `--tts.seed`; pins pacing between runs |
-| `SPEAK_STATE_DIR` | `~/Library/Caches/speak` | where the shared-server state lives |
+| `SPEAK_STATE_DIR` | `~/Library/Caches/speak` on macOS, else `$XDG_CACHE_HOME/speak` | where the shared-server state lives |
 | `SPEAK_UV` | — | absolute path to uv, if the launcher should not search for it |
 
 ### Engines
@@ -225,7 +225,7 @@ not hardcoded. The OpenAI-compatible names (`nova`, `alloy`, …) are accepted b
 resolve to the model's default speaker, so the plugin defaults to `John` explicitly
 instead.
 
-It is slower per sentence than `say` and takes a few seconds to start, so the first
+It is slower per sentence than `say` and takes about ten seconds to start, so the first
 sentence after a cold start is spoken by `say` while the server warms up: speech is
 never delayed waiting for a model and never silently dropped. The supervisor always
 passes `--device cpu`, because Metal runs this workload slower on Apple silicon.
