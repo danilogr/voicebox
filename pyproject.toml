@@ -1,6 +1,6 @@
 [project]
 name = "speak"
-version = "1.0.0"
+version = "1.1.0"
 description = "MCP speech server for Claude Code."
 requires-python = ">=3.12"
 dependencies = [
