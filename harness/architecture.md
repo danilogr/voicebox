@@ -249,6 +249,20 @@ are not, until staging has been verified end to end.
   three requests at once measured 1.05x against serial and gave up ordering to get it.
   A prefetched utterance holds a temp file of its own; releasing it is covered above.
 
+- **Speech is synthesised whole, not streamed, because nothing streams it.** The local
+  speech server buffers a complete clip before answering: "streaming synthesis is not part
+  of this compatibility subset". The one path that streams audio out, its VoiceChat
+  protocol, needs CUDA with 16 GB of GPU memory and has no CPU or Metal build, so it does
+  not run on the machines this plugin targets. That is why the queue prepares whole
+  utterances ahead rather than playing a stream, and the prefetch is not a workaround for
+  something simpler that exists.
+
+  Transcription is the other half and does stream — `WS /v1/audio/transcriptions/realtime`
+  takes PCM as it is spoken and returns partial transcripts. It would shorten the gap
+  between a user finishing and the transcript arriving, it runs on the same CPU backend,
+  and it fits behind the existing `Transcriber` protocol beside the HTTP one. Not adopted
+  yet: the server is at v0.1.0 and says its interfaces may still change.
+
 - **Voice and rate are per connection and never persisted.** One server
   process per session means a plain attribute is already isolated. Not a
   machine-wide voice file, which would leak one window's choice into every other.
