@@ -150,8 +150,11 @@ Almost nothing is persistent.
   - `mic/owner` — the pid of the session currently recording. Its directory is the
     lock; the file says who holds it, so a lock left by a dead session is reclaimed.
 
-Nothing about voice input is persistent either. A recording lives in memory as WAV
-bytes for the length of one transcription and is never written to disk.
+Voice input is not persistent by default. A recording lives in memory as WAV bytes for
+the length of one transcription and is discarded. It is written to disk only when the user
+turns recording on (`record: true` in the telemetry config), in which case each recording is
+kept locally beside its utterance row so a user can later train a model on their own voice.
+Recordings are never uploaded under any setting — the server schema has no column for them.
 
 ## Telemetry
 
