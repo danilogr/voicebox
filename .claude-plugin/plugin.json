@@ -1,5 +1,5 @@
 {
   "name": "speak",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Gives Claude Code a voice: a speak tool that says one short sentence out loud when a task finishes, when it is blocked, or when it needs an answer. Queued so utterances never overlap, and pluggable so speech can come from macOS say, a plugin-managed local NeMo-Speech.cpp server, or any command."
 }
