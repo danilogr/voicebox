@@ -12,6 +12,7 @@ import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import mcp_types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
@@ -32,22 +33,32 @@ def _env(state_dir: str, home: str) -> dict[str, str]:
 
 
 @asynccontextmanager
-async def connected(state_dir: str, home: str):
+async def connected(state_dir: str, home: str, client_info: mcp_types.Implementation | None = None):
     parameters = StdioServerParameters(
         command=sys.executable,
         args=["-m", "speak"],
         env=_env(state_dir, home),
         cwd=str(Path.cwd()),
     )
-    async with stdio_client(parameters) as (read, write), ClientSession(read, write) as session:
+    async with (
+        stdio_client(parameters) as (read, write),
+        ClientSession(read, write, client_info=client_info) as session,
+    ):
         await session.initialize()
         yield session
+
+
+def _telemetry_db(home: Path) -> Path:
+    return home / "Library" / "Application Support" / "speak" / "telemetry.db"
 
 
 async def test_speaking_through_the_real_server_writes_a_local_row(tmp_path):
     """Proof that `build()` really does hand the queue's outcomes to a
     `TelemetrySession`, and that session really does write to the configured
-    config directory - not just that the pieces work in isolation."""
+    config directory - not just that the pieces work in isolation. The MCP SDK's
+    default client_info name is "mcp", which `normalize_harness` correctly calls
+    "other" rather than "unknown" (it was declared, just not one of the three
+    named harnesses) or a wrong guess."""
     home = tmp_path / "home"
     home.mkdir()
 
@@ -56,7 +67,7 @@ async def test_speaking_through_the_real_server_writes_a_local_row(tmp_path):
             await session.call_tool("speak", {"text": "hello", "intent": "task_done"})
             await _wait_for_a_row(home)
 
-    conn = store.connect(home / "Library" / "Application Support" / "speak" / "telemetry.db")
+    conn = store.connect(_telemetry_db(home))
     try:
         rows = store.unshipped_utterances(conn)
         assert len(rows) == 1
@@ -65,12 +76,41 @@ async def test_speaking_through_the_real_server_writes_a_local_row(tmp_path):
         assert rows[0]["intent"] == "task_done"
         assert rows[0]["engine"] == "command"
         assert rows[0]["status"] == "ok"
+
+        sessions = store.sessions_by_id(conn, [rows[0]["session_id"]])
+        assert sessions[0]["harness"] == "other"
+    finally:
+        conn.close()
+
+
+async def test_the_clients_own_client_info_overrides_the_environment_fallback(tmp_path):
+    """spec 2, tier 1: the `sessions` row opens with the environment's guess
+    (unknown here - `CLAUDE_PLUGIN_ROOT` is not set) and is corrected on the first
+    tool call once the MCP client's own `client_info` is known."""
+    home = tmp_path / "home"
+    home.mkdir()
+
+    with tempfile.TemporaryDirectory() as state_dir:
+        async with connected(
+            state_dir,
+            str(home),
+            client_info=mcp_types.Implementation(name="Gemini CLI", version="1.2.3"),
+        ) as session:
+            await session.call_tool("speak", {"text": "hello"})
+            await _wait_for_a_row(home)
+
+    conn = store.connect(_telemetry_db(home))
+    try:
+        rows = store.unshipped_utterances(conn)
+        sessions = store.sessions_by_id(conn, [rows[0]["session_id"]])
+        assert sessions[0]["harness"] == "gemini-cli"
+        assert sessions[0]["harness_version"] == "1.2.3"
     finally:
         conn.close()
 
 
 async def _wait_for_a_row(home: Path, timeout: float = 10.0) -> None:
-    db_path = home / "Library" / "Application Support" / "speak" / "telemetry.db"
+    db_path = _telemetry_db(home)
     deadline = asyncio.get_running_loop().time() + timeout
     while asyncio.get_running_loop().time() < deadline:
         if db_path.exists():

@@ -131,6 +131,14 @@ class TelemetrySession:
         except Exception:
             logger.debug("telemetry: failed to close the session row", exc_info=True)
 
+    def update_harness(self, harness: str, harness_version: str | None) -> None:
+        """Correct the harness the session row was opened with, once spec 2's
+        better source (MCP `client_info`) is known."""
+        try:
+            store.update_session_harness(self.conn, self.session_id, harness, harness_version)
+        except Exception:
+            logger.debug("telemetry: failed to update the session's harness", exc_info=True)
+
     # -- internals, unguarded: callers above catch everything -----------------
 
     def _write_utterance(self, outcome: UtteranceOutcome) -> None:

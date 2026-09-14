@@ -168,6 +168,19 @@ def end_session(conn: sqlite3.Connection, session_id: str, ended_at: str) -> Non
     conn.commit()
 
 
+def update_session_harness(
+    conn: sqlite3.Connection, session_id: str, harness: str, harness_version: str | None
+) -> None:
+    """Correct the harness recorded at session start once the MCP `client_info` a
+    request carries is known - the better source (spec 2), available only once a
+    request is in flight, never at the moment the session row is first written."""
+    conn.execute(
+        "UPDATE sessions SET harness = ?, harness_version = ? WHERE session_id = ?",
+        (harness, harness_version, session_id),
+    )
+    conn.commit()
+
+
 def sessions_by_id(conn: sqlite3.Connection, session_ids: Iterable[str]) -> list[dict[str, Any]]:
     ids = list(session_ids)
     if not ids:

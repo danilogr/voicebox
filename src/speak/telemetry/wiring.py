@@ -21,17 +21,41 @@ RECORDINGS_DIRNAME = "recordings"
 
 
 def detect_harness(env: Mapping[str, str]) -> tuple[str, str | None]:
-    """(harness, harness_version) from environment signals.
+    """(harness, harness_version) from environment signals - spec 2's tiers 2 and 3.
 
-    The MCP `client_info` a session negotiates is the better source (spec 2) but is
-    only available once a request is in flight, not at session start where the
-    `sessions` row is written; this covers the fallback tiers only. Claude Code sets
+    The MCP `client_info` a session negotiates is the better source (tier 1), but it
+    is only available once a request is in flight, not at session start where the
+    `sessions` row is first written; `server.py` corrects the row with it on the
+    first tool call, via `normalize_harness` below. Claude Code sets
     `CLAUDE_PLUGIN_ROOT`, which `commands/talk.md` already relies on. Anything else
     is reported honestly as "unknown" rather than guessed.
     """
     if env.get("CLAUDE_PLUGIN_ROOT"):
         return "claude-code", None
     return "unknown", None
+
+
+_HARNESS_NAME_HINTS = (
+    ("claude", "claude-code"),
+    ("gemini", "gemini-cli"),
+    ("codex", "codex"),
+)
+
+
+def normalize_harness(name: str) -> str:
+    """MCP `client_info.name` into the `harness` enum - spec 2 tier 1.
+
+    A name that does not match a known harness is `"other"`, not `"unknown"`:
+    the client declared itself, just not as one of the three this schema names.
+    `"unknown"` stays reserved for "nothing was declared at all" (spec 2: a
+    dashboard rendering `unknown` as a guess would manufacture the very
+    conclusion this column exists to test).
+    """
+    lowered = name.lower()
+    for hint, harness in _HARNESS_NAME_HINTS:
+        if hint in lowered:
+            return harness
+    return "other"
 
 
 def _language(env: Mapping[str, str]) -> str | None:

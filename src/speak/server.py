@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Annotated, Protocol
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
@@ -25,6 +25,7 @@ from speak.miclock import MicLock, MicrophoneBusy
 from speak.queue import QueueStats
 from speak.queue import describe as describe_queue
 from speak.telemetry.session import TelemetrySession
+from speak.telemetry.wiring import normalize_harness
 from speak.text import normalize
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,10 @@ class SessionState:
     registered: bool = False
     randomize: bool = False
     warmup: "asyncio.Task[bool] | None" = None
+    # Set once the first tool call has looked for the MCP client's own `client_info`
+    # (spec 2, tier 1), whether or not one was actually found - there is nothing more
+    # to learn from asking again for the life of the connection.
+    harness_checked: bool = False
 
 
 def choose_pool(
@@ -112,6 +117,25 @@ def choose_pool(
 
 def _plural(count: int) -> str:
     return "" if count == 1 else "s"
+
+
+def client_info(ctx: Context) -> tuple[str, str | None] | None:
+    """(name, version) from the MCP client's own `client_info`, or `None`.
+
+    `None` covers two real cases alike: `ctx.session.client_params` is `None`
+    when a host declares no client info at all (optional in the MCP spec since
+    2026-07-28), and `ctx.session` itself raises outside of a live request - which
+    every test that calls a tool directly, with no client ever connected, does.
+    Either way there is nothing to learn, and the caller falls back to whatever
+    the environment already decided at session start.
+    """
+    try:
+        params = ctx.session.client_params
+    except Exception:
+        return None
+    if params is None:
+        return None
+    return params.client_info.name, params.client_info.version
 
 
 async def shutdown(
@@ -242,6 +266,24 @@ def create_server(
                 wav=wav,
             )
 
+    def note_harness(ctx: Context) -> None:
+        """Correct the session row's harness from the MCP client's own
+        `client_info`, the first time any tool call can supply it.
+
+        Only ever narrows toward tier 1 (spec 2): when `client_info` is not
+        there - no live request, or a host that declared none - the row keeps
+        whatever the environment already decided at session start, rather than
+        being overwritten with a guess.
+        """
+        if telemetry is None or session.harness_checked:
+            return
+        session.harness_checked = True
+        found = client_info(ctx)
+        if found is None:
+            return
+        name, version = found
+        telemetry.update_harness(normalize_harness(name), version)
+
     # Voice input needs both the configuration and the wiring; settling that once
     # keeps the `listen` tool and the session warmup from disagreeing.
     if not settings.listen:
@@ -294,7 +336,10 @@ def create_server(
         voice: Annotated[str | None, Field(description=tools.VOICE_OVERRIDE)] = None,
         rate: Annotated[float | None, Field(description=tools.RATE)] = None,
         intent: Annotated[tools.Intent | None, Field(description=tools.INTENT)] = None,
+        *,
+        ctx: Context,
     ) -> str:
+        note_harness(ctx)
         try:
             spoken = normalize(text, max_chars=settings.max_chars)
         except ValueError as error:
@@ -378,7 +423,10 @@ def create_server(
             max_seconds: Annotated[
                 float | None, Field(description=tools.LISTEN_SECONDS, gt=0, allow_inf_nan=False)
             ] = None,
+            *,
+            ctx: Context,
         ) -> str:
+            note_harness(ctx)
             if listening.locked():
                 note_heard("refused")
                 raise ToolError(tools.ALREADY_LISTENING)

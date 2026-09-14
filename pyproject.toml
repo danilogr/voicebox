@@ -28,6 +28,7 @@ dev = [
     "pytest-timeout>=2.3",
     "ruff>=0.14",
     "mypy>=1.18",
+    "jsonschema>=4.26.0",
 ]
 
 [tool.ruff]
