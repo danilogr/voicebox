@@ -184,6 +184,12 @@ talking ends the same way. The log line for every capture names the device, the
 gate it calibrated, and the loudest block it saw, which is usually enough to tell
 those apart.
 
+### Tuning recognition to your voice
+
+If transcription keeps missing your accent or your vocabulary, [`voice-tuning/`](voice-tuning/README.md)
+records a dataset of you reading 70 sentences — many of them the way people talk to a coding
+assistant — and walks through fine-tuning the recogniser on it.
+
 ## Configuration
 
 All optional, set in your shell or in the plugin's `.mcp.json`:
@@ -347,6 +353,10 @@ src/speak/talk.py                the /talk entry point: record, transcribe, prin
 src/speak/runtime.py             logging, the health probe, and capture limits
 src/speak/supervisor.py          starts, shares, and stops the speech server
 src/speak/text.py                whitespace collapsing and the length cap
+src/speak/telemetry/             usage telemetry: consent, local store, upload, speak-stats
+TELEMETRY.md                     every field telemetry reports, and how to turn it off
+voice-tuning/record.py           records a dataset of your voice for fine-tuning recognition
+voice-tuning/README.md           how to record that dataset and fine-tune on it
 ```
 
 ## Notes
