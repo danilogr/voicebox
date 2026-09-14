@@ -42,6 +42,7 @@ class FakeQueue:
         stats: QueueStats | None = None,
     ) -> None:
         self.enqueued: list[tuple[str, str | None, float | None]] = []
+        self.intents: list[str | None] = []
         self.stopped = 0
         self.calls = calls if calls is not None else []
         self._ahead = ahead
@@ -52,8 +53,11 @@ class FakeQueue:
             else QueueStats(waiting=0, preparing=0, prepared=0, playing=False, finished=0)
         )
 
-    def enqueue(self, text: str, *, voice: str | None, rate: float | None) -> int:
+    def enqueue(
+        self, text: str, *, voice: str | None, rate: float | None, intent: str | None = None
+    ) -> int:
         self.enqueued.append((text, voice, rate))
+        self.intents.append(intent)
         return self._ahead
 
     async def stop(self) -> int:

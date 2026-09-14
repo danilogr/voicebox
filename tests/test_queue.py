@@ -51,9 +51,11 @@ async def running():
     """Build a queue with its worker task running, and tear it down."""
     started: list[tuple[SpeechQueue, asyncio.Task[None]]] = []
 
-    def build(prepare=prepare_say, spawn=None, on_error=None) -> tuple[SpeechQueue, Spawner]:
+    def build(
+        prepare=prepare_say, spawn=None, on_error=None, on_finish=None
+    ) -> tuple[SpeechQueue, Spawner]:
         spawner = spawn or Spawner()
-        queue = SpeechQueue(prepare=prepare, spawn=spawner, on_error=on_error)
+        queue = SpeechQueue(prepare=prepare, spawn=spawner, on_error=on_error, on_finish=on_finish)
         started.append((queue, asyncio.create_task(queue.run())))
         return queue, spawner
 
@@ -897,3 +899,148 @@ async def test_size_never_dips_while_an_utterance_changes_hands():
 
     worker.cancel()
     await asyncio.gather(worker, return_exceptions=True)
+
+
+# --- telemetry: on_finish reports one outcome per utterance that leaves the queue ---
+
+
+async def test_on_finish_reports_ok_with_timings_for_a_normal_play(running):
+    from speak.queue import UtteranceOutcome
+
+    outcomes: list[UtteranceOutcome] = []
+    queue, _ = running(on_finish=outcomes.append)
+    queue.enqueue("hello there", voice="Sofia", rate=None, intent="task_done")
+    await settle()
+
+    assert len(outcomes) == 1
+    outcome = outcomes[0]
+    assert outcome.text == "hello there"
+    assert outcome.voice == "Sofia"
+    assert outcome.intent == "task_done"
+    assert outcome.status == "ok"
+    assert outcome.queue_wait_ms >= 0
+    assert outcome.synth_ms is not None
+    assert outcome.play_ms is not None
+
+
+async def test_on_finish_carries_the_utterances_own_audio_ms(running):
+    from speak.queue import UtteranceOutcome
+
+    async def prepare(text, *, voice, rate) -> Utterance:
+        return Utterance(command="true", args=[text], audio_ms=1234)
+
+    outcomes: list[UtteranceOutcome] = []
+    queue, _ = running(prepare=prepare, on_finish=outcomes.append)
+    queue.enqueue("hi", voice=None, rate=None)
+    await settle()
+
+    assert outcomes[0].audio_ms == 1234
+
+
+async def test_on_finish_reports_failed_when_prepare_raises(running):
+    from speak.queue import UtteranceOutcome
+
+    async def prepare(text, *, voice, rate) -> Utterance:
+        raise RuntimeError("synthesis failed")
+
+    outcomes: list[UtteranceOutcome] = []
+    queue, _ = running(prepare=prepare, on_error=lambda e: None, on_finish=outcomes.append)
+    queue.enqueue("bad", voice=None, rate=None)
+    await settle()
+
+    assert len(outcomes) == 1
+    assert outcomes[0].status == "failed"
+    assert outcomes[0].play_ms is None
+
+
+async def test_on_finish_reports_failed_when_the_spawn_itself_fails(running):
+    from speak.queue import UtteranceOutcome
+
+    async def spawn(command: str, args: list[str]) -> FakeProcess:
+        raise OSError("no such binary")
+
+    outcomes: list[UtteranceOutcome] = []
+    queue, _ = running(spawn=spawn, on_error=lambda e: None, on_finish=outcomes.append)
+    queue.enqueue("hi", voice=None, rate=None)
+    await settle()
+
+    assert outcomes[0].status == "failed"
+
+
+async def test_on_finish_reports_discarded_for_an_utterance_dropped_while_waiting(running):
+    from speak.queue import UtteranceOutcome
+
+    outcomes: list[UtteranceOutcome] = []
+    queue, _ = running(spawn=Spawner(autofinish=False), on_finish=outcomes.append)
+    queue.enqueue("one", voice=None, rate=None)
+    queue.enqueue("two", voice=None, rate=None)
+    queue.enqueue("three", voice=None, rate=None)
+    await settle()
+
+    await queue.stop()
+    await settle()
+
+    discarded = [o for o in outcomes if o.status == "discarded"]
+    assert {o.text for o in discarded} == {"two", "three"}
+
+
+async def test_on_finish_reports_discarded_for_an_utterance_stopped_mid_prepare(running):
+    from speak.queue import UtteranceOutcome
+
+    release = asyncio.Event()
+
+    async def slow_prepare(text, *, voice, rate) -> Utterance:
+        await release.wait()
+        return Utterance(command="say", args=[text])
+
+    outcomes: list[UtteranceOutcome] = []
+    queue, spawner = running(prepare=slow_prepare, on_finish=outcomes.append)
+    queue.enqueue("cancel me", voice=None, rate=None)
+    await settle()
+
+    assert await queue.stop() == 1
+    release.set()
+    await settle()
+
+    assert spawner.calls == []
+    assert len(outcomes) == 1
+    assert outcomes[0].status == "discarded"
+    assert outcomes[0].play_ms is None
+
+
+async def test_on_finish_reports_discarded_for_an_utterance_stopped_during_spawn(running):
+    from speak.queue import UtteranceOutcome
+
+    spawner = Spawner()
+    release = asyncio.Event()
+
+    async def slow_spawn(command: str, args: list[str]) -> FakeProcess:
+        await release.wait()
+        return await spawner(command, args)
+
+    outcomes: list[UtteranceOutcome] = []
+    queue, _ = running(spawn=slow_spawn, on_finish=outcomes.append)
+    queue.enqueue("cancel me", voice=None, rate=None)
+    await settle()
+
+    assert await queue.stop() == 1
+    release.set()
+    await settle()
+
+    assert len(outcomes) == 1
+    assert outcomes[0].status == "discarded"
+    assert outcomes[0].play_ms is not None  # the process did briefly run
+
+
+async def test_a_telemetry_callback_that_raises_does_not_break_playback(running):
+    from speak.queue import UtteranceOutcome
+
+    def exploding_callback(outcome: UtteranceOutcome) -> None:
+        raise RuntimeError("telemetry backend is down")
+
+    queue, spawner = running(on_finish=exploding_callback)
+    queue.enqueue("one", voice=None, rate=None)
+    queue.enqueue("two", voice=None, rate=None)
+    await settle()
+
+    assert spawner.calls == [("say", ["one"]), ("say", ["two"])]

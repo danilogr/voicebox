@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from collections import deque
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -31,18 +32,51 @@ OnError = Callable[[BaseException], None]
 
 
 @dataclass(frozen=True, slots=True)
+class UtteranceOutcome:
+    """One utterance's timings and result, in whatever detail the queue could measure.
+
+    Handed to `on_finish` exactly once, at the same point `_finished` is
+    incremented, so a telemetry consumer sees every utterance that left the queue
+    and none that did not. Not a place to add engine or model: the queue does not
+    know which engine produced an utterance, by design, and must not start now.
+    """
+
+    text: str
+    voice: str | None
+    intent: str | None
+    status: str  # "ok" | "failed" | "discarded"
+    queue_wait_ms: int
+    synth_ms: int | None
+    play_ms: int | None
+    audio_ms: int | None
+
+
+OnFinish = Callable[[UtteranceOutcome], None]
+
+
+def _ms_since(started: float) -> int:
+    return round((time.monotonic() - started) * 1000)
+
+
+@dataclass(frozen=True, slots=True)
 class _Pending:
     text: str
     voice: str | None
     rate: float | None
+    intent: str | None
+    enqueued_at: float
 
 
 @dataclass(frozen=True, slots=True)
 class _Prepared:
-    """An utterance ready to play, and the generation it was prepared under."""
+    """One prepared attempt: the utterance (or `None`, meaning prepare failed), the
+    generation it was prepared under, the pending request it came from, and how
+    long preparing it took."""
 
-    utterance: Utterance
+    utterance: Utterance | None
     generation: int
+    pending: _Pending
+    synth_ms: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,16 +152,18 @@ class SpeechQueue:
         prepare: Prepare,
         spawn: Spawn = spawn_detached,
         on_error: OnError | None = None,
+        on_finish: OnFinish | None = None,
     ) -> None:
         self._prepare = prepare
         self._spawn = spawn
         self._on_error = on_error or self._log_error
+        self._on_finish = on_finish
         self._waiting: deque[_Pending] = deque()
         self._wake = asyncio.Event()
         self._idle = asyncio.Event()
         self._idle.set()
         self._player: Process | None = None
-        self._ahead: asyncio.Task[_Prepared | None] | None = None
+        self._ahead: asyncio.Task[_Prepared] | None = None
         self._inflight: _Prepared | None = None
         self._playing = False
         self._finished = 0
@@ -136,6 +172,30 @@ class SpeechQueue:
     @staticmethod
     def _log_error(error: BaseException) -> None:
         logger.warning("playback failed: %s", error)
+
+    def _finish(self, outcome: UtteranceOutcome) -> None:
+        """Report one utterance's outcome. A telemetry failure must never take
+        playback down with it, so it is caught here and only logged."""
+        if self._on_finish is None:
+            return
+        try:
+            self._on_finish(outcome)
+        except Exception:
+            logger.debug("telemetry callback failed", exc_info=True)
+
+    def _outcome(self, prepared: _Prepared, status: str, play_ms: int | None) -> UtteranceOutcome:
+        pending = prepared.pending
+        audio_ms = prepared.utterance.audio_ms if prepared.utterance is not None else None
+        return UtteranceOutcome(
+            text=pending.text,
+            voice=pending.voice,
+            intent=pending.intent,
+            status=status,
+            queue_wait_ms=_ms_since(pending.enqueued_at),
+            synth_ms=prepared.synth_ms,
+            play_ms=play_ms,
+            audio_ms=audio_ms,
+        )
 
     @property
     def size(self) -> int:
@@ -157,10 +217,14 @@ class SpeechQueue:
             finished=self._finished,
         )
 
-    def enqueue(self, text: str, *, voice: str | None, rate: float | None) -> int:
+    def enqueue(
+        self, text: str, *, voice: str | None, rate: float | None, intent: str | None = None
+    ) -> int:
         """Queue one utterance and return how many are ahead of it."""
         ahead = self.size
-        self._waiting.append(_Pending(text=text, voice=voice, rate=rate))
+        self._waiting.append(
+            _Pending(text=text, voice=voice, rate=rate, intent=intent, enqueued_at=time.monotonic())
+        )
         self._idle.clear()
         self._wake.set()
         return ahead
@@ -169,7 +233,20 @@ class SpeechQueue:
         """Silence everything and return how many utterances were dropped."""
         dropped = self.size
         self._generation += 1
-        self._waiting.clear()
+        waiting, self._waiting = list(self._waiting), deque()
+        for pending in waiting:
+            self._finish(
+                UtteranceOutcome(
+                    text=pending.text,
+                    voice=pending.voice,
+                    intent=pending.intent,
+                    status="discarded",
+                    queue_wait_ms=_ms_since(pending.enqueued_at),
+                    synth_ms=None,
+                    play_ms=None,
+                    audio_ms=None,
+                )
+            )
         player, self._player = self._player, None
         if player is not None:
             player.terminate()
@@ -227,7 +304,7 @@ class SpeechQueue:
             # cleans up.
             await self._discard_prefetch()
 
-    def _start_preparing(self, pending: _Pending) -> asyncio.Task[_Prepared | None]:
+    def _start_preparing(self, pending: _Pending) -> asyncio.Task[_Prepared]:
         """Begin synthesizing one utterance, under the generation current right now.
 
         Sampled here, synchronously with the pop that took `pending` off `_waiting`,
@@ -237,14 +314,21 @@ class SpeechQueue:
         """
         return asyncio.create_task(self._prepare_one(pending, self._generation))
 
-    async def _prepare_one(self, pending: _Pending, generation: int) -> _Prepared | None:
-        """Synthesize one utterance. None means it failed and was reported."""
+    async def _prepare_one(self, pending: _Pending, generation: int) -> _Prepared:
+        """Synthesize one utterance. `utterance` is `None` when it failed; either way
+        the attempt and its timing are reported, so a caller downstream can tell a
+        failed prepare from one that never got the chance."""
+        started = time.monotonic()
         try:
             utterance = await self._prepare(pending.text, voice=pending.voice, rate=pending.rate)
         except Exception as error:
             self._on_error(error)
-            return None
-        return _Prepared(utterance=utterance, generation=generation)
+            return _Prepared(
+                utterance=None, generation=generation, pending=pending, synth_ms=_ms_since(started)
+            )
+        return _Prepared(
+            utterance=utterance, generation=generation, pending=pending, synth_ms=_ms_since(started)
+        )
 
     async def _discard_prefetch(self) -> None:
         """Drop an utterance prepared ahead, and the temp file it is holding."""
@@ -259,10 +343,12 @@ class SpeechQueue:
                 # The cancel was aimed at this worker, not at `ahead`; let it through.
                 raise
             return
-        if prepared is not None:
+        if prepared.utterance is not None:
             await self._cleanup(prepared.utterance)
+        status = "failed" if prepared.utterance is None else "discarded"
+        self._finish(self._outcome(prepared, status, None))
 
-    async def _play(self, prepared: _Prepared | None) -> None:
+    async def _play(self, prepared: _Prepared) -> None:
         """Play one prepared utterance, or account for one that never got that far.
 
         Its temp file is released here and nowhere else: played, discarded by a `stop`,
@@ -270,42 +356,63 @@ class SpeechQueue:
         a worker cancelled inside it can still leave the file behind - but the utterance
         leaves the count either way, or a dead queue would report work it will never do.
         """
+        status = "ok"
+        play_ms: int | None = None
         try:
-            if prepared is None:
+            if prepared.utterance is None:
+                status = "failed"
                 return
             if prepared.generation != self._generation:
                 # stop() ran while this was being prepared; it is discarded rather than
                 # played late.
+                status = "discarded"
                 return
             self._playing = True
             try:
-                await self._spawn_and_wait(prepared.utterance, prepared.generation)
+                interrupted, play_ms = await self._spawn_and_wait(
+                    prepared.utterance, prepared.generation
+                )
             finally:
                 self._playing = False
+            if play_ms is None:
+                status = "failed"  # the spawn itself never started
+            elif interrupted:
+                status = "discarded"
         finally:
             try:
-                if prepared is not None:
+                if prepared.utterance is not None:
                     await self._cleanup(prepared.utterance)
             finally:
                 self._inflight = None
                 self._finished += 1
+                self._finish(self._outcome(prepared, status, play_ms))
 
-    async def _spawn_and_wait(self, utterance: Utterance, generation: int) -> None:
-        """Start the player and wait for it to exit, killing it if a `stop` lands first."""
+    async def _spawn_and_wait(
+        self, utterance: Utterance, generation: int
+    ) -> tuple[bool, int | None]:
+        """Start the player and wait for it to exit, killing it if a `stop` lands first.
+
+        Returns `(interrupted, play_ms)`. `play_ms` is `None` only when the process
+        never started at all; `interrupted` is true whenever a `stop()` cut this play
+        short, whether it landed before the spawn or during it.
+        """
+        started = time.monotonic()
         try:
             player = await self._spawn(utterance.command, utterance.args)
         except OSError as error:
             self._on_error(error)
-            return
+            return False, None
 
         self._player = player
-        if generation != self._generation:
+        interrupted = generation != self._generation
+        if interrupted:
             # stop() ran while the player was starting; kill it before it is heard.
             player.terminate()
         try:
             await player.wait()
         finally:
             self._player = None
+        return interrupted, _ms_since(started)
 
     async def _cleanup(self, utterance: Utterance) -> None:
         if utterance.cleanup is None:

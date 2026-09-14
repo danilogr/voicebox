@@ -1,0 +1,6 @@
+{
+  "status": 400,
+  "error_code": "schema_violation",
+  "field": "/utterances/0/text",
+  "reason": "additionalProperties: `text` is LOCAL-tagged in schema.sql and is not a property of the utterance schema at all (spec 1, 'two columns that must not be uploaded'). This is the privacy guarantee: content columns are absent from the contract, not merely discouraged."
+}

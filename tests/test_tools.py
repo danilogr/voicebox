@@ -1,4 +1,5 @@
 from fakes import FakeEngine, FakeQueue
+from speak import tools
 from speak.config import Settings
 from speak.server import create_server
 
@@ -25,7 +26,19 @@ async def test_exposes_exactly_the_expected_tools():
 async def test_speak_requires_only_the_text():
     schema = (await tools_by_name())["speak"].input_schema
     assert schema["required"] == ["text"]
-    assert set(schema["properties"]) == {"text", "voice", "rate"}
+    assert set(schema["properties"]) == {"text", "voice", "rate", "intent"}
+
+
+async def test_speak_intent_is_an_explicit_enum_the_model_can_read():
+    """The task list gives the enum in prose (spec 2); the schema has to carry it
+    as data too, or a client that only reads the schema never learns the values."""
+    schema = (await tools_by_name())["speak"].input_schema
+    intent_schema = schema["properties"]["intent"]
+    # Optional parameters land as anyOf: [<the type>, {"type": "null"}] with pydantic.
+    branches = intent_schema.get("anyOf", [intent_schema])
+    enums = [branch["enum"] for branch in branches if "enum" in branch]
+    assert len(enums) == 1
+    assert set(enums[0]) == set(tools.INTENT_VALUES)
 
 
 async def test_set_voice_requires_a_voice():

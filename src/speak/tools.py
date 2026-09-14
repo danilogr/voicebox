@@ -5,6 +5,24 @@ speak lives here. A hook or a skill cannot add a callable tool, and neither is
 guaranteed to be read at the moment the choice is made.
 """
 
+from typing import Literal, get_args
+
+# Why an utterance was spoken, for telemetry only - it never changes what is said
+# or how. Each value is the reason already named in `SPEAK` below; kept as one type
+# alias so the tool's schema, its description, and the wire contract cannot drift
+# apart silently.
+Intent = Literal[
+    "task_done",
+    "blocked",
+    "question",
+    "recap",
+    "progress",
+    "takeaway",
+    "conversation",
+    "unspecified",
+]
+INTENT_VALUES: tuple[str, ...] = get_args(Intent)
+
 SPEAK = """Speak one short sentence aloud to the user through the speakers.
 
 Use it at the moments where a voice beats scrollback: when you have finished a task,
@@ -16,6 +34,12 @@ End a substantial turn with a one-line recap: the outcome, plus any catch on it 
 what you did. If the turn ended blocked, or the work is partly done, say that instead
 of "done" - a recap the user cannot trust is worse than silence. Skip the recap on a
 lookup, a one-line answer, or a question already on screen.
+
+Set intent to the reason above that applies: task_done, blocked, question, recap, or
+progress for the one case this tool asks you not to use. takeaway names an important
+finding said out loud, conversation is /speak:converse, and unspecified - the
+default - is for anything else. This is for measurement only and never changes what
+is said.
 
 Write one short sentence of plain spoken English - it is heard, not read.
 Returns immediately; utterances queue and play in order without overlapping."""
@@ -42,6 +66,11 @@ TEXT = "One short sentence to say out loud."
 VOICE_OVERRIDE = 'Override the configured voice, e.g. "Samantha".'
 RATE = "Words per minute. The macOS default is about 175."
 VOICE_NAME = 'A name from list_voices, e.g. "Sofia".'
+INTENT = (
+    "Why this sentence is being spoken; for measurement only, never changes what is "
+    "said. task_done, blocked, question, recap, progress, takeaway, conversation, or "
+    "unspecified (the default when omitted)."
+)
 
 LISTEN = """Listen to the user through the microphone and return what they said.
 

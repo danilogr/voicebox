@@ -1,9 +1,11 @@
 """A local NeMo-Speech.cpp server, or any OpenAI-compatible /v1/audio/speech endpoint."""
 
 import asyncio
+import io
 import logging
 import tempfile
 import uuid
+import wave
 from collections.abc import Callable
 from pathlib import Path
 
@@ -16,6 +18,21 @@ from speak.player import Player, resolve_player
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 15.0
+
+
+def _wav_duration_ms(wav: bytes) -> int | None:
+    """The audio's own length, read from the WAV header already in memory.
+
+    Best-effort: a server that returns something other than a well-formed WAV
+    still gets spoken, just without this one figure.
+    """
+    try:
+        with wave.open(io.BytesIO(wav)) as handle:
+            frames = handle.getnframes()
+            rate = handle.getframerate()
+    except (wave.Error, EOFError):
+        return None
+    return round(frames / rate * 1000) if rate > 0 else None
 
 
 class NemoEngine:
@@ -74,7 +91,9 @@ class NemoEngine:
             await asyncio.to_thread(path.unlink, True)
 
         command, args = self._player.command_for(str(path))
-        return Utterance(command=command, args=args, cleanup=cleanup)
+        return Utterance(
+            command=command, args=args, cleanup=cleanup, audio_ms=_wav_duration_ms(audio)
+        )
 
     async def _synthesize(self, text: str, voice: str | None) -> bytes:
         response = await self._client.post(

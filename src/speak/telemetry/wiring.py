@@ -1,0 +1,141 @@
+"""Composition shared by both entry points: consent, the machine probe, the local
+store, and the `TelemetrySession` built from them. Mirrors `speak.runtime`, which
+does the same job for capture and cues.
+"""
+
+import logging
+import sys
+import uuid
+from collections.abc import Mapping
+from datetime import datetime
+from pathlib import Path
+
+from speak.config import Settings
+from speak.telemetry import consent, machine, store
+from speak.telemetry.session import TelemetrySession
+
+logger = logging.getLogger(__name__)
+
+DB_FILENAME = "telemetry.db"
+RECORDINGS_DIRNAME = "recordings"
+
+
+def detect_harness(env: Mapping[str, str]) -> tuple[str, str | None]:
+    """(harness, harness_version) from environment signals.
+
+    The MCP `client_info` a session negotiates is the better source (spec 2) but is
+    only available once a request is in flight, not at session start where the
+    `sessions` row is written; this covers the fallback tiers only. Claude Code sets
+    `CLAUDE_PLUGIN_ROOT`, which `commands/talk.md` already relies on. Anything else
+    is reported honestly as "unknown" rather than guessed.
+    """
+    if env.get("CLAUDE_PLUGIN_ROOT"):
+        return "claude-code", None
+    return "unknown", None
+
+
+def _language(env: Mapping[str, str]) -> str | None:
+    lang = (env.get("LANG") or "").split(".")[0].replace("_", "-")
+    return lang or None
+
+
+def _timezone() -> str | None:
+    """The IANA zone name, read from where `/etc/localtime` points.
+
+    A symlink read, not a subprocess - cheap enough to run unconditionally. Windows
+    has no equivalent this module can read cheaply, so it reports nothing there.
+    """
+    try:
+        target = str(Path("/etc/localtime").readlink())
+    except OSError:
+        return None
+    marker = "zoneinfo/"
+    index = target.find(marker)
+    return target[index + len(marker) :] if index != -1 else None
+
+
+def _utc_offset_min() -> int | None:
+    offset = datetime.now().astimezone().utcoffset()
+    return int(offset.total_seconds() // 60) if offset is not None else None
+
+
+def build(
+    env: Mapping[str, str],
+    *,
+    settings: Settings,
+    plugin_version: str,
+    host_platform: str | None = None,
+) -> TelemetrySession | None:
+    """The telemetry session for one process, or `None` when telemetry is off.
+
+    Reads nothing from `os.environ` itself: like `Settings.from_env`, the mapping
+    comes from the caller, which is always `__main__` or `talk` - the only two
+    modules that read this plugin's configuration from the real environment.
+    """
+    platform_name = host_platform if host_platform is not None else sys.platform
+    consented = consent.load_consent(env, host_platform=platform_name)
+    if not consented.collects:
+        return None
+
+    facts = machine.ensure_current(
+        consented.machine,
+        cached_plugin_version=consented.machine_plugin_version,
+        plugin_version=plugin_version,
+        host_platform=platform_name,
+    )
+    consented = consent.save_machine(
+        env, consented, host_platform=platform_name, facts=facts, plugin_version=plugin_version
+    )
+
+    config_dir = consent.config_dir(env, host_platform=platform_name)
+    try:
+        conn = store.connect(config_dir / DB_FILENAME)
+    except OSError as error:
+        logger.debug("telemetry: could not open the local store: %s", error)
+        return None
+
+    now = store.now_iso()
+    existing = store.install_row(conn, consented.install_id)
+    harness, harness_version = detect_harness(env)
+    store.upsert_install(
+        conn,
+        {
+            "install_id": consented.install_id,
+            "first_seen_at": existing["first_seen_at"] if existing else now,
+            "last_seen_at": now,
+            "plugin_version": plugin_version,
+            "disclosure_ver": consented.disclosure_ver,
+            "language": _language(env),
+            "timezone": _timezone(),
+            "utc_offset_min": _utc_offset_min(),
+            **facts.to_mapping(),
+        },
+    )
+
+    session_id = str(uuid.uuid4())
+    store.insert_session(
+        conn,
+        {
+            "session_id": session_id,
+            "install_id": consented.install_id,
+            "started_at": now,
+            "plugin_version": plugin_version,
+            "tts_engine": settings.engine,
+            "asr_engine": "nemo" if settings.listen else None,
+            "listen_enabled": settings.listen,
+            "harness": harness,
+            "harness_version": harness_version,
+        },
+    )
+
+    return TelemetrySession(
+        conn=conn,
+        install_id=consented.install_id,
+        session_id=session_id,
+        tts_engine=settings.engine,
+        tts_model=settings.nemo_model if settings.engine == "nemo" else None,
+        asr_engine="nemo" if settings.listen else None,
+        asr_model=settings.nemo_asr_model if settings.listen else None,
+        record_audio=consented.record,
+        recordings_dir=config_dir / RECORDINGS_DIRNAME,
+    )

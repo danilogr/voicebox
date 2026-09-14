@@ -1,0 +1,6 @@
+{
+  "status": 400,
+  "error_code": "schema_violation",
+  "field": "/utterances",
+  "reason": "maxItems: utterances must have at most 100 items (spec 4.2/11: client chunks at 100 rows or 48 KB)"
+}

@@ -12,6 +12,10 @@ class Utterance:
     command: str
     args: Sequence[str]
     cleanup: Callable[[], Awaitable[None]] | None = None
+    # The audio's own duration, when an engine can know it cheaply - only `nemo`
+    # does, from the WAV it already holds in memory. `None` when an engine speaks
+    # without ever producing a file, which is every other engine.
+    audio_ms: int | None = None
 
 
 @runtime_checkable

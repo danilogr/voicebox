@@ -15,7 +15,9 @@ class RecordingQueue:
     def __init__(self, events: list[str]) -> None:
         self.events = events
 
-    def enqueue(self, text: str, *, voice: str | None, rate: float | None) -> int:
+    def enqueue(
+        self, text: str, *, voice: str | None, rate: float | None, intent: str | None = None
+    ) -> int:
         return 0
 
     async def stop(self) -> int:

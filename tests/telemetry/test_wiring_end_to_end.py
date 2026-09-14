@@ -1,0 +1,84 @@
+"""`speak.__main__.build()` is the one thing no other test exercises directly: it
+is what actually wires the queue's `on_finish` into a real `TelemetrySession` and
+hands one to `create_server`. A real subprocess is the only way to run its
+lifespan (which starts the queue's worker) the way `speak-mcp` really does, the
+same reason `tests/test_server.py` uses one.
+"""
+
+import asyncio
+import os
+import sys
+import tempfile
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from mcp.client.session import ClientSession
+from mcp.client.stdio import StdioServerParameters, stdio_client
+
+from speak.telemetry import store
+
+
+def _env(state_dir: str, home: str) -> dict[str, str]:
+    return {
+        **os.environ,
+        "SPEAK_ENGINE": "command",
+        "SPEAK_COMMAND": "true",  # a no-op binary: silent, and hermetic like test_server.py
+        "SPEAK_LISTEN": "",
+        "SPEAK_NEMO_AUTOSTART": "0",
+        "SPEAK_STATE_DIR": state_dir,
+        "SPEAK_TELEMETRY": "local",
+        "HOME": home,
+    }
+
+
+@asynccontextmanager
+async def connected(state_dir: str, home: str):
+    parameters = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "speak"],
+        env=_env(state_dir, home),
+        cwd=str(Path.cwd()),
+    )
+    async with stdio_client(parameters) as (read, write), ClientSession(read, write) as session:
+        await session.initialize()
+        yield session
+
+
+async def test_speaking_through_the_real_server_writes_a_local_row(tmp_path):
+    """Proof that `build()` really does hand the queue's outcomes to a
+    `TelemetrySession`, and that session really does write to the configured
+    config directory - not just that the pieces work in isolation."""
+    home = tmp_path / "home"
+    home.mkdir()
+
+    with tempfile.TemporaryDirectory() as state_dir:
+        async with connected(state_dir, str(home)) as session:
+            await session.call_tool("speak", {"text": "hello", "intent": "task_done"})
+            await _wait_for_a_row(home)
+
+    conn = store.connect(home / "Library" / "Application Support" / "speak" / "telemetry.db")
+    try:
+        rows = store.unshipped_utterances(conn)
+        assert len(rows) == 1
+        assert rows[0]["direction"] == "out"
+        assert rows[0]["source"] == "speak"
+        assert rows[0]["intent"] == "task_done"
+        assert rows[0]["engine"] == "command"
+        assert rows[0]["status"] == "ok"
+    finally:
+        conn.close()
+
+
+async def _wait_for_a_row(home: Path, timeout: float = 10.0) -> None:
+    db_path = home / "Library" / "Application Support" / "speak" / "telemetry.db"
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        if db_path.exists():
+            conn = store.connect(db_path)
+            try:
+                if store.unshipped_utterances(conn):
+                    return
+            finally:
+                conn.close()
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"no telemetry row appeared under {db_path} in time")

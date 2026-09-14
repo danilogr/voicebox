@@ -1,0 +1,38 @@
+{
+  "install": {
+    "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "first_seen_at": "2026-09-13T10:00:00Z",
+    "last_seen_at": "2026-09-13T10:00:00Z",
+    "plugin_version": "1.0.0",
+    "language": "en-US",
+    "timezone": "Etc/UTC",
+    "os": "linux",
+    "os_version": "unknown",
+    "arch": "x86_64",
+    "cpu_model": "unknown",
+    "accel": "unknown",
+    "accel_name": "unknown"
+  },
+  "sessions": [
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-09-13T10:00:00Z",
+      "plugin_version": "1.0.0",
+      "listen_enabled": false,
+      "harness": "unknown"
+    }
+  ],
+  "utterances": [
+    {
+      "utterance_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "seq": 1,
+      "direction": "out",
+      "source": "speak",
+      "occurred_at": "2026-09-13T10:00:01Z",
+      "status": "ok"
+    }
+  ]
+}

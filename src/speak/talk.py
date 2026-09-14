@@ -10,9 +10,10 @@ import asyncio
 import logging
 import os
 import sys
+import time
 from typing import NoReturn
 
-from speak.capture import Recorder, RecorderUnavailable, describe
+from speak.capture import Recorder, RecorderUnavailable, Recording, describe
 from speak.config import Settings
 from speak.cue import Cue
 from speak.engines.asr import Liveness, NemoTranscriber, Transcriber, TranscriptionFailed
@@ -25,7 +26,10 @@ from speak.runtime import (
     health_probe,
     transcription_timeout,
 )
+from speak.server import VERSION
 from speak.supervisor import NemoSupervisor, process_is_alive
+from speak.telemetry import wiring as telemetry_wiring
+from speak.telemetry.session import TelemetrySession
 from speak.tools import (
     LISTEN_OFF,
     NO_ASR,
@@ -38,6 +42,26 @@ from speak.tools import (
 logger = logging.getLogger(__name__)
 
 
+def _note(
+    telemetry: TelemetrySession | None,
+    status: str,
+    *,
+    transcript: str | None = None,
+    device_name: str | None = None,
+    asr_ms: int | None = None,
+    wav: bytes | None = None,
+) -> None:
+    if telemetry is not None:
+        telemetry.heard(
+            source="talk",
+            status=status,
+            transcript=transcript,
+            device_name=device_name,
+            asr_ms=asr_ms,
+            wav=wav,
+        )
+
+
 async def capture(
     settings: Settings,
     *,
@@ -45,6 +69,7 @@ async def capture(
     transcriber: Transcriber,
     lock: MicLock,
     cue: Cue,
+    telemetry: TelemetrySession | None = None,
 ) -> str:
     """Record one utterance and return its transcript, or "" for silence."""
     # Liveness before capability, the way `speak.server.listen` does it. `has_asr`
@@ -54,13 +79,22 @@ async def capture(
     # names, reinstalling the model and restarting another session, are wrong.
     state = await transcriber.liveness()
     if state is Liveness.ABSENT:
+        _note(telemetry, "failed")
         raise TranscriptionFailed(SERVER_UNREACHABLE)
     if state is Liveness.STARTING:
+        _note(telemetry, "failed")
         raise TranscriptionFailed(SERVER_STARTING)
     if not await transcriber.has_asr():
+        _note(telemetry, "failed")
         raise TranscriptionFailed(NO_ASR)
 
-    lock.acquire()
+    try:
+        lock.acquire()
+    except MicrophoneBusy:
+        _note(telemetry, "refused")
+        raise
+
+    recording: Recording | None = None
     try:
         # Cued only once the microphone is this process's to open, and cued shut when
         # recording stops rather than when the transcript comes back.
@@ -72,10 +106,26 @@ async def capture(
             outcome.heard = recording.has_speech
         logger.info("capture: %s", describe(recording))
         if not recording.has_speech:
+            _note(telemetry, "heard_nothing", device_name=recording.device, wav=recording.wav)
             return ""
-        return await transcriber.transcribe(recording.wav, language=settings.listen_language)
+        started = time.monotonic()
+        text = await transcriber.transcribe(recording.wav, language=settings.listen_language)
+    except (TranscriptionFailed, RecorderUnavailable):
+        _note(telemetry, "failed", device_name=recording.device if recording else None)
+        raise
     finally:
         lock.release()
+
+    asr_ms = round((time.monotonic() - started) * 1000)
+    _note(
+        telemetry,
+        "ok" if text else "heard_nothing",
+        transcript=text,
+        device_name=recording.device,
+        asr_ms=asr_ms,
+        wav=recording.wav,
+    )
+    return text
 
 
 async def dictate(
@@ -86,6 +136,7 @@ async def dictate(
     transcriber: Transcriber,
     lock: MicLock,
     cue: Cue,
+    telemetry: TelemetrySession | None = None,
 ) -> str:
     """Hold the shared speech server for this process, then capture against it."""
     # Register for this process's lifetime so a standalone /talk cannot leave a
@@ -109,7 +160,12 @@ async def dictate(
                 raise TranscriptionFailed(SERVER_UNREACHABLE)
             await _start(supervisor)
         return await capture(
-            settings, recorder=recorder, transcriber=transcriber, lock=lock, cue=cue
+            settings,
+            recorder=recorder,
+            transcriber=transcriber,
+            lock=lock,
+            cue=cue,
+            telemetry=telemetry,
         )
     finally:
         await supervisor.release()
@@ -124,28 +180,42 @@ async def _start(supervisor: NemoSupervisor) -> None:
 
 
 async def _run(settings: Settings) -> str:
-    """Build the real collaborators and dictate against them."""
-    return await dictate(
-        settings,
-        supervisor=NemoSupervisor(
-            state_dir=settings.state_dir,
-            port=settings.nemo_port,
-            binary=settings.nemo_binary,
-            model=settings.nemo_model,
-            asr_model=settings.nemo_asr_model,
-            seed=settings.seed,
-            probe=health_probe(settings.nemo_url),
-        ),
-        recorder=build_recorder(settings),
-        transcriber=NemoTranscriber(
-            base_url=settings.nemo_url,
-            api_key=settings.nemo_api_key,
-            model=settings.nemo_asr_model,
-            timeout=transcription_timeout(settings),
-        ),
-        lock=MicLock(state_dir=settings.state_dir, is_alive=process_is_alive),
-        cue=build_cue(settings),
-    )
+    """Build the real collaborators and dictate against them.
+
+    `/talk` is its own short-lived process rather than an MCP session, so it gets
+    its own session row - and never ships: shipping is a network call, and this
+    process's whole job is to print a transcript as fast as it can. Rows it writes
+    are shipped by the next `speak-mcp` session to start, since both read the same
+    local store.
+    """
+    telemetry = telemetry_wiring.build(os.environ, settings=settings, plugin_version=VERSION)
+    try:
+        return await dictate(
+            settings,
+            supervisor=NemoSupervisor(
+                state_dir=settings.state_dir,
+                port=settings.nemo_port,
+                binary=settings.nemo_binary,
+                model=settings.nemo_model,
+                asr_model=settings.nemo_asr_model,
+                seed=settings.seed,
+                probe=health_probe(settings.nemo_url),
+            ),
+            recorder=build_recorder(settings),
+            transcriber=NemoTranscriber(
+                base_url=settings.nemo_url,
+                api_key=settings.nemo_api_key,
+                model=settings.nemo_asr_model,
+                timeout=transcription_timeout(settings),
+            ),
+            lock=MicLock(state_dir=settings.state_dir, is_alive=process_is_alive),
+            cue=build_cue(settings),
+            telemetry=telemetry,
+        )
+    finally:
+        if telemetry is not None:
+            telemetry.close()
+            telemetry.conn.close()
 
 
 def _fail(message: str) -> NoReturn:

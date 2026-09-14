@@ -53,6 +53,9 @@ def server_env(command: str, state_dir: str, extra_env: dict[str, str] | None = 
         "SPEAK_LISTEN": "",
         "SPEAK_NEMO_AUTOSTART": "0",
         "SPEAK_STATE_DIR": state_dir,
+        # Telemetry reads its own config directory, never SPEAK_STATE_DIR; without
+        # this, every subprocess below would write to the real machine's config dir.
+        "SPEAK_TELEMETRY": "off",
         **(extra_env or {}),
     }
 

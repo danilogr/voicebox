@@ -79,6 +79,10 @@ async def test_talk_builds_its_collaborators_the_way_the_server_does(monkeypatch
     """
     import speak.talk as talk
 
+    # `_run` also builds a telemetry session from the real environment; forcing it
+    # off keeps this test from touching the machine's actual config directory.
+    monkeypatch.setenv("SPEAK_TELEMETRY", "off")
+
     seen: dict[str, object] = {}
 
     async def capture_arguments(settings, **collaborators: object) -> str:

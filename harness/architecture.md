@@ -153,6 +153,46 @@ Almost nothing is persistent.
 Nothing about voice input is persistent either. A recording lives in memory as WAV
 bytes for the length of one transcription and is never written to disk.
 
+## Telemetry
+
+`speak/telemetry/` is a self-contained package the rest of the plugin only reaches
+through two seams: the queue's `on_finish` callback (one `UtteranceOutcome` per
+utterance that leaves it) and a `TelemetrySession` handed to `create_server` and to
+`talk.dictate`. Neither the queue nor the server knows what a `TelemetrySession`
+does with what it is given, matching the existing rule that the queue must not know
+which engine produced an utterance.
+
+- **`consent.py`** — the switches and the persisted install id, read from a config
+  file under the OS's per-user config directory, never `SPEAK_STATE_DIR`. A cache
+  directory the OS may clear must not be the thing that silently re-enables
+  telemetry someone switched off.
+- **`machine.py`** — the one-time hardware probe (CPU, RAM, acceleration backend),
+  cached in the config file and re-probed only when the plugin or OS version
+  changes. Every source is cheap (`platform`, `sysctl`, `/proc`); a probe that fails
+  or overruns its budget yields `"unknown"` rather than blocking.
+- **`store.py`** — the local SQLite database, built from the schema `speak-telemetry`
+  vendors as `contract/v1/schema.sql`. It is the outbound queue as well as the local
+  record: `shipped_at IS NULL` is the backlog, so there is one mechanism rather than
+  a database plus a spool file. `PRAGMA foreign_keys = ON` is set on every connection
+  this module opens, matching D1's unconditional enforcement in production.
+- **`session.py`** — turns queue outcomes and listen/talk attempts into stored rows.
+  Every public method catches its own failures: a dead telemetry backend has to be
+  indistinguishable from a healthy one.
+- **`wiring.py`** — composition shared by `__main__` and `talk`, the same role
+  `runtime.py` plays for capture and cues: consent, the machine probe, and the
+  `installs`/`sessions` rows a `TelemetrySession` is built from.
+- **`ship.py`** — projects the local backlog to the wire format (dropping every
+  `-- LOCAL` column) and POSTs it in chunks, off the hot path. Takes an injected
+  transport; a chunk's failure leaves it unshipped for the next session to retry,
+  which is the entire retry mechanism.
+- **`report.py`** — `speak-stats`, plain SQL over the raw local tables.
+
+Shipping runs once per session, scheduled from `create_server`'s lifespan rather
+than from `__main__.build()` itself: `build()` runs before `server.run()` starts an
+event loop, so nothing there can call `asyncio.create_task`. The default mode is
+`local` for this landing (`consent.DEFAULT_MODE`): local collection is on, uploads
+are not, until staging has been verified end to end.
+
 ## External dependencies
 
 - **`mcp`** — the official MCP SDK. Provides the stdio transport, protocol negotiation,

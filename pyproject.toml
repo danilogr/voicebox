@@ -12,6 +12,7 @@ dependencies = [
 [project.scripts]
 speak-mcp = "speak.__main__:main"
 speak-talk = "speak.talk:main"
+speak-stats = "speak.telemetry.report:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -32,6 +33,13 @@ dev = [
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+# Vendored verbatim from the speak-telemetry repo's contract/v1/; a checksum test
+# fails the build if this copy drifts from upstream, so it must never be
+# reformatted or "fixed" to this repo's own style. `force-exclude` is required
+# because `tests/` is passed explicitly on the gate command line, and `exclude`
+# alone is skipped for explicitly-named paths.
+extend-exclude = ["tests/contract/v1"]
+force-exclude = true
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF", "ANN", "PTH", "LOG", "G"]

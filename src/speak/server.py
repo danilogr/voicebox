@@ -4,7 +4,8 @@ import asyncio
 import logging
 import math
 import random
-from collections.abc import AsyncIterator, Sequence
+import time
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -15,7 +16,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from speak import tools
-from speak.capture import Recorder, RecorderUnavailable, TrackerSettings, describe
+from speak.capture import Recorder, RecorderUnavailable, Recording, TrackerSettings, describe
 from speak.config import Settings
 from speak.cue import Cue
 from speak.engines.asr import Liveness, Transcriber, TranscriptionFailed
@@ -23,6 +24,7 @@ from speak.engines.base import Engine
 from speak.miclock import MicLock, MicrophoneBusy
 from speak.queue import QueueStats
 from speak.queue import describe as describe_queue
+from speak.telemetry.session import TelemetrySession
 from speak.text import normalize
 
 logger = logging.getLogger(__name__)
@@ -45,7 +47,9 @@ WARMUP_TIMEOUT = 20.0
 
 
 class Queue(Protocol):
-    def enqueue(self, text: str, *, voice: str | None, rate: float | None) -> int: ...
+    def enqueue(
+        self, text: str, *, voice: str | None, rate: float | None, intent: str | None = None
+    ) -> int: ...
 
     async def stop(self) -> int: ...
 
@@ -116,6 +120,7 @@ async def shutdown(
     worker: asyncio.Task[None],
     supervisor: "Supervisor | None",
     session: "SessionState",
+    telemetry: "TelemetrySession | None" = None,
 ) -> None:
     """Silence the speaker first, then tear the session down.
 
@@ -128,6 +133,9 @@ async def shutdown(
     await asyncio.gather(worker, return_exceptions=True)
     if supervisor is not None and session.registered:
         await supervisor.release()
+    if telemetry is not None:
+        telemetry.close()
+        telemetry.conn.close()
 
 
 async def warm_speech_server(supervisor: "Supervisor", transcriber: Transcriber) -> bool:
@@ -208,11 +216,32 @@ def create_server(
     supervisor: Supervisor | None,
     rng: random.Random | None = None,
     ears: Ears | None = None,
+    telemetry: TelemetrySession | None = None,
+    on_session_start: Callable[[], None] | None = None,
 ) -> MCPServer:
     session = SessionState(
         voice=settings.voice, rate=settings.rate, randomize=settings.randomize_voice
     )
     roll = rng or random.Random()
+
+    def note_heard(
+        status: str,
+        *,
+        transcript: str | None = None,
+        device_name: str | None = None,
+        asr_ms: int | None = None,
+        wav: bytes | None = None,
+    ) -> None:
+        if telemetry is not None:
+            telemetry.heard(
+                source="listen",
+                status=status,
+                transcript=transcript,
+                device_name=device_name,
+                asr_ms=asr_ms,
+                wav=wav,
+            )
+
     # Voice input needs both the configuration and the wiring; settling that once
     # keeps the `listen` tool and the session warmup from disagreeing.
     if not settings.listen:
@@ -221,6 +250,11 @@ def create_server(
     @asynccontextmanager
     async def lifespan(_: MCPServer) -> AsyncIterator[None]:
         worker = asyncio.create_task(queue.run())
+        if on_session_start is not None:
+            # Only here is a loop guaranteed to be running: `build()` calls this
+            # factory before `server.run()` starts one, so anything scheduling a
+            # background task (shipping the telemetry backlog) has to wait for it.
+            on_session_start()
         warmup = await start_listening(supervisor=supervisor, session=session, ears=ears)
         try:
             yield
@@ -228,7 +262,13 @@ def create_server(
             if warmup is not None:
                 warmup.cancel()
                 await asyncio.gather(warmup, return_exceptions=True)
-            await shutdown(queue=queue, worker=worker, supervisor=supervisor, session=session)
+            await shutdown(
+                queue=queue,
+                worker=worker,
+                supervisor=supervisor,
+                session=session,
+                telemetry=telemetry,
+            )
 
     server = MCPServer(name="speak", version=VERSION, lifespan=lifespan)
 
@@ -253,6 +293,7 @@ def create_server(
         text: Annotated[str, Field(description=tools.TEXT)],
         voice: Annotated[str | None, Field(description=tools.VOICE_OVERRIDE)] = None,
         rate: Annotated[float | None, Field(description=tools.RATE)] = None,
+        intent: Annotated[tools.Intent | None, Field(description=tools.INTENT)] = None,
     ) -> str:
         try:
             spoken = normalize(text, max_chars=settings.max_chars)
@@ -267,6 +308,7 @@ def create_server(
             spoken,
             voice=voice if voice is not None else await session_voice(),
             rate=rate if rate is not None else session.rate,
+            intent=intent,
         )
         if ahead == 0:
             return f'speaking: "{spoken}"'
@@ -338,6 +380,7 @@ def create_server(
             ] = None,
         ) -> str:
             if listening.locked():
+                note_heard("refused")
                 raise ToolError(tools.ALREADY_LISTENING)
 
             async with listening:
@@ -349,6 +392,7 @@ def create_server(
                     # refusal can be retried; a fabricated answer cannot be taken back.
                     pending = describe_queue(queue.stats())
                     logger.warning("speech queue is wedged; refusing to record over it")
+                    note_heard("refused")
                     raise ToolError(tools.STILL_SPEAKING.format(pending=pending)) from error
 
                 await settle(session.warmup)
@@ -361,17 +405,22 @@ def create_server(
                 # only correct advice, and neither other message gives it.
                 state = await ears.transcriber.liveness()
                 if state is Liveness.ABSENT:
+                    note_heard("failed")
                     raise ToolError(tools.SERVER_UNREACHABLE)
                 if state is Liveness.STARTING:
+                    note_heard("failed")
                     raise ToolError(tools.SERVER_STARTING)
                 if not await ears.transcriber.has_asr():
+                    note_heard("failed")
                     raise ToolError(tools.NO_ASR)
 
                 try:
                     ears.mic_lock.acquire()
                 except MicrophoneBusy as error:
+                    note_heard("refused")
                     raise ToolError(str(error)) from error
 
+                recording: Recording | None = None
                 try:
                     # The cues bracket the recording and nothing else: they say the
                     # microphone is open and that it has shut, which is the moment
@@ -381,15 +430,30 @@ def create_server(
                         outcome.heard = recording.has_speech
                     logger.info("capture: %s", describe(recording))
                     if not recording.has_speech:
+                        note_heard("heard_nothing", device_name=recording.device, wav=recording.wav)
                         return tools.HEARD_NOTHING
+                    started = time.monotonic()
                     heard = await ears.transcriber.transcribe(
                         recording.wav, language=settings.listen_language
                     )
+                    asr_ms = round((time.monotonic() - started) * 1000)
                 except (TranscriptionFailed, RecorderUnavailable) as error:
+                    note_heard(
+                        "failed",
+                        device_name=recording.device if recording else None,
+                        wav=recording.wav if recording else None,
+                    )
                     raise ToolError(str(error)) from error
                 finally:
                     ears.mic_lock.release()
 
+                note_heard(
+                    "ok" if heard else "heard_nothing",
+                    transcript=heard,
+                    device_name=recording.device,
+                    asr_ms=asr_ms,
+                    wav=recording.wav,
+                )
                 return heard or tools.HEARD_NOTHING
 
     return server

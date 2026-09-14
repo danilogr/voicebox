@@ -1,0 +1,6 @@
+{
+  "status": 400,
+  "error_code": "schema_violation",
+  "field": "/utterances/0/repository",
+  "reason": "additionalProperties: utterance row has a property outside the utterance schema (repository names are identifying and are never part of this contract, spec 3)"
+}
