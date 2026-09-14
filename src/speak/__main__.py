@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 _background: set[asyncio.Task[object]] = set()
 
 
+# Where telemetry goes unless `SPEAK_TELEMETRY_ENDPOINT` overrides it.
+DEFAULT_TELEMETRY_ENDPOINT = "https://speak-telemetry.actionableintelligence.app/v1/ingest"
+
+
 def build_ears(settings: Settings) -> Ears | None:
     """Everything the listen tool needs, or None when voice input is off."""
     if not settings.listen:
@@ -109,7 +113,7 @@ async def _ship_backlog() -> None:
     try:
         # No endpoint is configured yet (spec 11's rollout still needs a domain);
         # `ship` itself no-ops on the network step but still runs the debug branch.
-        url = env.get("SPEAK_TELEMETRY_ENDPOINT") or None
+        url = env.get("SPEAK_TELEMETRY_ENDPOINT") or DEFAULT_TELEMETRY_ENDPOINT
         shipped = await telemetry_ship.ship(conn, url=url, transport=_http_transport, debug=debug)
         logger.debug("telemetry: shipped %d utterance row(s)", shipped)
     except Exception:

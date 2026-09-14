@@ -26,9 +26,14 @@ MODE_LOCAL = "local"
 MODE_ON = "on"
 MODES = (MODE_OFF, MODE_LOCAL, MODE_ON)
 
-# Landing default. Shipping code is written and tested but not enabled: flipping
-# this to MODE_ON is the later step, once staging has been verified end to end.
-DEFAULT_MODE = MODE_LOCAL
+# Opt-out: a new install collects and transmits. Anonymous counts and timings
+# only - never what was said. `off` and `local` are one command away, and
+# `DO_NOT_TRACK=1` is honoured without any config at all.
+#
+# Off by default was considered and rejected: opt-in rates skew heavily toward
+# power users, which would bias the one measurement this exists for - telling a
+# few heavy users apart from many light ones.
+DEFAULT_MODE = MODE_ON
 
 DISCLOSURE_VERSION = 1
 CONFIG_FILENAME = "telemetry.json"

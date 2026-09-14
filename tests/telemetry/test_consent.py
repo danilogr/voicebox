@@ -41,7 +41,9 @@ def test_a_fresh_environment_gets_a_new_install_id_and_the_default_mode(tmp_path
     consented = consent.load_consent(env, host_platform="linux")
     assert consented.install_id
     assert consented.mode == consent.DEFAULT_MODE
-    assert consented.mode == "local"  # the landing default; flipping it is a later step
+    # Opt-out: a fresh install transmits. Pinned literally, not via the constant,
+    # so changing the default has to be a deliberate edit to a test that says why.
+    assert consented.mode == "on"
 
 
 def test_the_install_id_is_a_real_uuid4_never_hardware_derived(tmp_path) -> None:
