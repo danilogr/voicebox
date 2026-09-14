@@ -25,24 +25,6 @@ INVALID_FIXTURES = sorted(
     p for p in INVALID_DIR.glob("*.json") if not p.name.endswith(".expected.json")
 )
 
-# `jsonschema` and ajv disagree on error granularity for exactly one shape in this
-# contract: a `false` subschema nested under `properties` (the direction-conditional
-# `then: {"properties": {"intent": false}}`). ajv's fixture names the property
-# itself, `/utterances/0/intent`; `jsonschema` attributes the violation to the
-# containing object, `/utterances/0` (schema_path ends at `...properties`, one level
-# short of the key). Both correctly reject the payload - confirmed by direct
-# inspection of `iter_errors()` - so this is a pointer-granularity difference
-# between the two implementations, not a missed violation. Reported rather than
-# worked around: `strict=True` so a future `jsonschema` release that narrows this
-# turns the suite red instead of silently staying stale.
-_KNOWN_POINTER_MISMATCHES = {
-    "intent-on-in-row": (
-        "jsonschema reports the containing object (/utterances/0) for a `false` "
-        "schema nested under `properties`; ajv reports the property itself "
-        "(/utterances/0/intent). Both reject the payload."
-    )
-}
-
 
 def _instance_path(error: jsonschema.ValidationError) -> str:
     """The RFC 6901 pointer to where `error` occurred, empty string at the root -
@@ -76,19 +58,7 @@ def test_every_valid_fixture_validates(path: Path) -> None:
     assert errors == [], f"{path.name} should validate but got: {[e.message for e in errors]}"
 
 
-def _invalid_fixture_params() -> list:
-    params = []
-    for path in INVALID_FIXTURES:
-        marks = []
-        if path.stem in _KNOWN_POINTER_MISMATCHES:
-            marks.append(
-                pytest.mark.xfail(reason=_KNOWN_POINTER_MISMATCHES[path.stem], strict=True)
-            )
-        params.append(pytest.param(path, id=path.stem, marks=marks))
-    return params
-
-
-@pytest.mark.parametrize("path", _invalid_fixture_params())
+@pytest.mark.parametrize("path", INVALID_FIXTURES, ids=lambda p: p.stem)
 def test_every_invalid_fixture_is_rejected_at_the_documented_field(path: Path) -> None:
     instance = json.loads(path.read_text())
     expected = json.loads(path.with_name(path.stem + ".expected.json").read_text())
@@ -97,8 +67,17 @@ def test_every_invalid_fixture_is_rejected_at_the_documented_field(path: Path) -
     assert errors, f"{path.name} should be rejected but validated cleanly"
 
     pointers = [field_pointer(e) for e in errors]
-    assert expected["field"] in pointers, (
-        f"{path.name}: expected a violation at {expected['field']!r}, got {pointers} "
+    field = expected["field"]
+    if expected.get("field_is_prefix"):
+        # JSON Schema does not specify how precisely a validator must locate an
+        # error; CONTRACT.md marks this fixture's pointer as a prefix rather than
+        # demanding an exact match no honest implementation is guaranteed to give.
+        ok = any(pointer == field or pointer.startswith(field + "/") for pointer in pointers)
+    else:
+        ok = field in pointers
+    assert ok, (
+        f"{path.name}: expected a violation at {field!r} "
+        f"({'as a prefix' if expected.get('field_is_prefix') else 'exactly'}), got {pointers} "
         f"(messages: {[e.message for e in errors]})"
     )
 

@@ -90,8 +90,19 @@ shipped.
     just `"/" + additionalProperty` (e.g. `/debug`), not `"/"` followed by more.
 
   This convention is what `contract/v1/fixtures/invalid/*.expected.json` pins, verified
-  against ajv directly (see the repo's commit history for the proof). A server or client
-  built on a different validator must reproduce the same strings for the same fixtures.
+  against ajv directly (see the repo's commit history for the proof).
+- **Pointer granularity is not universal, and the fixtures say where.** JSON Schema does not
+  specify how precisely a validator must locate an error, and conforming implementations
+  differ: for a `false` schema nested under `properties`, ajv names the property while
+  `jsonschema` names the containing object. Both reject; they disagree only on the pointer.
+
+  So an expected file may carry **`"field_is_prefix": true`**, meaning implementations must
+  report a pointer that *starts with* `field` rather than equalling it. Where the flag is
+  absent — every other fixture — the match is exact. Only `intent-on-in-row` needs it today.
+
+  A contract that demanded identical pointers everywhere would be promising something the
+  specification does not provide, and the first honest implementation to disagree would look
+  like the one at fault.
 - `Retry-After` on `429` is an HTTP header, not a body field — Cloudflare's rate limiter does
   not set it automatically (spec 4.3), so the Worker must.
 
