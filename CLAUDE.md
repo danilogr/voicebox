@@ -36,7 +36,9 @@ If a rule here conflicts with a harness/ doc, this file wins.
 
 ## Decide WITH me vs proceed
 Stop and present 2-3 options with trade-offs before acting when:
-- Adding or upgrading a dependency, or introducing new infrastructure.
+- Adding or upgrading a dependency, or introducing new infrastructure. Hand-writing
+  your own version of a well-tested library is not a way around this rule: a partial
+  one that looks like coverage is worse than none. Ask.
 - Choosing or changing an architectural pattern or module boundary.
 - Changing a DB schema, API contract, or public interface.
 - Any migration, bulk edit, or irreversible/destructive action.
