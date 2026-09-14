@@ -36,6 +36,11 @@ server for you.
 | `speech_status()` | Reports how many utterances are waiting, being prepared, prepared, or playing, and how many have finished. |
 | `listen(max_seconds?)` | Records you through the microphone and returns what you said. Waits for anything queued to finish playing first — `/talk`, in its own process, cannot. |
 
+Anonymous usage data is reported by default — counts and timings, never what you say or
+what Claude says. [`TELEMETRY.md`](TELEMETRY.md) lists every field, and `speak-telemetry
+off` stops it.
+
+
 `listen` only exists when `SPEAK_LISTEN=1`; the other five are always there.
 
 Voice is per connection. Claude Code runs one plugin process per session, so
