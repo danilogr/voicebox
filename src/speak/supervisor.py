@@ -18,6 +18,10 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 STALE_LOCK_SECONDS = 60.0
+# How long to wait for a signalled attempt to exit before retrying anyway. Short:
+# the alternative to giving up is hanging the session on a wedged process.
+TERMINATE_TIMEOUT = 5.0
+TERMINATE_INTERVAL = 0.05
 
 Spawn = Callable[[str, Sequence[str]], Awaitable[int]]
 Probe = Callable[[], Awaitable[bool]]
@@ -155,7 +159,7 @@ class NemoSupervisor:
                 "retrying without it so speech still works",
                 self._asr_model,
             )
-            self._terminate(pid)
+            await self._terminate(pid)
             self._asr_model = None
             await self._start_once(self._server_args())
             return True
@@ -175,16 +179,25 @@ class NemoSupervisor:
         )
         return server_pid, bool(await self._probe())
 
-    def _terminate(self, pid: int) -> None:
-        """Stop an attempt that never answered.
+    async def _terminate(self, pid: int) -> None:
+        """Stop an attempt that never answered, and wait until it is gone.
 
         Not merely tidiness: a server that started but is unhealthy still holds the
-        port, and the retry could not bind it.
+        port, and the retry binds that same port. SIGTERM is asynchronous, so the
+        wait is the load-bearing half - signalling and respawning in the same breath
+        races the process being replaced.
         """
         try:
             self._kill(pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError) as error:
             logger.debug("the failed attempt was already gone: %s", error)
+            return
+        deadline = asyncio.get_running_loop().time() + TERMINATE_TIMEOUT
+        while asyncio.get_running_loop().time() < deadline:
+            if not self._is_alive(pid):
+                return
+            await asyncio.sleep(TERMINATE_INTERVAL)
+        logger.warning("attempt %s did not exit; retrying anyway", pid)
 
     def _recorded_pid(self) -> int | None:
         """The pid in `server.json`, or None when there is no usable one.

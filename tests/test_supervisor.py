@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from speak import supervisor as supervisor_module
 from speak.supervisor import NemoSupervisor
 
 
@@ -323,7 +324,14 @@ async def test_a_server_that_will_not_start_with_asr_is_retried_without_it(tmp_p
     who installed before the setup script pulled one would otherwise lose speech too.
     """
     spawns = Spawns()
-    supervisor = build(tmp_path, spawn=spawns, probe=FlakyProbe(), asr_model="nemotron-3.5")
+    # A server that could not load its model has exited by the time it is signalled.
+    supervisor = build(
+        tmp_path,
+        spawn=spawns,
+        probe=FlakyProbe(),
+        asr_model="nemotron-3.5",
+        is_alive=lambda pid: False,
+    )
 
     assert await supervisor.ensure_running() is True
 
@@ -347,7 +355,11 @@ async def test_a_server_that_starts_first_time_is_not_respawned(tmp_path):
 async def test_the_fallback_records_the_server_that_actually_answered(tmp_path):
     """`server.json` drives shutdown, so it must name the surviving process."""
     supervisor = build(
-        tmp_path, spawn=Spawns(pid=777), probe=FlakyProbe(), asr_model="nemotron-3.5"
+        tmp_path,
+        spawn=Spawns(pid=777),
+        probe=FlakyProbe(),
+        asr_model="nemotron-3.5",
+        is_alive=lambda pid: False,
     )
     await supervisor.ensure_running()
     assert json.loads((tmp_path / "server.json").read_text())["pid"] == 777
@@ -361,3 +373,60 @@ async def test_a_speech_only_server_is_never_retried(tmp_path):
     await supervisor.ensure_running()
 
     assert len(spawns.calls) == 1
+
+
+class DyingProcess:
+    """Alive until `dies_after` liveness checks, then gone.
+
+    SIGTERM is asynchronous: the process the supervisor just signalled still holds
+    the port for a moment, and the retry binds that same port.
+    """
+
+    def __init__(self, dies_after: int = 2) -> None:
+        self.checks = 0
+        self.signalled: list[int] = []
+        self._dies_after = dies_after
+
+    def is_alive(self, pid: int) -> bool:
+        self.checks += 1
+        return self.checks < self._dies_after
+
+    def kill(self, pid: int, sig: int) -> None:
+        self.signalled.append(pid)
+
+
+async def test_the_retry_waits_for_the_failed_attempt_to_actually_exit(tmp_path):
+    """Respawning while the old process still holds the port could not bind it."""
+    process = DyingProcess()
+    supervisor = build(
+        tmp_path,
+        spawn=Spawns(),
+        probe=FlakyProbe(),
+        asr_model="nemotron-3.5",
+        is_alive=process.is_alive,
+        kill=process.kill,
+    )
+    # A live recorded server would short-circuit before any spawn is attempted.
+    supervisor._recorded_server_is_alive = lambda: False  # type: ignore[method-assign]
+
+    await supervisor.ensure_running()
+
+    assert process.signalled, "the failed attempt was never signalled"
+    assert process.checks >= 1, "the retry did not wait for the old process to exit"
+
+
+async def test_a_failed_attempt_that_will_not_die_does_not_hang_the_session(tmp_path, monkeypatch):
+    """Waiting forever for a wedged process would be worse than a retry that fails."""
+    monkeypatch.setattr(supervisor_module, "TERMINATE_TIMEOUT", 0.05)
+    process = DyingProcess(dies_after=10_000)
+    supervisor = build(
+        tmp_path,
+        spawn=Spawns(),
+        probe=FlakyProbe(),
+        asr_model="nemotron-3.5",
+        is_alive=process.is_alive,
+        kill=process.kill,
+    )
+    supervisor._recorded_server_is_alive = lambda: False  # type: ignore[method-assign]
+
+    assert await supervisor.ensure_running() is True
