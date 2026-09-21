@@ -135,6 +135,23 @@ status code being `202`.
   availability. (A `413` can recur if resent unchanged; the client's chunking is what should
   have prevented it.)
 
+## Transcriptions
+
+A transcribed file is one `utterances` row with `direction: "in"` and
+`source: "transcribe"`. Five fields exist only on those rows — `source_bytes`,
+`audio_codec`, `converted`, `diarize`, `format` — and describe the shape of the
+file, never its name or its content.
+
+A transcription can be hours long, so `audio_ms`, `asr_ms`, `words` and `chars`
+carry ceilings sized for it on the base properties (24 hours, 24 hours, 500 000,
+5 000 000). `allOf` can only tighten, so one `if/then/else` clause keyed on
+`source` pins every other source back to its own ceilings (600 000, 120 000,
+20 000, 150 000) and forbids it the five transcribe fields. A transcription must
+be `direction: "in"` and carries no `device_kind`.
+
+The change is additive on the wire — one enum widened, five optional fields
+added — so every payload valid before it is valid after it.
+
 ## Versioning
 
 The schema version is the URL path segment (`/v1/...`). The server accepts the current

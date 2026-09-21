@@ -48,7 +48,7 @@ CREATE TABLE utterances (
   install_id      TEXT NOT NULL,      -- denormalised; most queries group by it
   seq             INTEGER NOT NULL,   -- 1..n within the session
   direction       TEXT NOT NULL,      -- 'out' = Claude spoke | 'in' = user spoke
-  source          TEXT NOT NULL,      -- speak | listen | talk
+  source          TEXT NOT NULL,      -- speak | listen | talk | transcribe
   occurred_at     TEXT NOT NULL,
 
   engine          TEXT,
@@ -67,6 +67,13 @@ CREATE TABLE utterances (
   asr_ms          INTEGER,            -- in
 
   status          TEXT NOT NULL,      -- ok|failed|discarded|heard_nothing|refused
+
+  -- transcribe only: the shape of the file, never its name or its content
+  source_bytes    INTEGER,
+  audio_codec     TEXT,               -- ffprobe codec_name, e.g. flac, pcm_s16le
+  converted       INTEGER,            -- 1 when ffmpeg ran before the model
+  diarize         INTEGER,            -- 1 when speakers were labelled
+  format          TEXT,               -- text | json | srt | vtt
 
   text            TEXT,               -- LOCAL
   text_sha256     TEXT,               -- LOCAL

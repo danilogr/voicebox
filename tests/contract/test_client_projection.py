@@ -159,3 +159,45 @@ def test_the_real_local_store_round_trips_through_a_validating_payload() -> None
     }
     errors = list(VALIDATOR.iter_errors(payload))
     assert errors == [], [e.message for e in errors]
+
+
+def test_a_transcription_round_trips_through_a_validating_payload() -> None:
+    """SQLite hands `converted` and `diarize` back as 0/1 and the contract types
+    them `boolean`: the projection is what makes a real row acceptable."""
+    from speak.telemetry.session import TranscriptionOutcome, record_transcription
+
+    conn = store.connect(Path(":memory:"))
+    store.upsert_install(conn, INSTALL)
+    store.insert_session(conn, SESSION)
+    record_transcription(
+        conn,
+        session_id=SESSION["session_id"],
+        install_id=INSTALL["install_id"],
+        engine="nemo",
+        model="nemotron-3.5",
+        outcome=TranscriptionOutcome(
+            status="ok",
+            source_bytes=49_283_072,
+            audio_codec="flac",
+            audio_ms=3_780_000,
+            asr_ms=548_000,
+            converted=True,
+            diarize=True,
+            format="json",
+            words=9_100,
+            chars=51_000,
+        ),
+    )
+
+    install = store.install_row(conn, INSTALL["install_id"])
+    assert install is not None
+    payload = {
+        "install": ship._project_install(install),
+        "sessions": [
+            ship._project_session(s) for s in store.sessions_by_id(conn, [SESSION["session_id"]])
+        ],
+        "utterances": [ship._project_utterance(u) for u in store.unshipped_utterances(conn)],
+    }
+    errors = list(VALIDATOR.iter_errors(payload))
+    assert errors == [], [e.message for e in errors]
+    assert payload["utterances"][0]["converted"] is True

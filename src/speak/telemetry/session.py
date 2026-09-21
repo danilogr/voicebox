@@ -70,6 +70,68 @@ def wav_duration_ms(wav_bytes: bytes) -> int | None:
     return round(frames / rate * 1000)
 
 
+@dataclass(frozen=True, slots=True)
+class TranscriptionOutcome:
+    """The shape of one transcription, however far it got. Never its content."""
+
+    status: str  # ok | failed | refused | heard_nothing
+    source_bytes: int | None
+    audio_codec: str | None
+    audio_ms: int | None
+    asr_ms: int | None
+    converted: bool | None
+    diarize: bool
+    format: str
+    words: int | None = None
+    chars: int | None = None
+
+
+def record_transcription(
+    conn: sqlite3.Connection,
+    *,
+    session_id: str,
+    install_id: str,
+    engine: str,
+    model: str | None,
+    outcome: TranscriptionOutcome,
+) -> None:
+    """Record one transcription as an `in` utterance from the `transcribe` source.
+
+    A function rather than a `TelemetrySession` method: the worker that finishes a
+    job is its own process, possibly long after the session that asked for it has
+    ended, and it has the store and the ids but not the session object. Not
+    `heard()` either, which stamps a `device_kind` the contract forbids on a
+    transcription. Never raises.
+    """
+    try:
+        store.insert_utterance(
+            conn,
+            {
+                "utterance_id": str(uuid.uuid4()),
+                "session_id": session_id,
+                "install_id": install_id,
+                "seq": store.next_seq(conn, session_id),
+                "direction": "in",
+                "source": "transcribe",
+                "occurred_at": store.now_iso(),
+                "engine": engine,
+                "model": model,
+                "words": outcome.words,
+                "chars": outcome.chars,
+                "audio_ms": outcome.audio_ms,
+                "asr_ms": outcome.asr_ms,
+                "status": outcome.status,
+                "source_bytes": outcome.source_bytes,
+                "audio_codec": outcome.audio_codec,
+                "converted": outcome.converted,
+                "diarize": outcome.diarize,
+                "format": outcome.format,
+            },
+        )
+    except Exception:
+        logger.debug("telemetry: failed to record a transcription", exc_info=True)
+
+
 @dataclass(slots=True)
 class TelemetrySession:
     """One session's write path into the local store.
@@ -88,6 +150,7 @@ class TelemetrySession:
     asr_model: str | None
     record_audio: bool = False
     recordings_dir: Path | None = None
+    db_path: Path | None = None
     _seq: int = field(default=1, repr=False)
 
     def _next_seq(self) -> int:

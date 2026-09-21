@@ -46,6 +46,9 @@ LOCAL_ONLY_UTTERANCE_COLUMNS = frozenset(
     }
 )
 
+# SQLite stores these as 0/1; the contract types them `boolean`.
+_BOOLEAN_UTTERANCE_COLUMNS = ("converted", "diarize")
+
 # `install` never carries `country`: the server derives it from CF-IPCountry on
 # receipt, and the client never collects or sends it (spec 1.2, 4.5).
 _INSTALL_UPLOAD_FIELDS = (
@@ -108,7 +111,11 @@ def _project_session(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _project_utterance(row: dict[str, Any]) -> dict[str, Any]:
-    return _clean({k: v for k, v in row.items() if k not in LOCAL_ONLY_UTTERANCE_COLUMNS})
+    projected = _clean({k: v for k, v in row.items() if k not in LOCAL_ONLY_UTTERANCE_COLUMNS})
+    for column in _BOOLEAN_UTTERANCE_COLUMNS:
+        if column in projected:
+            projected[column] = bool(projected[column])
+    return projected
 
 
 def _chunks(rows: Sequence[dict[str, Any]]) -> Iterator[list[dict[str, Any]]]:
