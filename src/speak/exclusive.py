@@ -71,6 +71,10 @@ class ExclusiveLock:
         """Give the lock back. A lock held by someone else is left alone."""
         if self.owner() != self._pid:
             return
+        # Not atomic: a take_over() landing between the check above and this unlink
+        # loses the new holder's claim, and an unrelated process could then acquire
+        # the "free" lock while that holder is still running, so callers release
+        # only when no takeover can be in flight — the same class of window acquire() accepts.
         self._owner_file.unlink(missing_ok=True)
         try:
             self._dir.rmdir()
