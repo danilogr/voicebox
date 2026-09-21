@@ -30,7 +30,7 @@ from speak.text import normalize
 
 logger = logging.getLogger(__name__)
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 # The queue decides when it is wedged, because only it can see its own progress. This
 # is the outer guard: a Queue implementation that neither finishes nor raises would
