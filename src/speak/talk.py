@@ -31,7 +31,6 @@ from speak.supervisor import NemoSupervisor, process_is_alive
 from speak.telemetry import wiring as telemetry_wiring
 from speak.telemetry.session import TelemetrySession
 from speak.tools import (
-    LISTEN_OFF,
     NO_ASR,
     NO_SERVER,
     SERVER_STARTING,
@@ -237,8 +236,6 @@ def _fail(message: str) -> NoReturn:
 def main() -> None:
     configure_logging()
     settings = Settings.from_env(os.environ)
-    if not settings.listen:
-        _fail(LISTEN_OFF)
     try:
         text = asyncio.run(_run(settings))
     except (MicrophoneBusy, RecorderUnavailable, TranscriptionFailed, OSError) as error:

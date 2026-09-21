@@ -4,9 +4,8 @@ Gives Claude Code a voice. A `speak` tool call says one short sentence out loud 
 when a task finishes, when it is blocked, or when it needs an answer — so you can
 look away from the terminal without losing the thread.
 
-Turn on `SPEAK_LISTEN=1` and it gets an ear too: a `listen` tool Claude calls to
-hear your answer, and a `/talk` command for saying your next prompt instead of
-typing it.
+It has an ear too: a `listen` tool Claude calls to hear your answer, and a
+`/talk` command for saying your next prompt instead of typing it.
 
 ## Install
 
@@ -41,7 +40,7 @@ what Claude says. [`TELEMETRY.md`](TELEMETRY.md) lists every field, and `speak-t
 off` stops it.
 
 
-`listen` only exists when `SPEAK_LISTEN=1`; the other five are always there.
+All six are always there.
 
 Voice is per connection. Claude Code runs one plugin process per session, so
 `set_voice` in one window cannot be seen by another and nothing is written to disk.
@@ -76,9 +75,10 @@ that one string is the whole behaviour.
 
 ## When you speak
 
-Voice input is off until you set `SPEAK_LISTEN=1`. It needs the neural setup —
-`/speak:setup` pulls a transcription model alongside the voice — because the same
-local server does both.
+Voice input needs the neural setup — `/speak:setup` pulls a transcription model
+alongside the voice — because the same local server does both. If that model is
+missing the server still starts and still speaks; `listen` then says so and names
+the fix.
 
 Set it *before* Claude Code starts. The plugin reads its environment once, when the
 session opens, so exporting it in your shell profile has no effect on a session that
@@ -138,8 +138,8 @@ tries to listen is told which one has it rather than being queued behind it —
 otherwise you would start talking and a window you are not looking at would take
 the words.
 
-`SPEAK_LISTEN=1` also changes when the speech server starts. A session that can
-listen claims it as the session opens rather than at the first sentence, because
+Listening also changes when the speech server starts. A session claims it as the
+session opens rather than at the first sentence, because
 `/talk` runs as its own short-lived process and would otherwise pay a cold start
 every time. The trade is that the memory is held from session start, and a server
 carrying both models holds about twice what a voice-only one does — figures in
@@ -204,7 +204,6 @@ All optional, set in your shell or in the plugin's `.mcp.json`:
 | `NEMO_HTTP_URL` | `http://127.0.0.1:8082` | OpenAI-compatible speech server: `/v1/audio/speech`, and `/v1/audio/transcriptions` when listening |
 | `NEMO_API_KEY` | — | bearer token for that server |
 | `NEMO_TTS_MODEL` | `magpie` | model name sent in the request |
-| `SPEAK_LISTEN` | — | set `1` for the `listen` tool and `/talk` |
 | `NEMO_ASR_MODEL` | `nemotron-3.5` | transcription model the server loads and the request names |
 | `SPEAK_LISTEN_SILENCE_MS` | `3000` | silence that ends an utterance |
 | `SPEAK_LISTEN_MAX_SECONDS` | `240` | hard cap on one recording |
@@ -283,7 +282,7 @@ nothing has to be exported before the client starts:
     "speak": {
       "command": "uv",
       "args": ["run", "--directory", "/path/to/speak", "--quiet", "speak-mcp"],
-      "env": { "SPEAK_ENGINE": "nemo", "SPEAK_LISTEN": "1" }
+      "env": { "SPEAK_ENGINE": "nemo" }
     }
   }
 }
@@ -379,8 +378,9 @@ so on the rare occasion the operating system has reused a dead holder's number y
 are told "another session (pid N) is listening" about a process that has nothing to
 do with this plugin. Delete `mic/` under `SPEAK_STATE_DIR` and try again.
 
-One consequence of sharing: the transcription model is loaded only by the session that
-happens to win the start election, and only if that session had `SPEAK_LISTEN` set. A
-listening session that finds a server someone else started without it is told so —
+One consequence of sharing: the transcription model is loaded by whichever session wins
+the start election. Every session asks for it now, so the usual case is that it is there
+— but a server that fell back to speech-only, or one an older version started, has no
+transcription. A session that finds such a server is told so —
 `listen` cannot restart the server to fix itself without cutting off whichever window
 is mid-sentence.

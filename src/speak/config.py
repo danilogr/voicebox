@@ -78,7 +78,6 @@ class Settings:
     nemo_url: str = DEFAULT_NEMO_URL
     nemo_api_key: str | None = None
     nemo_model: str = "magpie"
-    listen: bool = False
     nemo_asr_model: str = "nemotron-3.5"
     listen_silence_ms: float = 3000.0
     listen_max_seconds: float = 240.0
@@ -124,7 +123,6 @@ class Settings:
             nemo_url=_text(env, "NEMO_HTTP_URL") or DEFAULT_NEMO_URL,
             nemo_api_key=_text(env, "NEMO_API_KEY"),
             nemo_model=_text(env, "NEMO_TTS_MODEL") or "magpie",
-            listen=_flag(env, "SPEAK_LISTEN"),
             nemo_asr_model=_text(env, "NEMO_ASR_MODEL") or "nemotron-3.5",
             listen_silence_ms=_positive(env, "SPEAK_LISTEN_SILENCE_MS", 3000.0),
             listen_max_seconds=_positive(env, "SPEAK_LISTEN_MAX_SECONDS", 240.0),

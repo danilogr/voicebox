@@ -24,7 +24,6 @@ def _env(state_dir: str, home: str) -> dict[str, str]:
         **os.environ,
         "SPEAK_ENGINE": "command",
         "SPEAK_COMMAND": "true",  # a no-op binary: silent, and hermetic like test_server.py
-        "SPEAK_LISTEN": "",
         "SPEAK_NEMO_AUTOSTART": "0",
         "SPEAK_STATE_DIR": state_dir,
         "SPEAK_TELEMETRY": "local",

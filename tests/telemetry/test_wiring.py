@@ -49,9 +49,7 @@ def test_build_writes_an_install_row(tmp_path) -> None:
 def test_build_writes_a_session_row_naming_the_engines(tmp_path) -> None:
     session = wiring.build(
         env(tmp_path, CLAUDE_PLUGIN_ROOT="/plugin"),
-        settings=Settings(
-            engine="nemo", listen=True, nemo_model="magpie", nemo_asr_model="parakeet"
-        ),
+        settings=Settings(engine="nemo", nemo_model="magpie", nemo_asr_model="parakeet"),
         plugin_version="1.2.0",
         host_platform="linux",
     )

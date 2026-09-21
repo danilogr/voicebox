@@ -147,14 +147,44 @@ class NemoSupervisor:
             await self._probe()
             return False
         try:
-            server_pid = await self._spawn(self._binary, self._server_args())
-            self._server_file.write_text(
-                json.dumps({"pid": server_pid, "port": self._port, "started_at": time.time()})
+            pid, answered = await self._start_once(self._server_args())
+            if answered or self._asr_model is None:
+                return True
+            logger.warning(
+                "the speech server did not answer with transcription model %s; "
+                "retrying without it so speech still works",
+                self._asr_model,
             )
-            await self._probe()
+            self._terminate(pid)
+            self._asr_model = None
+            await self._start_once(self._server_args())
             return True
         finally:
             shutil.rmtree(self._lock_dir, ignore_errors=True)
+
+    async def _start_once(self, args: list[str]) -> tuple[int, bool]:
+        """Spawn the server, record it, and wait for it to answer.
+
+        Returns the pid and whether it answered. The record is rewritten on every
+        attempt, so `server.json` always names the process a later `release` should
+        stop rather than one that died on startup.
+        """
+        server_pid = await self._spawn(self._binary, args)
+        self._server_file.write_text(
+            json.dumps({"pid": server_pid, "port": self._port, "started_at": time.time()})
+        )
+        return server_pid, bool(await self._probe())
+
+    def _terminate(self, pid: int) -> None:
+        """Stop an attempt that never answered.
+
+        Not merely tidiness: a server that started but is unhealthy still holds the
+        port, and the retry could not bind it.
+        """
+        try:
+            self._kill(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError) as error:
+            logger.debug("the failed attempt was already gone: %s", error)
 
     def _recorded_pid(self) -> int | None:
         """The pid in `server.json`, or None when there is no usable one.

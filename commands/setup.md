@@ -12,16 +12,14 @@ it.
 1. Run `${CLAUDE_PLUGIN_ROOT}/scripts/install-nemo.sh` and show the output. It
    installs `nemo-speech` if it is missing, pulls the MagpieTTS voice and the
    nemotron-3.5 transcription model, and runs `nemo-speech doctor`. It is
-   idempotent. Both models are pulled whether or not the user wants voice input;
-   only the server flags depend on that.
+   idempotent. It pulls both models, because the plugin both speaks and listens.
 2. If the script fails, report the failure verbatim rather than working around
    it. A partial install is worse than none.
 3. On success, tell the user to set `SPEAK_ENGINE=nemo` in their environment,
    and that the plugin starts and stops the server on its own from then on.
-4. For voice input, tell the user to set `SPEAK_LISTEN=1` as well. Explain that
-   it makes the plugin start the speech server when the session opens rather
-   than on first use, so `/talk` does not pay a cold start, and that this costs
-   memory from session start.
+4. Voice input needs nothing else switched on. Mention that the speech server
+   starts when the session opens rather than on first use, so `/talk` does not
+   pay a cold start, and that this costs memory from session start.
 5. On macOS the first recording asks for microphone access for the app running
    Claude Code — the terminal, not Claude Code itself. The switch is in System
    Settings > Privacy & Security > Microphone. Warn that a denied microphone opens

@@ -38,10 +38,13 @@ _background: set[asyncio.Task[object]] = set()
 DEFAULT_TELEMETRY_ENDPOINT = "https://speak-telemetry.actionableintelligence.app/v1/ingest"
 
 
-def build_ears(settings: Settings) -> Ears | None:
-    """Everything the listen tool needs, or None when voice input is off."""
-    if not settings.listen:
-        return None
+def build_ears(settings: Settings) -> Ears:
+    """Everything the listen tool needs.
+
+    Unconditional: `/speak:converse` and `/talk` are part of the plugin, so they
+    cannot depend on a switch the user has to discover. When transcription is not
+    actually available the `listen` tool says so and names the remedy.
+    """
     return Ears(
         recorder=build_recorder(settings),
         transcriber=NemoTranscriber(
@@ -59,18 +62,19 @@ def build_ears(settings: Settings) -> Ears | None:
 def build_supervisor(settings: Settings) -> NemoSupervisor | None:
     """The shared speech server this session may start, or None when it must not.
 
-    Listening needs the server whatever the speech engine is. The transcription
-    model is served only when this session enables listening, so a session that
-    never listens cannot be broken by a missing ASR model.
+    Every session may listen, and listening needs the server whatever the speech
+    engine is, so the only thing that stops one being started is the user saying so.
+    The transcription model is always requested; a model that will not load is
+    handled when the server starts, not by withholding it here.
     """
-    if not settings.nemo_autostart or not (settings.engine == "nemo" or settings.listen):
+    if not settings.nemo_autostart:
         return None
     return NemoSupervisor(
         state_dir=settings.state_dir,
         port=settings.nemo_port,
         binary=settings.nemo_binary,
         model=settings.nemo_model,
-        asr_model=settings.nemo_asr_model if settings.listen else None,
+        asr_model=settings.nemo_asr_model,
         seed=settings.seed,
         probe=health_probe(settings.nemo_url),
     )

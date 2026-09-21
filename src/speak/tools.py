@@ -117,8 +117,6 @@ SERVER_UNREACHABLE = (
     "SPEAK_NEMO_AUTOSTART=0."
 )
 
-LISTEN_OFF = "Voice input is off. Set SPEAK_LISTEN=1 in the environment and restart the session."
-
 NO_SERVER = (
     "could not start the speech server. Run /speak:setup to install nemo-speech and pull "
     "the models, or set SPEAK_NEMO_BIN to it if it is installed somewhere else."

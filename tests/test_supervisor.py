@@ -298,3 +298,66 @@ async def test_a_stale_lock_that_cannot_be_removed_gives_up(tmp_path, monkeypatc
     spawns = Spawns()
     assert await build(tmp_path, spawn=spawns).ensure_running() is False
     assert spawns.calls == []
+
+
+class FlakyProbe:
+    """Answers False until `succeed_from` calls have been made, then True.
+
+    Models a server that spawns and then dies because a model would not load: the
+    process starts, the port never answers.
+    """
+
+    def __init__(self, succeed_from: int = 2) -> None:
+        self.calls = 0
+        self._succeed_from = succeed_from
+
+    async def __call__(self) -> bool:
+        self.calls += 1
+        return self.calls >= self._succeed_from
+
+
+async def test_a_server_that_will_not_start_with_asr_is_retried_without_it(tmp_path):
+    """A missing transcription model must cost listening, never speech.
+
+    Voice input is unconditional, so every session now asks for an ASR model. A user
+    who installed before the setup script pulled one would otherwise lose speech too.
+    """
+    spawns = Spawns()
+    supervisor = build(tmp_path, spawn=spawns, probe=FlakyProbe(), asr_model="nemotron-3.5")
+
+    assert await supervisor.ensure_running() is True
+
+    assert len(spawns.calls) == 2, "expected a second attempt without the ASR model"
+    first, second = (args for _, args in spawns.calls)
+    assert "--asr-model" in first
+    assert "--asr-model" not in second
+    assert "--tts-model" in second, "speech must survive the fallback"
+
+
+async def test_a_server_that_starts_first_time_is_not_respawned(tmp_path):
+    spawns = Spawns()
+    supervisor = build(tmp_path, spawn=spawns, probe=probe_ok, asr_model="nemotron-3.5")
+
+    assert await supervisor.ensure_running() is True
+
+    assert len(spawns.calls) == 1
+    assert "--asr-model" in spawns.calls[0][1]
+
+
+async def test_the_fallback_records_the_server_that_actually_answered(tmp_path):
+    """`server.json` drives shutdown, so it must name the surviving process."""
+    supervisor = build(
+        tmp_path, spawn=Spawns(pid=777), probe=FlakyProbe(), asr_model="nemotron-3.5"
+    )
+    await supervisor.ensure_running()
+    assert json.loads((tmp_path / "server.json").read_text())["pid"] == 777
+
+
+async def test_a_speech_only_server_is_never_retried(tmp_path):
+    """Without an ASR model there is nothing to drop, so a dead server stays dead."""
+    spawns = Spawns()
+    supervisor = build(tmp_path, spawn=spawns, probe=FlakyProbe(succeed_from=99))
+
+    await supervisor.ensure_running()
+
+    assert len(spawns.calls) == 1

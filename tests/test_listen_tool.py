@@ -43,7 +43,6 @@ def build(
     has_asr=True,
     busy_with=None,
     error=None,
-    listen=True,
     language=None,
     limits=None,
     queue=None,
@@ -65,7 +64,7 @@ def build(
     )
     lock = FakeMicLock(busy_with=busy_with)
     server = create_server(
-        settings=Settings(listen=listen, listen_language=language),
+        settings=Settings(listen_language=language),
         engine=FakeEngine(),
         queue=queue,
         supervisor=None,
@@ -120,13 +119,14 @@ class BlockingRecorder(FakeRecorder):
         return await super().record(settings)
 
 
-async def test_the_tool_is_absent_when_listening_is_off():
-    assert "listen" not in await tool_names(build(listen=False).server)
+async def test_the_tool_is_always_there():
+    """There is no switch left to lose it to."""
+    assert "listen" in await tool_names(build().server)
 
 
 async def test_the_tool_is_absent_without_ears():
     server = create_server(
-        settings=Settings(listen=True),
+        settings=Settings(),
         engine=FakeEngine(),
         queue=FakeQueue(),
         supervisor=None,
@@ -245,7 +245,7 @@ async def test_a_speech_server_that_is_not_there_is_named_as_such():
 
 
 async def test_a_server_that_is_still_loading_says_to_wait():
-    """`SPEAK_LISTEN=1` starts the server as the session opens, so the first `listen`
+    """The server starts as the session opens, so the first `listen`
     can arrive while it is still loading. "No transcription model" would be wrong."""
     rig = build(reachable=True, starting=True, has_asr=False)
     with pytest.raises(ToolError, match="starting up"):
@@ -381,11 +381,6 @@ async def test_conversation_mode_is_offered_to_every_client_when_voice_input_is_
     """Claude Code reads commands/*.md itself; any other MCP client sees only what the
     server offers, so without the prompt conversation mode exists in one app."""
     assert "converse" in await prompt_names(build().server)
-
-
-async def test_conversation_mode_is_not_offered_without_a_listen_tool():
-    """Its instruction is to call `listen`, which exists only with voice input on."""
-    assert "converse" not in await prompt_names(build(listen=False).server)
 
 
 async def test_the_prompt_is_the_command_file_without_its_frontmatter():

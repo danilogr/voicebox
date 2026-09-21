@@ -284,11 +284,6 @@ def create_server(
         name, version = found
         telemetry.update_harness(normalize_harness(name), version)
 
-    # Voice input needs both the configuration and the wiring; settling that once
-    # keeps the `listen` tool and the session warmup from disagreeing.
-    if not settings.listen:
-        ears = None
-
     @asynccontextmanager
     async def lifespan(_: MCPServer) -> AsyncIterator[None]:
         worker = asyncio.create_task(queue.run())
