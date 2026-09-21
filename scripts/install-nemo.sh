@@ -24,4 +24,4 @@ echo
 "$BIN" doctor
 echo
 echo "Done. Set SPEAK_ENGINE=nemo and the plugin will start the server on first use."
-echo "Add SPEAK_LISTEN=1 as well if you want voice input."
+echo "Speaking and listening are both on from then; nothing else to switch."

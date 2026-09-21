@@ -145,8 +145,11 @@ def build(
             "started_at": now,
             "plugin_version": plugin_version,
             "tts_engine": settings.engine,
-            "asr_engine": "nemo" if settings.listen else None,
-            "listen_enabled": settings.listen,
+            "asr_engine": "nemo",
+            # Always true since voice input stopped being optional. Kept as a column
+            # because it is part of the shipped row contract; dropping it is a schema
+            # migration, not part of removing the switch.
+            "listen_enabled": True,
             "harness": harness,
             "harness_version": harness_version,
         },
@@ -158,8 +161,8 @@ def build(
         session_id=session_id,
         tts_engine=settings.engine,
         tts_model=settings.nemo_model if settings.engine == "nemo" else None,
-        asr_engine="nemo" if settings.listen else None,
-        asr_model=settings.nemo_asr_model if settings.listen else None,
+        asr_engine="nemo",
+        asr_model=settings.nemo_asr_model,
         record_audio=consented.record,
         recordings_dir=config_dir / RECORDINGS_DIRNAME,
     )

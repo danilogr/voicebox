@@ -45,7 +45,7 @@ three requests fired together finished at 3.4 s, 7.3 s and 10.6 s for a wall clo
 | Server | Once `/health` answers |
 |---|---|
 | Voice only (`magpie`) | 780 MB |
-| Voice plus transcription (`SPEAK_LISTEN=1`) | 1.5 GB |
+| Voice plus transcription (the default) | 1.5 GB |
 
 Both grow in use, and not by the same amount:
 

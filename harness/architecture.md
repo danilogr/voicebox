@@ -12,15 +12,12 @@ moments where a voice beats scrollback. Its single responsibility is turning a s
 into audible speech without ever blocking the agent and without letting two utterances
 overlap.
 
-With `SPEAK_LISTEN=1` it also hears. A sixth tool, `listen`, records the user and
+It also hears, unconditionally. A sixth tool, `listen`, records the user and
 returns a transcript, and the `/talk` slash command dictates a prompt instead of
 typing it. There are therefore two entry points into the same code: the long-lived
 MCP server (`__main__`) and a short-lived one-shot process (`talk`) that a slash
 command runs and whose stdout is injected into the user's message. Both transcribe
-against the same shared speech server the supervisor already manages. With
-`SPEAK_LISTEN` unset the `listen` tool is never defined, so the tool list is
-unchanged; `/talk` is a static command file that still appears in the palette, and
-the script behind it refuses at once with one line on stdout and stderr both.
+against the same shared speech server the supervisor already manages.
 
 ## Components & boundaries
 
@@ -226,6 +223,22 @@ are not, until staging has been verified end to end.
 
 ## Key decisions (with rationale)
 
+- 2026-09-21 — **Voice input is unconditional; there is no `SPEAK_LISTEN`.** A plugin
+  that ships `/speak:converse` and `/talk` cannot make them depend on a second switch
+  the user has to find: turning on conversation mode and then discovering the ear was
+  never wired is the failure the flag caused. The flag also decided whether the shared
+  server loaded a transcription model, so removing it moved that question from
+  configuration to capability: the supervisor always asks for the ASR model, and if the
+  server will not answer with it, `ensure_running` kills that attempt and retries once
+  without it. Speech therefore survives a missing or unloadable transcription model, and
+  `listen` reports the problem and names the remedy. Rejected: keeping `SPEAK_LISTEN=0`
+  as an opt-out, which leaves the flag in config, docs and tests for a case nobody asked
+  for; and defining `listen` only when transcription is reachable, which makes the tool
+  list depend on the environment and is harder to document than a tool that explains
+  itself. `listen_enabled` stays in the telemetry row as a constant true, because it is
+  part of the shipped row contract and dropping it is a schema migration, not part of
+  removing a switch.
+
 - **The when-to-speak policy lives in the `speak` tool description.**
   A tool description is always in the model's context at the moment the choice is made.
   Not a hook or a skill, neither of which can add a callable tool or is guaranteed
@@ -400,8 +413,7 @@ are not, until staging has been verified end to end.
   the other was still recording. `listen` therefore also holds an `asyncio.Lock` and
   refuses a concurrent call rather than queueing it, so the answer is immediate.
 
-- **Enabling `SPEAK_LISTEN` registers with the supervisor at session
-  start.** `/talk` runs as its own short-lived process, so without a warm server it
+- **A session registers with the supervisor at session start.** `/talk` runs as its own short-lived process, so without a warm server it
   pays a cold start on every invocation. Registering eagerly trades resident memory
   from session start for an instant `/talk`; the transcription model roughly doubles
   what the server holds, and `performance.md` has the figures. Sessions that do not
@@ -430,8 +442,8 @@ are not, until staging has been verified end to end.
   `has_asr` answers False for any HTTP failure, so a server that is absent or still
   loading its models looks exactly like one served without `--asr-model` — and that
   message tells the user to run `/speak:setup` or restart another session, neither of
-  which applies to a server that is eight seconds from ready. `SPEAK_LISTEN=1` starts
-  the server as the session opens, which makes that window the ordinary first run.
+  which applies to a server that is eight seconds from ready. The server is started as
+  the session opens, which makes that window the ordinary first run.
   Three pieces hold it together, and all three are required: `liveness()` answers
   ABSENT, STARTING or READY off one `/health` request, so both entry points can say
   "wait"; `ensure_running` probes on its early returns too, so a caller that finds

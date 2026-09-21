@@ -40,17 +40,16 @@ def server_env(command: str, state_dir: str, extra_env: dict[str, str] | None = 
     """The environment one subprocess server runs in.
 
     The developer's shell is inherited, so everything that decides whether a session
-    manages the shared speech server is pinned here. With `SPEAK_LISTEN=1` exported —
-    which the README tells anyone using voice input to do — each of these subprocesses
-    would otherwise register in the real state directory and, on teardown, SIGTERM the
-    pid in the real `server.json`: running the suite would stop the speech server the
+    manages the shared speech server is pinned here. Voice input is unconditional, so
+    every session now wants one and `SPEAK_NEMO_AUTOSTART=0` is the whole guard: without
+    it each of these subprocesses would register in the real state directory and, on
+    teardown, SIGTERM the pid in the real `server.json`, stopping the speech server the
     developer's other Claude Code windows are using.
     """
     return {
         **os.environ,
         "SPEAK_ENGINE": "command",
         "SPEAK_COMMAND": command,
-        "SPEAK_LISTEN": "",
         "SPEAK_NEMO_AUTOSTART": "0",
         "SPEAK_STATE_DIR": state_dir,
         # Telemetry reads its own config directory, never SPEAK_STATE_DIR; without
@@ -76,7 +75,6 @@ async def connected(command: str, extra_env: dict[str, str] | None = None):
 
 def test_the_suite_cannot_reach_the_machine_wide_speech_server(monkeypatch, tmp_path):
     """Every subprocess this file starts is hermetic, whatever the shell exports."""
-    monkeypatch.setenv("SPEAK_LISTEN", "1")
     monkeypatch.delenv("SPEAK_NEMO_AUTOSTART", raising=False)
 
     settings = Settings.from_env(server_env("true", str(tmp_path)))
@@ -100,6 +98,7 @@ async def test_initializes_and_reports_its_name(recorder):
             "list_voices",
             "set_voice",
             "speech_status",
+            "listen",
         }
 
 
@@ -226,12 +225,12 @@ async def test_closing_the_session_kills_a_playing_utterance(tmp_path):
     raise AssertionError(f"player {child} survived the session")
 
 
-async def test_a_client_sees_conversation_mode_over_stdio_when_voice_input_is_on(recorder):
+async def test_a_client_sees_conversation_mode_over_stdio(recorder):
     """The prompt exists for MCP clients other than Claude Code, so it is checked the way
     they receive it: a real client, over stdio, from a separate server process. Only
     one prompt is expected, so no other command file can leak out as one."""
     script, _ = recorder
-    async with connected(f"{sys.executable} {script}", {"SPEAK_LISTEN": "1"}) as session:
+    async with connected(f"{sys.executable} {script}", {}) as session:
         listed = (await session.list_prompts()).prompts
         prompts = {prompt.name: prompt.description for prompt in listed}
         assert set(prompts) == {"converse"}

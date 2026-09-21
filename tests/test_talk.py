@@ -10,7 +10,7 @@ from speak.cue import Cue
 from speak.engines.asr import TranscriptionFailed
 from speak.miclock import MicrophoneBusy
 from speak.talk import capture, dictate, main
-from speak.tools import LISTEN_OFF, TALK_HEARD_NOTHING
+from speak.tools import TALK_HEARD_NOTHING
 
 # Every capture below is given a cue, and none of them makes a sound: the silent one
 # never spawns a player, and the rest spawn a fake.
@@ -26,7 +26,7 @@ NOTHING = Recording(wav=b"RIFF", reason=State.CAPPED, has_speech=False)
 
 async def test_a_spoken_prompt_comes_back_as_text():
     text = await capture(
-        Settings(listen=True),
+        Settings(),
         recorder=FakeRecorder(SPOKEN),
         transcriber=FakeTranscriber(text="run the tests", reachable=True),
         lock=FakeMicLock(),
@@ -37,7 +37,7 @@ async def test_a_spoken_prompt_comes_back_as_text():
 
 async def test_saying_nothing_comes_back_empty():
     text = await capture(
-        Settings(listen=True),
+        Settings(),
         recorder=FakeRecorder(NOTHING),
         transcriber=FakeTranscriber(text="ignored", reachable=True),
         lock=FakeMicLock(),
@@ -49,7 +49,7 @@ async def test_saying_nothing_comes_back_empty():
 async def test_a_busy_microphone_is_reported():
     with pytest.raises(MicrophoneBusy):
         await capture(
-            Settings(listen=True),
+            Settings(),
             recorder=FakeRecorder(SPOKEN),
             transcriber=FakeTranscriber(reachable=True),
             lock=FakeMicLock(busy_with=99),
@@ -60,7 +60,7 @@ async def test_a_busy_microphone_is_reported():
 async def test_a_server_without_transcription_is_reported():
     with pytest.raises(TranscriptionFailed, match="speak:setup"):
         await capture(
-            Settings(listen=True),
+            Settings(),
             recorder=FakeRecorder(SPOKEN),
             transcriber=FakeTranscriber(has_asr=False, reachable=True),
             lock=FakeMicLock(),
@@ -74,7 +74,7 @@ async def test_a_server_that_is_still_loading_says_to_wait():
     eager warmup this branch added makes the window the ordinary first run."""
     with pytest.raises(TranscriptionFailed, match="starting up"):
         await capture(
-            Settings(listen=True),
+            Settings(),
             recorder=FakeRecorder(SPOKEN),
             transcriber=FakeTranscriber(has_asr=False, reachable=True, starting=True),
             lock=FakeMicLock(),
@@ -85,7 +85,7 @@ async def test_a_server_that_is_still_loading_says_to_wait():
 async def test_a_speech_server_that_is_not_there_is_not_called_a_missing_model():
     with pytest.raises(TranscriptionFailed, match="not answering"):
         await capture(
-            Settings(listen=True),
+            Settings(),
             recorder=FakeRecorder(SPOKEN),
             transcriber=FakeTranscriber(has_asr=False, reachable=False),
             lock=FakeMicLock(),
@@ -97,7 +97,7 @@ async def test_the_microphone_is_not_opened_while_the_server_is_still_loading():
     lock = FakeMicLock()
     with pytest.raises(TranscriptionFailed):
         await capture(
-            Settings(listen=True),
+            Settings(),
             recorder=FakeRecorder(SPOKEN),
             transcriber=FakeTranscriber(reachable=True, starting=True),
             lock=lock,
@@ -110,7 +110,7 @@ async def test_the_lock_is_released_when_transcription_fails():
     lock = FakeMicLock()
     with pytest.raises(TranscriptionFailed):
         await capture(
-            Settings(listen=True),
+            Settings(),
             recorder=FakeRecorder(SPOKEN),
             transcriber=FakeTranscriber(error=TranscriptionFailed("no server"), reachable=True),
             lock=lock,
@@ -126,7 +126,7 @@ async def test_the_microphone_is_cued_open_and_cued_shut():
     player = FakePlayer(calls)
 
     await capture(
-        Settings(listen=True),
+        Settings(),
         recorder=FakeRecorder(SPOKEN, calls=calls),
         transcriber=FakeTranscriber(text="run the tests", reachable=True),
         lock=FakeMicLock(),
@@ -142,7 +142,7 @@ async def test_the_cue_waits_for_the_microphone_lock():
 
     with pytest.raises(MicrophoneBusy):
         await capture(
-            Settings(listen=True),
+            Settings(),
             recorder=FakeRecorder(SPOKEN),
             transcriber=FakeTranscriber(reachable=True),
             lock=FakeMicLock(busy_with=99),
@@ -156,7 +156,7 @@ async def test_a_cue_that_will_not_play_does_not_cost_the_recording():
     player = FakePlayer(error=FileNotFoundError(2, "No such file", "/usr/bin/afplay"))
 
     text = await capture(
-        Settings(listen=True),
+        Settings(),
         recorder=FakeRecorder(SPOKEN),
         transcriber=FakeTranscriber(text="run the tests", reachable=True),
         lock=FakeMicLock(),
@@ -195,7 +195,7 @@ def _quiet_logging(monkeypatch) -> None:
 
 async def _dictate(supervisor, transcriber, lock=None, settings=None) -> str:
     return await dictate(
-        settings if settings is not None else Settings(listen=True),
+        settings if settings is not None else Settings(),
         supervisor=supervisor,
         recorder=FakeRecorder(SPOKEN),
         transcriber=transcriber,
@@ -256,7 +256,7 @@ async def test_autostart_off_leaves_the_speech_server_to_the_user():
         await _dictate(
             supervisor,
             FakeTranscriber(reachable=False),
-            settings=Settings(listen=True, nemo_autostart=False),
+            settings=Settings(nemo_autostart=False),
         )
 
     assert supervisor.starts == 0
@@ -273,21 +273,8 @@ async def test_a_speech_server_that_will_not_start_names_the_fix():
     assert supervisor.releases == 1
 
 
-def test_voice_input_off_is_refused_before_anything_is_recorded(monkeypatch, capsys):
-    monkeypatch.delenv("SPEAK_LISTEN", raising=False)
-
-    with pytest.raises(SystemExit) as exit_info:
-        main()
-
-    assert exit_info.value.code == 1
-    printed = capsys.readouterr()
-    assert printed.out == f"speak: {LISTEN_OFF}\n"
-    assert printed.err == f"speak: {LISTEN_OFF}\n"
-
-
 def _speaking(monkeypatch, text: str = "", error: Exception | None = None) -> None:
     """Stand in for one recording, so `main` can be driven with no microphone."""
-    monkeypatch.setenv("SPEAK_LISTEN", "1")
 
     async def run(settings) -> str:
         if error is not None:

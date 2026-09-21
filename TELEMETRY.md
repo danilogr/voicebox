@@ -48,7 +48,7 @@ schema the server will accept.
 | Field | Why |
 |---|---|
 | `session_id`, `started_at`, `ended_at` | how long sessions run |
-| `tts_engine`, `asr_engine`, `listen_enabled` | which engines are actually used |
+| `tts_engine`, `asr_engine` | which engines are actually used (`listen_enabled` is retained but always true) |
 | `harness`, `harness_version` | which host is driving the plugin |
 
 **Once per sentence spoken or heard**
