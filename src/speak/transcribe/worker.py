@@ -8,7 +8,9 @@ ends the session that asked for it may be gone.
 """
 
 import asyncio
+import logging
 import os
+import sqlite3
 import sys
 import time
 from collections.abc import Awaitable, Callable, Sequence
@@ -23,6 +25,8 @@ from speak.transcribe.jobs import DONE, EMPTY, FAILED, Job, JobStore
 from speak.transcribe.lock import transcription_lock
 from speak.transcribe.output import transcript_text
 from speak.transcribe.prepare import ConversionFailed, convert
+
+logger = logging.getLogger(__name__)
 
 CliRunner = Callable[[Sequence[str], Path], Awaitable[int]]
 
@@ -83,7 +87,11 @@ def write_telemetry(job: Job) -> None:
     """Record the job for the session that asked, if that session records at all."""
     if job.telemetry is None:
         return
-    conn = telemetry_store.connect(Path(job.telemetry["db_path"]))
+    try:
+        conn = telemetry_store.connect(Path(job.telemetry["db_path"]))
+    except (OSError, sqlite3.Error) as error:
+        logger.debug("telemetry: could not open the local store: %s", error)
+        return
     try:
         record_transcription(
             conn,
@@ -124,11 +132,12 @@ async def run_job(
         jobs.write(finished)
         record(finished)
         raise
+    else:
+        jobs.write(finished)
+        record(finished)
     finally:
         jobs.wav_path(job_id).unlink(missing_ok=True)
         lock.release()
-    jobs.write(finished)
-    record(finished)
     return finished
 
 

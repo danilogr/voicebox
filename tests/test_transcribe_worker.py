@@ -3,7 +3,7 @@ from pathlib import Path
 from speak.transcribe.commands import CommandResult
 from speak.transcribe.jobs import DONE, EMPTY, FAILED, RUNNING, Job, JobStore
 from speak.transcribe.lock import transcription_lock
-from speak.transcribe.worker import cli_argv, outcome_for, run_job
+from speak.transcribe.worker import cli_argv, outcome_for, run_job, write_telemetry
 
 CLAIMER, WORKER = 100, 200
 
@@ -136,6 +136,58 @@ async def test_a_failed_conversion_fails_the_job_without_running_the_model(tmp_p
 
 async def test_a_missing_record_is_nothing_to_do(tmp_path):
     assert await run_job(tmp_path, "nope", pid=WORKER, record=lambda job: None) is None
+
+
+async def test_the_outcome_is_recorded_before_the_lock_is_freed(tmp_path):
+    store, _ = start(tmp_path)
+    run_cli, _ = cli_writing("words")
+    seen = []
+
+    def record(job) -> None:
+        seen.append(
+            (
+                transcription_lock(tmp_path, is_alive=alive).owner(),
+                store.read("j1").state,
+            )
+        )
+
+    ticks = iter(range(1000, 2000, 5))
+    await run_job(
+        tmp_path,
+        "j1",
+        run_cli=run_cli,
+        is_alive=alive,
+        clock=lambda: float(next(ticks)),
+        pid=WORKER,
+        record=record,
+    )
+    assert seen == [(WORKER, DONE)]
+    assert transcription_lock(tmp_path, is_alive=alive).owner() is None
+
+
+def test_an_unopenable_telemetry_store_does_not_raise(tmp_path):
+    blocker = tmp_path / "file"
+    blocker.write_text("not a directory")
+    job = Job(
+        job_id="j1",
+        state=DONE,
+        source=str(tmp_path / "meeting.wav"),
+        output=str(tmp_path / "meeting.txt"),
+        format="text",
+        diarize=True,
+        language=None,
+        translate_to=None,
+        duration_s=63.0,
+        size_bytes=4,
+        codec="pcm_s16le",
+        convert=False,
+        asr_model="nemotron-3.5",
+        nemo_binary="nemo-speech",
+        claimed_by=CLAIMER,
+        created_at=1000.0,
+        telemetry={"db_path": str(blocker / "t.db"), "session_id": "s", "install_id": "i"},
+    )
+    write_telemetry(job)  # must not raise
 
 
 def test_the_cli_is_asked_for_everything_the_caller_chose(tmp_path):
