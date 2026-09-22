@@ -127,7 +127,11 @@ async def start(
     )
     # Written once, before the worker exists. The worker writes every later
     # version, so this process never overwrites a state the worker has reached.
-    scribe.jobs.write(job)
+    try:
+        scribe.jobs.write(job)
+    except OSError as error:
+        lock.release()
+        return f"could not start transcription: {error}"
     argv = [sys.executable, "-m", "speak.transcribe.worker", str(settings.state_dir), job_id]
     try:
         await scribe.spawn(argv)
@@ -152,7 +156,7 @@ def status(scribe: Scribe, settings: Settings, job_id: str | None) -> str:
         jobs = [_reconcile(scribe, job) for job in scribe.jobs.recent()]
         if not jobs:
             return "no transcriptions yet"
-        return "\n".join(_summary(scribe, job) for job in jobs)
+        return "\n".join(_summary(job) for job in jobs)
     job = scribe.jobs.read(job_id)
     if job is None:
         return f"no transcription job {job_id}"
@@ -203,7 +207,7 @@ def _describe(scribe: Scribe, settings: Settings, job: Job) -> str:
     return f"running: {name}, {_duration(elapsed)} elapsed, about {_duration(remaining)} left"
 
 
-def _summary(scribe: Scribe, job: Job) -> str:
+def _summary(job: Job) -> str:
     return f"{job.job_id}  {job.state:8}  {Path(job.source).name}"
 
 

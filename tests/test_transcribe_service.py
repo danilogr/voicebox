@@ -146,6 +146,19 @@ async def test_a_spawn_failure_releases_the_lock_and_fails_the_job(tmp_path):
     assert s.lock().owner() is None
 
 
+async def test_a_record_that_cannot_be_written_frees_the_lock(tmp_path):
+    s = scribe(tmp_path)
+
+    class BrokenJobStore(JobStore):
+        def write(self, job) -> None:
+            raise OSError("disk full")
+
+    s = replace(s, jobs=BrokenJobStore(tmp_path / "state"))
+    reply = await start(s, settings(tmp_path), request(media(tmp_path)), None)
+    assert "could not start" in reply
+    assert s.lock().owner() is None
+
+
 async def test_status_reports_a_running_job_with_time_left(tmp_path):
     s = scribe(tmp_path, now=1000.0)
     await start(s, settings(tmp_path), request(media(tmp_path)), None)
