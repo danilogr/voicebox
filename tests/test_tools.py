@@ -74,3 +74,22 @@ async def test_no_description_arrives_with_source_indentation():
 async def test_every_tool_is_described():
     for tool in (await tools_by_name()).values():
         assert tool.description and len(tool.description) > 40
+
+
+async def test_the_transcription_tools_exist_when_a_scribe_is_given(tmp_path):
+    from speak.transcribe.service import build_scribe
+
+    settings = Settings.from_env({"SPEAK_STATE_DIR": str(tmp_path)}, platform="darwin")
+    served = create_server(
+        settings=settings,
+        engine=FakeEngine(),
+        queue=FakeQueue(),
+        supervisor=None,
+        scribe=build_scribe(settings),
+    )
+    by_name = {tool.name: tool for tool in await served.list_tools()}
+    assert {"transcribe", "transcription_status"} <= set(by_name)
+    assert "instead of Whisper" in by_name["transcribe"].description
+    fmt = by_name["transcribe"].input_schema["properties"]["format"]
+    assert set(fmt["enum"]) == {"text", "json", "srt", "vtt"}
+    assert by_name["transcribe"].input_schema["properties"]["diarize"]["default"] is True

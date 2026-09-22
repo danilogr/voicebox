@@ -27,6 +27,7 @@ from speak.queue import describe as describe_queue
 from speak.telemetry.session import TelemetrySession
 from speak.telemetry.wiring import normalize_harness
 from speak.text import normalize
+from speak.transcribe import service as transcription
 
 logger = logging.getLogger(__name__)
 
@@ -241,6 +242,7 @@ def create_server(
     rng: random.Random | None = None,
     ears: Ears | None = None,
     telemetry: TelemetrySession | None = None,
+    scribe: "transcription.Scribe | None" = None,
     on_session_start: Callable[[], None] | None = None,
 ) -> MCPServer:
     session = SessionState(
@@ -393,6 +395,43 @@ def create_server(
         if stats.size == 0:
             return f"nothing queued; {stats.finished} spoken so far"
         return f"{describe_queue(stats)}; {stats.finished} spoken so far"
+
+    if scribe is not None:
+
+        @server.tool(name="transcribe", description=tools.TRANSCRIBE)
+        async def transcribe(
+            path: Annotated[str, Field(description=tools.TRANSCRIBE_PATH)],
+            output_dir: Annotated[
+                str | None, Field(description=tools.TRANSCRIBE_OUTPUT_DIR)
+            ] = None,
+            format: Annotated[
+                tools.TranscriptFormat, Field(description=tools.TRANSCRIBE_FORMAT)
+            ] = "text",
+            diarize: Annotated[bool, Field(description=tools.TRANSCRIBE_DIARIZE)] = True,
+            language: Annotated[str | None, Field(description=tools.TRANSCRIBE_LANGUAGE)] = None,
+            translate_to: Annotated[
+                str | None, Field(description=tools.TRANSCRIBE_TRANSLATE)
+            ] = None,
+        ) -> str:
+            return await transcription.start(
+                scribe,
+                settings,
+                transcription.TranscribeRequest(
+                    path=path,
+                    output_dir=output_dir,
+                    format=format,
+                    diarize=diarize,
+                    language=language,
+                    translate_to=translate_to,
+                ),
+                telemetry,
+            )
+
+        @server.tool(name="transcription_status", description=tools.TRANSCRIPTION_STATUS)
+        async def transcription_status(
+            job_id: Annotated[str | None, Field(description=tools.TRANSCRIPTION_JOB_ID)] = None,
+        ) -> str:
+            return transcription.status(scribe, settings, job_id)
 
     if ears is not None:
         # The microphone lock is re-entrant by pid, so it separates sessions but not

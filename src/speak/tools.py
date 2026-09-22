@@ -23,6 +23,8 @@ Intent = Literal[
 ]
 INTENT_VALUES: tuple[str, ...] = get_args(Intent)
 
+TranscriptFormat = Literal["text", "json", "srt", "vtt"]
+
 SPEAK = """Speak one short sentence aloud to the user through the speakers.
 
 Use it at the moments where a voice beats scrollback: when you have finished a task,
@@ -131,3 +133,35 @@ HEARD_NOTHING = "heard nothing"
 # The sentinel /talk prints when the recording held no speech. `commands/talk.md`
 # branches on this exact line, so it lives here rather than as a literal in both.
 TALK_HEARD_NOTHING = f"({HEARD_NOTHING})"
+
+TRANSCRIBE = """Transcribe an audio or video file to text on this machine, with the local
+NeMo speech model. Use this whenever the user asks to transcribe a recording,
+meeting, interview, voice memo or video - instead of Whisper, a cloud speech API,
+or writing a script to do it. Nothing leaves the machine.
+
+It starts a background job and returns at once with a job id, the path the
+transcript will be written to, and an estimate: roughly a minute of work for every
+seven minutes of audio. Check on it with transcription_status. Speakers are
+labelled by default; turn diarize off for a single speaker to save about a third
+of the time. Only one transcription runs at a time.
+
+The transcript is written to a file, not returned. Read the file only when you
+need more than the preview transcription_status gives."""
+
+TRANSCRIPTION_STATUS = """Report on transcription jobs started with transcribe. With a job id,
+that job: still running and how long it has left, finished with its output path
+and a short preview, or failed with the reason. Without one, the recent jobs.
+
+The preview is the first few hundred characters; read the output file for the
+rest."""
+
+TRANSCRIBE_PATH = "The audio or video file to transcribe."
+TRANSCRIBE_OUTPUT_DIR = (
+    "Directory for the transcript. Defaults to SPEAK_TRANSCRIBE_DIR if set, "
+    "otherwise the input file's own directory."
+)
+TRANSCRIBE_FORMAT = "text, json (word timings and speakers), srt, or vtt."
+TRANSCRIBE_DIARIZE = "Label who is speaking. On by default; about 38% slower."
+TRANSCRIBE_LANGUAGE = "Language code of the speech, e.g. en or pt. Detected when omitted."
+TRANSCRIBE_TRANSLATE = "Translate the transcript into this language code."
+TRANSCRIPTION_JOB_ID = "A job id from transcribe. Omit it to list recent jobs."
