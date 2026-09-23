@@ -243,6 +243,16 @@ are not, until staging has been verified end to end.
   Conversion also happens in the worker, so the tool returns in milliseconds
   whatever the file.
 
+  That claim is refused for any live holder, this process included: a session's own
+  pid in the lock means a transcription is starting, not that this call already
+  holds it, and one turn can carry three `transcribe` calls. The tool holds an
+  `asyncio.Lock` as well, the way `listen` does, because the claim and the takeover
+  are not one step. The pid the spawn returned is written onto the record, so a
+  worker that died before its own first write is a crash at once rather than after a
+  grace window, and `transcription_status` gives the lock back whenever this session
+  holds it and nothing of its own is still running — which is what a worker that
+  never took it over leaves behind, whichever session reconciles the job first.
+
   Telemetry reuses `utterances` with `source: "transcribe"` and five
   transcription-only columns, on contract v1 changed in place: there is one
   client, it waived compatibility with data already collected, and the change is
