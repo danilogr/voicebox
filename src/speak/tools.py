@@ -142,8 +142,8 @@ or writing a script to do it. Nothing leaves the machine.
 It starts a background job and returns at once with a job id, the path the
 transcript will be written to, and an estimate: roughly a minute of work for every
 seven minutes of audio. Check on it with transcription_status. Speakers are
-labelled by default; turn diarize off for a single speaker to save about a third
-of the time. Only one transcription runs at a time.
+labelled by default; turn diarize off for a single speaker to save about a
+quarter of the time. Only one transcription runs at a time.
 
 The transcript is written to a file, not returned. Read the file only when you
 need more than the preview transcription_status gives."""
@@ -155,7 +155,11 @@ and a short preview, or failed with the reason. Without one, the recent jobs.
 The preview is the first few hundred characters; read the output file for the
 rest."""
 
-TRANSCRIBE_PATH = "The audio or video file to transcribe."
+TRANSCRIBE_PATH = (
+    "The absolute path to the audio or video file to transcribe. The MCP server's "
+    "working directory is the plugin's own root, not the user's project, so a "
+    "relative path resolves somewhere unexpected."
+)
 TRANSCRIBE_OUTPUT_DIR = (
     "Directory for the transcript. Defaults to SPEAK_TRANSCRIBE_DIR if set, "
     "otherwise the input file's own directory."
