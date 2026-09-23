@@ -46,8 +46,8 @@ answer with `listen`, then do what they chose. Under that, just begin.
 **Read it in rounds.** One round is:
 
 1. At most ten `speak` calls, sent together in one message. They queue and play in order
-   without overlapping. Pass `intent="unspecified"` — narration is not a recap or an
-   answer.
+   without overlapping. Pass `intent="narration"` — it is neither a recap nor an
+   answer, and it keeps a read-aloud out of the conversation statistics.
 2. Then one `speech_status` call, in the next message. Nothing else goes in it.
 3. When that reports two or fewer utterances still waiting, start the next round.
 

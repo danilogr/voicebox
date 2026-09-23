@@ -216,6 +216,20 @@ answer without the process that started it still being around. Local only,
 never shipped as telemetry, and pruned automatically two weeks after the job
 finishes.
 
+## Reading a text aloud
+
+`/speak:narrate` is the other direction: it reads a long text out loud instead of
+turning speech into one. Give it a file path or a URL, or nothing at all and it
+takes the text from the conversation - something you pasted, or the last thing
+Claude wrote.
+
+It reads rather than summarizes, keeping the author's sentences and skipping what
+cannot be heard: code blocks, tables, reference lists. Headings become spoken
+transitions. Anything over about ten minutes of listening asks first whether you
+want the whole thing or one section. The text is queued ten sentences at a time
+rather than all at once, so stopping it costs you seconds of speech, not the rest
+of the article.
+
 ## Configuration
 
 All optional, set in your shell or in the plugin's `.mcp.json`:

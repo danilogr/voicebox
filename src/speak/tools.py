@@ -19,6 +19,7 @@ Intent = Literal[
     "progress",
     "takeaway",
     "conversation",
+    "narration",
     "unspecified",
 ]
 INTENT_VALUES: tuple[str, ...] = get_args(Intent)
@@ -39,9 +40,9 @@ lookup, a one-line answer, or a question already on screen.
 
 Set intent to the reason above that applies: task_done, blocked, question, recap, or
 progress for the one case this tool asks you not to use. takeaway names an important
-finding said out loud, conversation is /speak:converse, and unspecified - the
-default - is for anything else. This is for measurement only and never changes what
-is said.
+finding said out loud, conversation is /speak:converse, narration is /speak:narrate
+reading a text aloud, and unspecified - the default - is for anything else. This is
+for measurement only and never changes what is said.
 
 Write one short sentence of plain spoken English - it is heard, not read.
 Returns immediately; utterances queue and play in order without overlapping."""
@@ -70,8 +71,8 @@ RATE = "Words per minute. The macOS default is about 175."
 VOICE_NAME = 'A name from list_voices, e.g. "Sofia".'
 INTENT = (
     "Why this sentence is being spoken; for measurement only, never changes what is "
-    "said. task_done, blocked, question, recap, progress, takeaway, conversation, or "
-    "unspecified (the default when omitted)."
+    "said. task_done, blocked, question, recap, progress, takeaway, conversation, "
+    "narration, or unspecified (the default when omitted)."
 )
 
 LISTEN = """Listen to the user through the microphone and return what they said.
