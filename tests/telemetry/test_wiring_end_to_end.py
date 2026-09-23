@@ -108,6 +108,54 @@ async def test_the_clients_own_client_info_overrides_the_environment_fallback(tm
         conn.close()
 
 
+async def test_transcribe_also_corrects_the_harness_from_client_info(tmp_path):
+    """`speak` proves the wiring above; `transcribe` calls `note_harness` too, and
+    nothing else covered it - a session whose only tool use was transcription must
+    not be left with the environment's guessed harness. A missing file is enough:
+    `note_harness` runs before `transcribe` even looks at the path."""
+    home = tmp_path / "home"
+    home.mkdir()
+
+    with tempfile.TemporaryDirectory() as state_dir:
+        async with connected(
+            state_dir,
+            str(home),
+            client_info=mcp_types.Implementation(name="Gemini CLI", version="1.2.3"),
+        ) as session:
+            await session.call_tool("transcribe", {"path": str(tmp_path / "missing.wav")})
+
+    conn = store.connect(_telemetry_db(home))
+    try:
+        row = conn.execute("SELECT harness, harness_version FROM sessions").fetchone()
+        assert row["harness"] == "gemini-cli"
+        assert row["harness_version"] == "1.2.3"
+    finally:
+        conn.close()
+
+
+async def test_transcription_status_also_corrects_the_harness_from_client_info(tmp_path):
+    """Same proof for the other transcription tool, exercised on its own so neither
+    depends on the other having run first."""
+    home = tmp_path / "home"
+    home.mkdir()
+
+    with tempfile.TemporaryDirectory() as state_dir:
+        async with connected(
+            state_dir,
+            str(home),
+            client_info=mcp_types.Implementation(name="Gemini CLI", version="1.2.3"),
+        ) as session:
+            await session.call_tool("transcription_status", {})
+
+    conn = store.connect(_telemetry_db(home))
+    try:
+        row = conn.execute("SELECT harness, harness_version FROM sessions").fetchone()
+        assert row["harness"] == "gemini-cli"
+        assert row["harness_version"] == "1.2.3"
+    finally:
+        conn.close()
+
+
 async def _wait_for_a_row(home: Path, timeout: float = 10.0) -> None:
     db_path = _telemetry_db(home)
     deadline = asyncio.get_running_loop().time() + timeout
