@@ -86,12 +86,34 @@ class JobStore:
     def wav_path(self, job_id: str) -> Path:
         return self._dir / f"{job_id}.wav"
 
+    def pid_path(self, job_id: str) -> Path:
+        return self._dir / f"{job_id}.pid"
+
     def write(self, job: Job) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
         path = self.record_path(job.job_id)
         partial = path.with_name(f"{job.job_id}.json.partial")
         partial.write_text(json.dumps(asdict(job), indent=1))
         partial.replace(path)  # a reader never sees half a record
+
+    def write_pid(self, job_id: str, pid: int) -> None:
+        """The pid the tool's own spawn returned, in a file only the tool ever writes.
+
+        Kept apart from the job record so recording it is never a read-modify-write
+        against a worker writing that same record: whatever this file holds, the
+        record's own history - up to and including a terminal state the worker has
+        already written - is never touched by it.
+        """
+        self._dir.mkdir(parents=True, exist_ok=True)
+        self.pid_path(job_id).write_text(str(pid))
+
+    def read_pid(self, job_id: str) -> int | None:
+        """The pid `write_pid` wrote, or `None` for anything short of a clean int -
+        no file yet, an empty one, or content that got corrupted. Never raises."""
+        try:
+            return int(self.pid_path(job_id).read_text().strip())
+        except (OSError, ValueError):
+            return None
 
     def read(self, job_id: str) -> Job | None:
         try:
@@ -135,9 +157,11 @@ class JobStore:
         reclaims one left behind by a worker that never reached its own `finally`
         (a `SIGKILL`, an OOM kill). A job's record and log outlive it for
         `RETENTION_S` before those go too, so a status check still answers "what
-        did I transcribe last week". Never touches a running job, and never raises:
-        a `transcription_status` call failing because housekeeping hit a locked or
-        missing file would be worse than the clutter it is trying to prevent.
+        did I transcribe last week". The pid sidecar goes with them. Never touches a
+        running job, and never raises: a `transcription_status` call failing because
+        housekeeping hit a locked or missing file, or a hand-edited record whose
+        `finished_at` is not a number, would be worse than the clutter it is trying
+        to prevent.
         """
         now = self._clock()
         try:
@@ -149,7 +173,8 @@ class JobStore:
                 if job.finished_at is not None and now - job.finished_at >= RETENTION_S:
                     self.record_path(job.job_id).unlink(missing_ok=True)
                     self.log_path(job.job_id).unlink(missing_ok=True)
-        except OSError as error:
+                    self.pid_path(job.job_id).unlink(missing_ok=True)
+        except (OSError, TypeError) as error:
             logger.debug("could not prune old transcription jobs: %s", error)
 
     def log_tail(self, job_id: str, lines: int = 8) -> str:

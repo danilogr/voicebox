@@ -207,22 +207,87 @@ async def test_a_worker_that_never_started_frees_the_lock(tmp_path):
     s = scribe(tmp_path, now=1000.0)
     await start(s, settings(tmp_path), request(media(tmp_path)), None)
     job = s.jobs.recent()[0]
-    # No pid was ever recorded: the spawn never got back to `start`, so only the
-    # grace window can tell this job from one whose worker is still starting.
-    s.jobs.write(replace(job, worker_pid=None))
+    # Neither the record nor the sidecar names a pid: only the grace window can tell
+    # this job from one whose worker is still starting.
+    assert job.worker_pid is None
+    s.jobs.pid_path(job.job_id).unlink(missing_ok=True)
     much_later = replace(s, clock=lambda: 1000.0 + 120)
     assert "crashed" in status(much_later, settings(tmp_path), job.job_id)
     assert s.lock().owner() is None
 
 
-async def test_a_dead_worker_is_crashed_without_waiting_out_the_grace_window(tmp_path):
-    """The pid the spawn returned is on the record, so a worker that died is a crash
-    now rather than a job that looks healthy for another minute."""
+async def test_a_dead_workers_sidecar_pid_is_crashed_without_waiting_out_the_grace_window(
+    tmp_path,
+):
+    """The pid the spawn returned lives in a sidecar the tool alone writes - never on
+    the job record, which stays `worker_pid=None` until the worker itself takes over -
+    so a worker that died is a crash now rather than a job that looks healthy for
+    another minute."""
     s = scribe(tmp_path, now=1000.0)
     await start(s, settings(tmp_path), request(media(tmp_path)), None)
     job = s.jobs.recent()[0]
-    assert job.worker_pid == WORKER
+    assert job.worker_pid is None
+    assert s.jobs.read_pid(job.job_id) == WORKER
     assert "crashed" in status(s, settings(tmp_path), job.job_id)
+
+
+async def test_a_live_workers_sidecar_pid_is_not_crashed(tmp_path):
+    """The same sidecar, but naming a pid that is still alive: the job is left
+    running rather than judged by a grace window it does not need."""
+    s = scribe(tmp_path, now=1000.0, alive=(ME, WORKER))
+    await start(s, settings(tmp_path), request(media(tmp_path)), None)
+    job = s.jobs.recent()[0]
+    reply = status(s, settings(tmp_path), job.job_id)
+    assert "running" in reply
+    assert s.jobs.read(job.job_id).state == RUNNING
+
+
+async def test_a_malformed_sidecar_does_not_raise(tmp_path):
+    """Whatever corrupted it - a partial write, a hand edit - reading the sidecar
+    must never raise out of a status call; it falls back to the grace window like a
+    job with no pid recorded anywhere."""
+    s = scribe(tmp_path, now=1000.0)
+    await start(s, settings(tmp_path), request(media(tmp_path)), None)
+    job = s.jobs.recent()[0]
+    s.jobs.pid_path(job.job_id).write_text("not-a-pid")
+    reply = status(s, settings(tmp_path), job.job_id)  # must not raise
+    assert "running" in reply
+
+
+async def test_a_terminal_record_the_worker_wrote_is_never_reverted_by_the_tool(tmp_path):
+    """The old code re-read the record after spawning and wrote the pid back onto
+    whatever it saw; if the worker had already finished in that window, that write
+    clobbered its outcome with a stale, running copy. The sidecar removes the write
+    to the record entirely, so this can no longer happen."""
+    jobs = JobStore(tmp_path / "state", clock=lambda: 1000.0)
+
+    async def probe(path) -> Probe:
+        return AUDIO
+
+    async def spawn(argv, log) -> int:
+        # The worker "wins the race": by the time `start()` gets back to recording
+        # anything more about this job, the worker has already finished it.
+        (running,) = jobs.recent()
+        jobs.write(replace(running, state=DONE, worker_pid=WORKER, words=3, finished_at=1000.0))
+        return WORKER
+
+    s = Scribe(
+        jobs=jobs,
+        lock=lambda: transcription_lock(
+            tmp_path / "state", is_alive=lambda p: p in (ME, WORKER), pid=ME
+        ),
+        is_alive=lambda p: p in (ME, WORKER),
+        spawn=spawn,
+        probe=probe,
+        clock=lambda: 1000.0,
+        pid=ME,
+    )
+
+    await start(s, settings(tmp_path), request(media(tmp_path)), None)
+
+    job = jobs.recent()[0]
+    assert (job.state, job.words) == (DONE, 3)
+    assert jobs.read_pid(job.job_id) == WORKER
 
 
 async def test_three_calls_in_one_session_start_exactly_one_transcription(tmp_path):

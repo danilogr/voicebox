@@ -1,3 +1,4 @@
+import json
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -100,6 +101,53 @@ def test_a_prune_failure_does_not_break_recent(tmp_path, monkeypatch):
 
     monkeypatch.setattr(Path, "unlink", boom)
     assert [j.job_id for j in store.recent()] == ["abc123"]
+
+
+def test_a_non_numeric_finished_at_does_not_break_recent(tmp_path):
+    """A hand-edited or corrupted record can hold anything under `finished_at`; the
+    subtraction that ages it against `RETENTION_S` must not raise a `TypeError` out
+    of a `transcription_status` call."""
+    store = JobStore(tmp_path)
+    store.write(job(state=DONE, finished_at=time.time()))
+    path = store.record_path("abc123")
+    data = json.loads(path.read_text())
+    data["finished_at"] = "not-a-number"
+    path.write_text(json.dumps(data))
+    assert [j.job_id for j in store.recent()] == ["abc123"]
+
+
+def test_the_pid_sidecar_round_trips(tmp_path):
+    store = JobStore(tmp_path)
+    store.write_pid("abc123", 4242)
+    assert store.read_pid("abc123") == 4242
+
+
+def test_a_missing_pid_sidecar_reads_as_none(tmp_path):
+    store = JobStore(tmp_path)
+    assert store.read_pid("nope") is None
+
+
+def test_a_malformed_pid_sidecar_reads_as_none(tmp_path):
+    store = JobStore(tmp_path)
+    store.pid_path("abc123").parent.mkdir(parents=True, exist_ok=True)
+    store.pid_path("abc123").write_text("not-a-pid")
+    assert store.read_pid("abc123") is None
+
+
+def test_the_pid_sidecar_is_pruned_with_the_record_and_log(tmp_path):
+    store = JobStore(tmp_path)
+    store.write(job(state=DONE, finished_at=time.time() - RETENTION_S - 3600))
+    store.write_pid("abc123", 4242)
+    assert store.recent() == []
+    assert not store.pid_path("abc123").exists()
+
+
+def test_the_pid_sidecar_survives_within_the_retention_window(tmp_path):
+    store = JobStore(tmp_path)
+    store.write(job(state=DONE, finished_at=time.time()))
+    store.write_pid("abc123", 4242)
+    store.recent()
+    assert store.read_pid("abc123") == 4242
 
 
 def test_the_log_tail_is_the_last_lines(tmp_path):

@@ -247,11 +247,16 @@ are not, until staging has been verified end to end.
   pid in the lock means a transcription is starting, not that this call already
   holds it, and one turn can carry three `transcribe` calls. The tool holds an
   `asyncio.Lock` as well, the way `listen` does, because the claim and the takeover
-  are not one step. The pid the spawn returned is written onto the record, so a
-  worker that died before its own first write is a crash at once rather than after a
-  grace window, and `transcription_status` gives the lock back whenever this session
-  holds it and nothing of its own is still running — which is what a worker that
-  never took it over leaves behind, whichever session reconciles the job first.
+  are not one step, and checks it before waiting on it so a second call is refused
+  at once rather than queued behind the first. The pid the spawn returned is written
+  to a sidecar file the tool alone owns, never onto the job record itself - a
+  read-modify-write there would race the worker writing that same record, which is
+  exactly how a finished job's outcome once got reverted back to running. A worker
+  that died before its own first write is therefore a crash at once rather than
+  after a grace window, and both `start()` and `transcription_status` give the lock
+  back whenever this session holds it and no job anywhere - not only ones this
+  session started - is still running: what a worker that never took the lock over
+  leaves behind, whichever session reconciles the job first.
 
   Telemetry reuses `utterances` with `source: "transcribe"` and five
   transcription-only columns, on contract v1 changed in place: there is one
