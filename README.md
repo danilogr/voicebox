@@ -210,6 +210,12 @@ transcript is never overwritten.
 
 It needs `ffmpeg` (`brew install ffmpeg`) as well as the `/speak:setup` models.
 
+Each job also writes a small record under `SPEAK_STATE_DIR` - the path of the
+file transcribed, timings, and how it finished - so `transcription_status` can
+answer without the process that started it still being around. Local only,
+never shipped as telemetry, and pruned automatically two weeks after the job
+finishes.
+
 ## Configuration
 
 All optional, set in your shell or in the plugin's `.mcp.json`:
