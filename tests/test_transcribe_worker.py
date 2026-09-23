@@ -1,7 +1,15 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from speak.telemetry.session import (
+    MAX_ASR_MS,
+    MAX_AUDIO_MS,
+    MAX_CHARS,
+    MAX_SOURCE_BYTES,
+    MAX_WORDS,
+)
 from speak.transcribe.commands import CommandResult
 from speak.transcribe.jobs import DONE, EMPTY, FAILED, RUNNING, Job, JobStore
 from speak.transcribe.lock import TranscriptionBusy, transcription_lock
@@ -208,6 +216,25 @@ def test_an_unopenable_telemetry_store_does_not_raise(tmp_path):
         telemetry={"db_path": str(blocker / "t.db"), "session_id": "s", "install_id": "i"},
     )
     write_telemetry(job)  # must not raise
+
+
+def test_a_file_past_the_contracts_ceilings_is_recorded_at_them(tmp_path):
+    """Nothing upstream bounds a file, and a row above a ceiling comes back 400 - which
+    the shipper does not retry, so that chunk and every one after it stop shipping."""
+    _, job = start(
+        tmp_path,
+        size_bytes=20 * 1024**3,  # a 20 GiB video, over the 10 GiB ceiling
+        duration_s=200_000.0,  # 55 hours, over the 24 the contract allows
+        asr_ms=90_000_000,
+        words=600_000,
+        chars=6_000_000,
+    )
+    outcome = outcome_for(replace(job, state=DONE))
+    assert outcome.source_bytes == MAX_SOURCE_BYTES
+    assert outcome.audio_ms == MAX_AUDIO_MS
+    assert outcome.asr_ms == MAX_ASR_MS
+    assert outcome.words == MAX_WORDS
+    assert outcome.chars == MAX_CHARS
 
 
 def test_the_cli_is_asked_for_everything_the_caller_chose(tmp_path):

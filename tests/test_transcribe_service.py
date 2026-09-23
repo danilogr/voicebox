@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Never
 
 from speak.config import Settings
+from speak.telemetry.session import MAX_AUDIO_MS, MAX_SOURCE_BYTES
 from speak.transcribe.jobs import CRASHED, DONE, EMPTY, FAILED, RUNNING, JobStore
 from speak.transcribe.lock import transcription_lock
 from speak.transcribe.probe import Probe
@@ -48,6 +49,15 @@ def scribe(tmp_path, found=AUDIO, alive=(ME,), spawned=None, now=1000.0, pid=ME)
         clock=lambda: now,
         pid=pid,
     )
+
+
+class FakeTelemetry:
+    """Only what a refusal reads off a session: a store handle and the two ids."""
+
+    conn = None
+    session_id = "s"
+    install_id = "i"
+    db_path = None
 
 
 def request(path, **overrides: object):
@@ -287,3 +297,22 @@ async def test_the_spawned_worker_writes_its_stderr_to_the_job_log(tmp_path):
             break
         await asyncio.sleep(0.02)
     assert "ModuleNotFoundError" in log.read_text()
+
+
+async def test_a_refused_file_past_the_ceilings_is_recorded_at_them(tmp_path, monkeypatch):
+    """The refusal is where the largest files land - a file too big to ship a row
+    about is exactly the one another session is most likely to be busy with."""
+    seen = []
+    monkeypatch.setattr(
+        "speak.transcribe.service.record_transcription",
+        lambda conn, **fields: seen.append(fields["outcome"]),
+    )
+    huge = replace(AUDIO, size_bytes=20 * 1024**3, duration_s=200_000.0)
+    s = scribe(tmp_path, found=huge, alive=(ME, OTHER))
+    transcription_lock(tmp_path / "state", is_alive=lambda p: True, pid=OTHER).acquire()
+
+    reply = await start(s, settings(tmp_path), request(media(tmp_path)), FakeTelemetry())
+
+    assert "already running" in reply
+    (outcome,) = seen
+    assert (outcome.source_bytes, outcome.audio_ms) == (MAX_SOURCE_BYTES, MAX_AUDIO_MS)

@@ -16,7 +16,12 @@ from pathlib import Path
 from speak.config import Settings
 from speak.exclusive import ExclusiveLock
 from speak.supervisor import process_is_alive
-from speak.telemetry.session import TelemetrySession, TranscriptionOutcome, record_transcription
+from speak.telemetry.session import (
+    TelemetrySession,
+    TranscriptionOutcome,
+    clamped,
+    record_transcription,
+)
 from speak.transcribe.commands import ToolMissing
 from speak.transcribe.jobs import (
     CRASHED,
@@ -345,15 +350,19 @@ def _refused(
         install_id=telemetry.install_id,
         engine="nemo",
         model=settings.nemo_asr_model,
-        outcome=TranscriptionOutcome(
-            status="refused",
-            source_bytes=found.size_bytes,
-            audio_codec=found.codec,
-            audio_ms=int(found.duration_s * 1000) if audio else None,
-            asr_ms=None,
-            converted=None,
-            diarize=request.diarize,
-            format=request.format if request.format in FORMATS else "text",
+        # Clamped for the same reason the worker's outcome is: the file that was
+        # refused may be the very one whose size is over the contract's ceiling.
+        outcome=clamped(
+            TranscriptionOutcome(
+                status="refused",
+                source_bytes=found.size_bytes,
+                audio_codec=found.codec,
+                audio_ms=int(found.duration_s * 1000) if audio else None,
+                asr_ms=None,
+                converted=None,
+                diarize=request.diarize,
+                format=request.format if request.format in FORMATS else "text",
+            )
         ),
     )
 

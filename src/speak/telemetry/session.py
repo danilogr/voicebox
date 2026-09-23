@@ -14,7 +14,7 @@ import logging
 import sqlite3
 import uuid
 import wave
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from speak.queue import UtteranceOutcome
@@ -84,6 +84,41 @@ class TranscriptionOutcome:
     format: str
     words: int | None = None
     chars: int | None = None
+
+
+# What an `in`/`transcribe` row may carry, from the vendored contract
+# (`tests/contract/v1/schema/ingest-request.schema.json`). Respecting them is the
+# client's job: the server answers a row above a ceiling with a 400, the shipper
+# does not retry a 400, and so that chunk and every chunk after it stop - one
+# eleven-gigabyte video would end telemetry for that install.
+MAX_SOURCE_BYTES = 10_737_418_240
+MAX_AUDIO_MS = 86_400_000
+MAX_ASR_MS = 86_400_000
+MAX_WORDS = 500_000
+MAX_CHARS = 5_000_000
+
+
+def clamped(outcome: TranscriptionOutcome) -> TranscriptionOutcome:
+    """The same outcome with every measured value inside the contract's range.
+
+    A clamped number is a statement about a ceiling rather than a measurement, which
+    is the right trade: the alternative to one approximate row is no rows at all.
+    """
+    return replace(
+        outcome,
+        source_bytes=_within(outcome.source_bytes, MAX_SOURCE_BYTES),
+        audio_ms=_within(outcome.audio_ms, MAX_AUDIO_MS),
+        asr_ms=_within(outcome.asr_ms, MAX_ASR_MS),
+        words=_within(outcome.words, MAX_WORDS),
+        chars=_within(outcome.chars, MAX_CHARS),
+    )
+
+
+def _within(value: int | None, ceiling: int) -> int | None:
+    """Inside [0, ceiling]: the contract's minimum is as binding as its maximum."""
+    if value is None:
+        return None
+    return min(max(value, 0), ceiling)
 
 
 def record_transcription(

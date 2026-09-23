@@ -19,7 +19,7 @@ from pathlib import Path
 
 from speak.supervisor import process_is_alive
 from speak.telemetry import store as telemetry_store
-from speak.telemetry.session import TranscriptionOutcome, record_transcription
+from speak.telemetry.session import TranscriptionOutcome, clamped, record_transcription
 from speak.transcribe.commands import Runner, ToolMissing, run_command
 from speak.transcribe.jobs import DONE, EMPTY, FAILED, Job, JobStore
 from speak.transcribe.lock import TranscriptionBusy, transcription_lock
@@ -68,18 +68,25 @@ def cli_argv(job: Job, audio: Path) -> list[str]:
 
 
 def outcome_for(job: Job) -> TranscriptionOutcome:
+    """What one job looked like, clamped to what the contract will accept.
+
+    Nothing upstream bounds a file: a three-hour 4K video is a real thing to ask for
+    a transcript of, and the row describing it has to stay shippable.
+    """
     status = {DONE: "ok", EMPTY: "heard_nothing"}.get(job.state, "failed")
-    return TranscriptionOutcome(
-        status=status,
-        source_bytes=job.size_bytes,
-        audio_codec=job.codec,
-        audio_ms=int(job.duration_s * 1000),
-        asr_ms=job.asr_ms,
-        converted=job.convert,
-        diarize=job.diarize,
-        format=job.format,
-        words=job.words,
-        chars=job.chars,
+    return clamped(
+        TranscriptionOutcome(
+            status=status,
+            source_bytes=job.size_bytes,
+            audio_codec=job.codec,
+            audio_ms=int(job.duration_s * 1000),
+            asr_ms=job.asr_ms,
+            converted=job.convert,
+            diarize=job.diarize,
+            format=job.format,
+            words=job.words,
+            chars=job.chars,
+        )
     )
 
 
