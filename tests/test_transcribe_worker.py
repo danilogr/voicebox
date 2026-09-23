@@ -1,15 +1,17 @@
 from pathlib import Path
 
+import pytest
+
 from speak.transcribe.commands import CommandResult
 from speak.transcribe.jobs import DONE, EMPTY, FAILED, RUNNING, Job, JobStore
-from speak.transcribe.lock import transcription_lock
+from speak.transcribe.lock import TranscriptionBusy, transcription_lock
 from speak.transcribe.worker import cli_argv, outcome_for, run_job, write_telemetry
 
-CLAIMER, WORKER = 100, 200
+CLAIMER, WORKER, OTHER = 100, 200, 300
 
 
 def alive(pid: int) -> bool:
-    return pid in (CLAIMER, WORKER)
+    return pid in (CLAIMER, WORKER, OTHER)
 
 
 def start(tmp_path: Path, **overrides: object) -> tuple[JobStore, Job]:
@@ -104,6 +106,24 @@ async def test_the_worker_takes_the_lock_over_and_releases_it(tmp_path):
     run_cli, _ = cli_writing("words")
     await run(tmp_path, run_cli, [])
     assert transcription_lock(tmp_path, is_alive=alive).owner() is None
+
+
+async def test_a_worker_refused_the_lock_records_the_failure_rather_than_dying_quietly(tmp_path):
+    """Its stderr is the job log and nobody waits on its exit code, so a worker that
+    cannot have the lock has to leave the answer on the record itself."""
+    store, _ = start(tmp_path)
+    transcription_lock(tmp_path, is_alive=alive, pid=OTHER).take_over(CLAIMER)
+    run_cli, calls = cli_writing("words")
+    recorded = []
+
+    with pytest.raises(TranscriptionBusy):
+        await run(tmp_path, run_cli, recorded)
+
+    refused = store.read("j1")
+    assert refused.state == FAILED and "only one runs at a time" in refused.error
+    assert [job.state for job in recorded] == [FAILED]
+    assert calls == []
+    assert transcription_lock(tmp_path, is_alive=alive).owner() == OTHER
 
 
 async def test_conversion_runs_first_and_its_wav_is_deleted(tmp_path):

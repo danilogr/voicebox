@@ -22,7 +22,7 @@ from speak.telemetry import store as telemetry_store
 from speak.telemetry.session import TranscriptionOutcome, record_transcription
 from speak.transcribe.commands import Runner, ToolMissing, run_command
 from speak.transcribe.jobs import DONE, EMPTY, FAILED, Job, JobStore
-from speak.transcribe.lock import transcription_lock
+from speak.transcribe.lock import TranscriptionBusy, transcription_lock
 from speak.transcribe.output import transcript_text
 from speak.transcribe.prepare import ConversionFailed, convert
 
@@ -122,7 +122,16 @@ async def run_job(
         return None
     me = pid if pid is not None else os.getpid()
     lock = transcription_lock(state_dir, is_alive=is_alive, pid=me)
-    lock.take_over(job.claimed_by)
+    try:
+        lock.take_over(job.claimed_by)
+    except TranscriptionBusy as error:
+        # Refused the lock, so this job never runs. Saying so is the whole of the
+        # worker's answer here: without a record it would look like a worker that
+        # vanished, and the session would wait out an estimate for work nobody is doing.
+        refused = replace(job, state=FAILED, finished_at=clock(), error=str(error))
+        jobs.write(refused)
+        record(refused)
+        raise
     job = replace(job, worker_pid=me)
     jobs.write(job)
     try:
@@ -178,7 +187,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     if len(args) != 2:
         print("usage: python -m speak.transcribe.worker <state_dir> <job_id>", file=sys.stderr)
         return 2
-    job = asyncio.run(run_job(Path(args[0]), args[1]))
+    # Nobody reads this process's output: it is detached, and its stderr is the job
+    # log. Sending this module's own logging there too, and logging a traceback
+    # before exiting, is what turns a worker that died into something readable -
+    # `transcription_status` prints the tail of that log next to the failure.
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+    try:
+        job = asyncio.run(run_job(Path(args[0]), args[1]))
+    except Exception:
+        logger.exception("the transcription worker did not finish")
+        return 1
     return 0 if job is not None else 1
 
 

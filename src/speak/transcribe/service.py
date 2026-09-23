@@ -4,6 +4,7 @@
 which keeps the transport layer free of transcription logic.
 """
 
+import asyncio
 import logging
 import os
 import sys
@@ -14,7 +15,7 @@ from pathlib import Path
 
 from speak.config import Settings
 from speak.exclusive import ExclusiveLock
-from speak.supervisor import process_is_alive, spawn_server
+from speak.supervisor import process_is_alive
 from speak.telemetry.session import TelemetrySession, TranscriptionOutcome, record_transcription
 from speak.transcribe.commands import ToolMissing
 from speak.transcribe.jobs import (
@@ -46,7 +47,7 @@ class Scribe:
     jobs: JobStore
     lock: Callable[[], ExclusiveLock]
     is_alive: Callable[[int], bool]
-    spawn: Callable[[Sequence[str]], Awaitable[int]]
+    spawn: Callable[[Sequence[str], Path], Awaitable[int]]
     probe: Callable[[Path], Awaitable[Probe]]
     clock: Callable[[], float] = time.time
     pid: int = field(default_factory=os.getpid)
@@ -62,13 +63,33 @@ class TranscribeRequest:
     translate_to: str | None
 
 
+async def spawn_worker(argv: Sequence[str], log: Path) -> int:
+    """Start the worker detached, with its stderr in the job's log.
+
+    Detached, like the speech server: the job must outlive this session. Its stderr
+    goes to the log rather than to `DEVNULL`, because a worker that fails before it
+    can write a record - an import error, an unhandled exception, a takeover it was
+    refused - would otherwise leave a job that merely stops, with nothing anywhere
+    to say why. `transcription_status` already shows the tail of that log.
+    """
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("ab") as sink:
+        process = await asyncio.create_subprocess_exec(
+            *argv,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=sink,
+            start_new_session=True,
+        )
+    return process.pid
+
+
 def build_scribe(settings: Settings) -> Scribe:
     return Scribe(
         jobs=JobStore(settings.state_dir),
         lock=lambda: transcription_lock(settings.state_dir, is_alive=process_is_alive),
         is_alive=process_is_alive,
-        # Detached, like the speech server: the job must outlive this session.
-        spawn=lambda argv: spawn_server(argv[0], argv[1:]),
+        spawn=spawn_worker,
         probe=probe,
     )
 
@@ -141,7 +162,7 @@ async def start(
         return f"could not start transcription: {error}"
     argv = [sys.executable, "-m", "speak.transcribe.worker", str(settings.state_dir), job_id]
     try:
-        worker_pid = await scribe.spawn(argv)
+        worker_pid = await scribe.spawn(argv, scribe.jobs.log_path(job_id))
     except OSError as error:
         lock.release()
         scribe.jobs.write(

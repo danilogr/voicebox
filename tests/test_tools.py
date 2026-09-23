@@ -115,7 +115,7 @@ async def test_two_transcribe_calls_never_run_together(tmp_path):
         await release.wait()
         return Probe(60.0, 1024, "wav", "pcm_s16le", 16000, 1)
 
-    async def spawn(argv) -> int:
+    async def spawn(argv, log) -> int:
         return 4242
 
     settings = Settings.from_env({"SPEAK_STATE_DIR": str(tmp_path / "state")}, platform="darwin")

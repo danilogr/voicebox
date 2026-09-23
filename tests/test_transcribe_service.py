@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import Never
@@ -7,7 +8,7 @@ from speak.config import Settings
 from speak.transcribe.jobs import CRASHED, DONE, EMPTY, FAILED, RUNNING, JobStore
 from speak.transcribe.lock import transcription_lock
 from speak.transcribe.probe import Probe
-from speak.transcribe.service import Scribe, TranscribeRequest, start, status
+from speak.transcribe.service import Scribe, TranscribeRequest, spawn_worker, start, status
 
 ME, OTHER, WORKER = 100, 300, 4242
 AUDIO = Probe(
@@ -34,7 +35,7 @@ def scribe(tmp_path, found=AUDIO, alive=(ME,), spawned=None, now=1000.0, pid=ME)
     async def probe(path) -> Probe:
         return found
 
-    async def spawn(argv) -> int:
+    async def spawn(argv, log) -> int:
         spawned.append(list(argv))
         return WORKER
 
@@ -137,7 +138,7 @@ async def test_a_second_job_is_refused_while_one_runs(tmp_path):
 async def test_a_spawn_failure_releases_the_lock_and_fails_the_job(tmp_path):
     s = scribe(tmp_path)
 
-    async def spawn(argv) -> Never:
+    async def spawn(argv, log) -> Never:
         raise OSError("no python")
 
     s = replace(s, spawn=spawn)
@@ -273,3 +274,16 @@ def test_status_without_jobs(tmp_path):
 
 def test_status_of_an_unknown_job(tmp_path):
     assert "no transcription job" in status(scribe(tmp_path), settings(tmp_path), "zzz")
+
+
+async def test_the_spawned_worker_writes_its_stderr_to_the_job_log(tmp_path):
+    """A worker that fails at the Python level - an import error, an unhandled
+    exception - has nowhere else to say so: it is detached and nobody reads it."""
+    log = tmp_path / "j1.log"
+    argv = [sys.executable, "-c", "import sys; sys.stderr.write('ModuleNotFoundError\\n')"]
+    assert await spawn_worker(argv, log) > 0
+    for _ in range(200):
+        if log.exists() and "ModuleNotFoundError" in log.read_text():
+            break
+        await asyncio.sleep(0.02)
+    assert "ModuleNotFoundError" in log.read_text()
