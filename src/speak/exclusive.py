@@ -60,6 +60,14 @@ class ExclusiveLock:
                 raise self._busy(held_by) from None
             # Two reclaimers racing could both take over a dead owner's lock: the
             # window the supervisor's stale-start-lock takeover already accepts.
+            # There is a second window here too, with no dead owner involved at
+            # all: between another process's `mkdir` and its own `_write_owner()`,
+            # `owner()` reads None because there is no owner file yet, and that
+            # reads the same as no owner ever having claimed the lock - so a
+            # process racing it in that gap reclaims a lock that was just taken.
+            # Inherited from MicLock, where the cost of losing this race was one
+            # garbled recording; for a transcription job it is two jobs running
+            # at once.
             if held_by != self._pid:
                 logger.info("reclaiming the %s lock left by %s", self._dir.name, held_by)
         self._write_owner()
