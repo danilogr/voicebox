@@ -364,7 +364,7 @@ def _refused(
                 asr_ms=None,
                 converted=None,
                 diarize=request.diarize,
-                format=request.format if request.format in FORMATS else "text",
+                format=request.format,
             )
         ),
     )
