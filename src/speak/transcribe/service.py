@@ -4,6 +4,7 @@
 which keeps the transport layer free of transcription logic.
 """
 
+import logging
 import os
 import sys
 import time
@@ -30,6 +31,8 @@ from speak.transcribe.lock import TranscriptionBusy, transcription_lock
 from speak.transcribe.output import FORMATS, output_path, transcript_text
 from speak.transcribe.prepare import needs_conversion
 from speak.transcribe.probe import Probe, ProbeFailed, probe
+
+logger = logging.getLogger(__name__)
 
 # How long a job may sit with no worker pid before it counts as never started.
 WORKER_START_GRACE_S = 60.0
@@ -98,6 +101,10 @@ async def start(
     if not directory.is_dir() or not os.access(directory, os.W_OK):
         return f"cannot write transcripts to {directory}"
 
+    # Before claiming: a worker of ours that died before taking the lock over left
+    # it held by this session, and the lock is not re-entrant, so without this a
+    # session would refuse itself for as long as it lived.
+    _release_if_idle(scribe)
     lock = scribe.lock()
     try:
         lock.acquire()
@@ -134,7 +141,7 @@ async def start(
         return f"could not start transcription: {error}"
     argv = [sys.executable, "-m", "speak.transcribe.worker", str(settings.state_dir), job_id]
     try:
-        await scribe.spawn(argv)
+        worker_pid = await scribe.spawn(argv)
     except OSError as error:
         lock.release()
         scribe.jobs.write(
@@ -143,6 +150,7 @@ async def start(
             )
         )
         return f"could not start transcription: {error}"
+    _record_worker(scribe, job_id, worker_pid)
     return (
         f"Transcribing {source.name} ({_duration(found.duration_s)} of audio"
         f"{', labelling speakers' if request.diarize else ''}) to {job.output}\n"
@@ -151,29 +159,54 @@ async def start(
     )
 
 
+def _record_worker(scribe: Scribe, job_id: str, worker_pid: int) -> None:
+    """Write the pid the spawn returned onto the record, if the worker has not moved on.
+
+    `create_subprocess_exec` starts the worker itself, so this is the same pid the
+    worker writes on the record a moment later, and having it early is what makes a
+    worker that died before that write detectable at once instead of only after
+    `WORKER_START_GRACE_S`. Written only onto a record still running with no pid, so
+    this process never overwrites a state the worker has already reached. The window
+    that remains - between this read and this write - is microseconds wide, and the
+    worst it costs is a finished job briefly re-marked running, which the next
+    reconcile corrects.
+    """
+    current = scribe.jobs.read(job_id)
+    if current is None or current.state != RUNNING or current.worker_pid is not None:
+        return
+    try:
+        scribe.jobs.write(replace(current, worker_pid=worker_pid))
+    except OSError as error:
+        # The job runs either way; without the pid it is reconciled by the grace window.
+        logger.debug("could not record the worker pid for job %s: %s", job_id, error)
+
+
 def status(scribe: Scribe, settings: Settings, job_id: str | None) -> str:
     if job_id is None:
         jobs = [_reconcile(scribe, job) for job in scribe.jobs.recent()]
+        _release_if_idle(scribe)
         if not jobs:
             return "no transcriptions yet"
         return "\n".join(_summary(job) for job in jobs)
     job = scribe.jobs.read(job_id)
     if job is None:
         return f"no transcription job {job_id}"
-    return _describe(scribe, settings, _reconcile(scribe, job))
+    described = _describe(scribe, settings, _reconcile(scribe, job))
+    _release_if_idle(scribe)
+    return described
 
 
 def _reconcile(scribe: Scribe, job: Job) -> Job:
     """Turn a job whose worker is gone into the crash it is."""
     if job.state != RUNNING:
         return job
-    if job.worker_pid is not None and scribe.is_alive(job.worker_pid):
+    if job.worker_pid is not None:
+        # A pid is recorded, so a dead one is a crash now: the grace window below
+        # belongs only to a job that has no pid at all.
+        if scribe.is_alive(job.worker_pid):
+            return job
+    elif scribe.clock() - job.created_at < WORKER_START_GRACE_S:
         return job
-    if job.worker_pid is None and scribe.clock() - job.created_at < WORKER_START_GRACE_S:
-        return job
-    if job.worker_pid is None and job.claimed_by == scribe.pid:
-        # The worker never took the lock over, so this process still holds it.
-        scribe.lock().release()
     crashed = replace(
         job,
         state=CRASHED,
@@ -182,6 +215,25 @@ def _reconcile(scribe: Scribe, job: Job) -> Job:
     )
     scribe.jobs.write(crashed)
     return crashed
+
+
+def _release_if_idle(scribe: Scribe) -> None:
+    """Give the lock back when it is ours and nothing of ours is still running.
+
+    Keyed on the lock rather than on who reconciles a job first. A worker that died
+    before taking over leaves the lock with the session that claimed it, and any
+    session's `transcription_status` may be the one that marks that job crashed -
+    after which the claiming session, reconciling a job that is no longer running,
+    would never reach a release and would wedge the lock for every other session
+    until it quit.
+    """
+    lock = scribe.lock()
+    if lock.owner() != scribe.pid:
+        return
+    for job in scribe.jobs.running():
+        if _reconcile(scribe, job).state == RUNNING:
+            return
+    lock.release()
 
 
 def _describe(scribe: Scribe, settings: Settings, job: Job) -> str:

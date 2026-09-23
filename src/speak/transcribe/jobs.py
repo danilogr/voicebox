@@ -95,6 +95,21 @@ class JobStore:
         except TypeError:
             return None
 
+    def running(self) -> list[Job]:
+        """Every record that still says running - all of them, not a page.
+
+        `recent` answers "what has this install been doing lately" and stops at ten;
+        deciding that nothing is running has to read them all, because the eleventh
+        record is as able to hold the lock as the first.
+        """
+        if not self._dir.is_dir():
+            return []
+        return [
+            job
+            for path in self._dir.glob("*.json")
+            if (job := self.read(path.stem)) and job.state == RUNNING
+        ]
+
     def recent(self, limit: int = 10) -> list[Job]:
         if not self._dir.is_dir():
             return []

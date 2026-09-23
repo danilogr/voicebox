@@ -16,7 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 class ExclusiveLock:
-    """One holder at a time, elected by an atomic `mkdir`, released only by its holder."""
+    """One holder at a time, elected by an atomic `mkdir`, released only by its holder.
+
+    Re-entrant by default: the holder asking again is a session claiming something
+    it already has, and refusing it would fail a retry that is no contention at
+    all. A lock one process claims on another's behalf passes `reentrant=False`,
+    because there the pid in the file is not the work: two calls inside one process
+    would both find their own pid and both believe they had won.
+    """
 
     def __init__(
         self,
@@ -25,12 +32,14 @@ class ExclusiveLock:
         is_alive: Callable[[int], bool],
         busy: Callable[[int], Exception],
         pid: int | None = None,
+        reentrant: bool = True,
     ) -> None:
         self._dir = Path(directory)
         self._owner_file = self._dir / "owner"
         self._is_alive = is_alive
         self._busy = busy
         self._pid = pid if pid is not None else os.getpid()
+        self._reentrant = reentrant
 
     def owner(self) -> int | None:
         """The pid recorded in the lock, or None when there is none to read."""
@@ -46,7 +55,8 @@ class ExclusiveLock:
             self._dir.mkdir()
         except FileExistsError:
             held_by = self.owner()
-            if held_by is not None and held_by != self._pid and self._is_alive(held_by):
+            ours = held_by == self._pid and self._reentrant
+            if held_by is not None and not ours and self._is_alive(held_by):
                 raise self._busy(held_by) from None
             # Two reclaimers racing could both take over a dead owner's lock: the
             # window the supervisor's stale-start-lock takeover already accepts.

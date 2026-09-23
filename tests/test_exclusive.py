@@ -16,6 +16,15 @@ def test_a_second_live_process_is_refused(tmp_path):
     assert refused.value.owner == 100
 
 
+def test_the_process_that_claimed_it_is_refused_a_second_claim(tmp_path):
+    """The transcription lock is claimed on a worker's behalf, so our own pid in the
+    file means a transcription is starting - not that this call already holds it."""
+    lock(tmp_path, 100).acquire()
+    with pytest.raises(TranscriptionBusy) as refused:
+        lock(tmp_path, 100).acquire()
+    assert refused.value.owner == 100
+
+
 def test_a_lock_left_by_a_dead_process_is_reclaimed(tmp_path):
     lock(tmp_path, 999).acquire()
     lock(tmp_path, 200).acquire()

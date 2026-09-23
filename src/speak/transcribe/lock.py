@@ -22,4 +22,10 @@ def transcription_lock(
         is_alive=is_alive,
         busy=TranscriptionBusy,
         pid=pid,
+        # Not re-entrant: the session claims this lock for a worker that does not
+        # exist yet, so its own pid in the file means "a transcription is starting",
+        # not "this call already holds it". Two tool calls in one session - which is
+        # what "transcribe these three recordings" produces - would otherwise both
+        # find their own pid and both spawn.
+        reentrant=False,
     )

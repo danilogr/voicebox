@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import replace
 from pathlib import Path
 from typing import Never
@@ -8,7 +9,7 @@ from speak.transcribe.lock import transcription_lock
 from speak.transcribe.probe import Probe
 from speak.transcribe.service import Scribe, TranscribeRequest, start, status
 
-ME, OTHER = 100, 300
+ME, OTHER, WORKER = 100, 300, 4242
 AUDIO = Probe(
     duration_s=690.0,
     size_bytes=49_283_072,
@@ -27,7 +28,7 @@ VIDEO_ONLY = Probe(
 )
 
 
-def scribe(tmp_path, found=AUDIO, alive=(ME,), spawned=None, now=1000.0):
+def scribe(tmp_path, found=AUDIO, alive=(ME,), spawned=None, now=1000.0, pid=ME):
     spawned = spawned if spawned is not None else []
 
     async def probe(path) -> Probe:
@@ -35,16 +36,16 @@ def scribe(tmp_path, found=AUDIO, alive=(ME,), spawned=None, now=1000.0):
 
     async def spawn(argv) -> int:
         spawned.append(list(argv))
-        return 4242
+        return WORKER
 
     return Scribe(
         jobs=JobStore(tmp_path / "state"),
-        lock=lambda: transcription_lock(tmp_path / "state", is_alive=lambda p: p in alive, pid=ME),
+        lock=lambda: transcription_lock(tmp_path / "state", is_alive=lambda p: p in alive, pid=pid),
         is_alive=lambda p: p in alive,
         spawn=spawn,
         probe=probe,
         clock=lambda: now,
-        pid=ME,
+        pid=pid,
     )
 
 
@@ -182,9 +183,57 @@ async def test_a_worker_that_never_started_frees_the_lock(tmp_path):
     s = scribe(tmp_path, now=1000.0)
     await start(s, settings(tmp_path), request(media(tmp_path)), None)
     job = s.jobs.recent()[0]
+    # No pid was ever recorded: the spawn never got back to `start`, so only the
+    # grace window can tell this job from one whose worker is still starting.
+    s.jobs.write(replace(job, worker_pid=None))
     much_later = replace(s, clock=lambda: 1000.0 + 120)
     assert "crashed" in status(much_later, settings(tmp_path), job.job_id)
     assert s.lock().owner() is None
+
+
+async def test_a_dead_worker_is_crashed_without_waiting_out_the_grace_window(tmp_path):
+    """The pid the spawn returned is on the record, so a worker that died is a crash
+    now rather than a job that looks healthy for another minute."""
+    s = scribe(tmp_path, now=1000.0)
+    await start(s, settings(tmp_path), request(media(tmp_path)), None)
+    job = s.jobs.recent()[0]
+    assert job.worker_pid == WORKER
+    assert "crashed" in status(s, settings(tmp_path), job.job_id)
+
+
+async def test_three_calls_in_one_session_start_exactly_one_transcription(tmp_path):
+    """A model told to transcribe three recordings emits three calls in one turn, and
+    the lock is claimed for a worker that has not taken it over yet - so a lock that
+    waved its own pid through let all three spawn, onto the same output path."""
+    spawned = []
+    s = scribe(tmp_path, alive=(ME, WORKER), spawned=spawned)
+    source = media(tmp_path)
+    replies = await asyncio.gather(
+        *(start(s, settings(tmp_path), request(source), None) for _ in range(3))
+    )
+    accepted = [reply for reply in replies if reply.startswith("Transcribing")]
+    refused = [reply for reply in replies if "only one runs at a time" in reply]
+    assert len(accepted) == 1
+    assert len(refused) == 2
+    assert len(spawned) == 1
+    assert len(s.jobs.recent()) == 1
+
+
+async def test_a_lock_wedged_by_a_dead_worker_is_freed_by_the_session_holding_it(tmp_path):
+    """Session B reconciles the job first, so session A never sees it running again.
+    The release has to key on the lock, or A wedges every other session for its life."""
+    a = scribe(tmp_path, alive=(ME, OTHER))
+    await start(a, settings(tmp_path), request(media(tmp_path)), None)
+    b = scribe(tmp_path, alive=(ME, OTHER), pid=OTHER)
+
+    assert "crashed" in status(b, settings(tmp_path), None)
+    assert a.lock().owner() == ME, "the claiming session still holds it"
+    assert "already running" in await start(b, settings(tmp_path), request(media(tmp_path)), None)
+
+    status(a, settings(tmp_path), None)
+    assert a.lock().owner() is None
+    reply = await start(b, settings(tmp_path), request(media(tmp_path, "second.m4a")), None)
+    assert reply.startswith("Transcribing")
 
 
 async def test_status_gives_a_preview_of_a_finished_transcript(tmp_path):

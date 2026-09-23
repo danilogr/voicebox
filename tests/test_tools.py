@@ -1,7 +1,13 @@
+import asyncio
+
 from fakes import FakeEngine, FakeQueue
 from speak import tools
 from speak.config import Settings
 from speak.server import create_server
+from speak.transcribe.jobs import JobStore
+from speak.transcribe.lock import transcription_lock
+from speak.transcribe.probe import Probe
+from speak.transcribe.service import Scribe
 
 TOOL_NAMES = {"speak", "stop_speaking", "list_voices", "set_voice", "speech_status"}
 
@@ -93,3 +99,49 @@ async def test_the_transcription_tools_exist_when_a_scribe_is_given(tmp_path):
     fmt = by_name["transcribe"].input_schema["properties"]["format"]
     assert set(fmt["enum"]) == {"text", "json", "srt", "vtt"}
     assert by_name["transcribe"].input_schema["properties"]["diarize"]["default"] is True
+
+
+async def test_two_transcribe_calls_never_run_together(tmp_path):
+    """The SDK serves tool calls concurrently, and one turn can hold three of them.
+    The second must not reach the body while the first is still deciding: the lock it
+    would find there is claimed for a worker that has not taken it over yet."""
+    entered, release, probed = asyncio.Event(), asyncio.Event(), []
+    source = tmp_path / "meeting.m4a"
+    source.write_bytes(b"x")
+
+    async def probe(path) -> Probe:
+        probed.append(path)
+        entered.set()
+        await release.wait()
+        return Probe(60.0, 1024, "wav", "pcm_s16le", 16000, 1)
+
+    async def spawn(argv) -> int:
+        return 4242
+
+    settings = Settings.from_env({"SPEAK_STATE_DIR": str(tmp_path / "state")}, platform="darwin")
+    served = create_server(
+        settings=settings,
+        engine=FakeEngine(),
+        queue=FakeQueue(),
+        supervisor=None,
+        scribe=Scribe(
+            jobs=JobStore(tmp_path / "state"),
+            lock=lambda: transcription_lock(tmp_path / "state", is_alive=lambda pid: True),
+            is_alive=lambda pid: True,
+            spawn=spawn,
+            probe=probe,
+        ),
+    )
+
+    async def call() -> str:
+        result = await served.call_tool("transcribe", {"path": str(source)})
+        return result.content[0].text
+
+    first = asyncio.create_task(call())
+    await entered.wait()
+    second = asyncio.create_task(call())
+    await asyncio.sleep(0.05)
+    assert probed == [source], "the second call entered the body while the first held it"
+    release.set()
+    replies = await asyncio.gather(first, second)
+    assert sum(reply.startswith("Transcribing") for reply in replies) == 1

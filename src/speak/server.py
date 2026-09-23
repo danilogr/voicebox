@@ -397,6 +397,13 @@ def create_server(
         return f"{describe_queue(stats)}; {stats.finished} spoken so far"
 
     if scribe is not None:
+        # The transcription lock is claimed for a worker that does not exist yet, so
+        # between this call returning and that worker taking the lock over the record
+        # still names this process; without this second gate a concurrent pair - which
+        # is what "transcribe these three recordings" produces - would interleave in
+        # that window. Refusing rather than queueing keeps the answer immediate: the
+        # call that loses the race gets the busy message from the lock itself.
+        transcribing = asyncio.Lock()
 
         @server.tool(name="transcribe", description=tools.TRANSCRIBE)
         async def transcribe(
@@ -413,19 +420,20 @@ def create_server(
                 str | None, Field(description=tools.TRANSCRIBE_TRANSLATE)
             ] = None,
         ) -> str:
-            return await transcription.start(
-                scribe,
-                settings,
-                transcription.TranscribeRequest(
-                    path=path,
-                    output_dir=output_dir,
-                    format=format,
-                    diarize=diarize,
-                    language=language,
-                    translate_to=translate_to,
-                ),
-                telemetry,
-            )
+            async with transcribing:
+                return await transcription.start(
+                    scribe,
+                    settings,
+                    transcription.TranscribeRequest(
+                        path=path,
+                        output_dir=output_dir,
+                        format=format,
+                        diarize=diarize,
+                        language=language,
+                        translate_to=translate_to,
+                    ),
+                    telemetry,
+                )
 
         @server.tool(name="transcription_status", description=tools.TRANSCRIPTION_STATUS)
         async def transcription_status(
