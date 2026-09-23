@@ -116,7 +116,7 @@
         "asr_ms": { "type": "integer", "minimum": 0, "maximum": 86400000 },
         "status": { "type": "string", "enum": ["ok", "failed", "discarded", "heard_nothing", "refused"] },
         "source_bytes": { "type": "integer", "minimum": 0, "maximum": 10737418240 },
-        "audio_codec": { "type": "string", "maxLength": 32 },
+        "audio_codec": { "type": "string", "maxLength": 32, "pattern": "^[a-z0-9_]+$" },
         "converted": { "type": "boolean" },
         "diarize": { "type": "boolean" },
         "format": { "type": "string", "enum": ["text", "json", "srt", "vtt"] }

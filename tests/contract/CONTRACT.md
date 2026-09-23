@@ -98,7 +98,10 @@ shipped.
 
   So an expected file may carry **`"field_is_prefix": true`**, meaning implementations must
   report a pointer that *starts with* `field` rather than equalling it. Where the flag is
-  absent — every other fixture — the match is exact. Only `intent-on-in-row` needs it today.
+  absent, the match is exact. Every fixture whose violation is located inside the
+  `utterance` `allOf`'s `if`/`then`/`else` blocks needs it — the direction- and
+  source-conditional exclusions and ceilings — which as of this branch is nine fixtures,
+  not one.
 
   A contract that demanded identical pointers everywhere would be promising something the
   specification does not provide, and the first honest implementation to disagree would look
@@ -200,8 +203,10 @@ repo's.
   `format` validators are no-ops under standalone compilation unless wired through
   `code.formats` — a silently-passing check is worse than a strict regex.
 - **`if`/`then`/`else` and boolean (`true`/`false`) subschemas are used** (the direction-
-  dependent field exclusions on `utterance`) and are fully supported by ajv standalone; they
-  are core 2020-12 keywords, not a macro extension.
+  dependent field exclusions on `utterance`, and the source-keyed split that gives
+  `transcribe` its own ceilings and forbids its five fields elsewhere via an `else` branch)
+  and are fully supported by ajv standalone; they are core 2020-12 keywords, not a macro
+  extension.
 - Each schema file is self-contained — no cross-file `$ref` — so `ajv-cli compile -s
   "contract/v1/schema/*.json"` needs no `-r` flag.
 - Verified against `ajv-cli@5` / `ajv@8` in `--spec=draft2020` mode: all three schemas compile
@@ -217,13 +222,23 @@ silently:
 
 | Field | Bound | Reasoning |
 |---|---|---|
-| `words` | 0-20000 | far above any realistic utterance; rules out corrupted/overflowed counts |
-| `chars` | 0-150000 | ~7.5 chars/word headroom over the `words` bound |
-| `audio_ms`, `play_ms` | 0-600000 (10 min) | generous ceiling for one utterance's audio |
-| `synth_ms`, `asr_ms` | 0-120000 (2 min) | generous ceiling for one synthesis/transcription call |
+| `words` (`source: "transcribe"`) | 0-500000 | a file transcription can run hours long; sized to match |
+| `words` (every other source) | 0-20000 | far above any realistic utterance; rules out corrupted/overflowed counts |
+| `chars` (`source: "transcribe"`) | 0-5000000 | ~10 chars/word headroom over the transcribe `words` bound |
+| `chars` (every other source) | 0-150000 | ~7.5 chars/word headroom over the non-transcribe `words` bound |
+| `audio_ms` (`source: "transcribe"`) | 0-86400000 (24 h) | a transcribed file's own audio can run hours long |
+| `audio_ms` (every other source) | 0-600000 (10 min) | generous ceiling for one spoken or heard utterance's audio |
+| `play_ms` | 0-600000 (10 min) | generous ceiling for one utterance's playback (`out` rows only; not source-split) |
+| `asr_ms` (`source: "transcribe"`) | 0-86400000 (24 h) | a file transcription's ASR pass can take as long as the audio itself |
+| `asr_ms` (every other source) | 0-120000 (2 min) | generous ceiling for one live transcription call |
+| `synth_ms` | 0-120000 (2 min) | generous ceiling for one synthesis call (`out` rows only; not source-split) |
 | `queue_wait_ms` | 0-300000 (5 min) | generous ceiling for a queue delay |
 | `seq` | 1-100000 | a session-lifetime counter; not tied to the per-request 100-row cap |
 | `disclosure_ver`, `cpu_count` | small integer ceilings (1000, 1024) | sanity bounds against garbage input, not real limits |
+| `source_bytes` (`source: "transcribe"` only) | 0-10737418240 (10 GiB) | generous ceiling for a source audio file's size on disk |
+| `audio_codec` (`source: "transcribe"` only) | ≤ 32 chars, `^[a-z0-9_]+$` | matches any `codec_name` ffprobe reports; rejects a path-shaped value from a buggy client |
+| `converted`, `diarize` (`source: "transcribe"` only) | boolean | whether the file was container/codec-converted before ASR, and whether diarization ran |
+| `format` (`source: "transcribe"` only) | enum: `text \| json \| srt \| vtt` | the transcript's output format |
 
 Other calls, made because the spec describes the data model and the endpoints but not the
 request envelope itself:
