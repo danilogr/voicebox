@@ -239,8 +239,12 @@ def _release_if_idle(scribe: Scribe) -> None:
 def _describe(scribe: Scribe, settings: Settings, job: Job) -> str:
     name = Path(job.source).name
     if job.state == DONE:
-        text = transcript_text(Path(job.output), job.format)
-        preview = text[:PREVIEW_CHARS] + ("…" if len(text) > PREVIEW_CHARS else "")
+        preview = _preview(job)
+        if preview is None:
+            return (
+                f"done: {name} -> {job.output} ({job.words} words), "
+                "but the transcript is no longer at that path"
+            )
         return f"done: {name} -> {job.output} ({job.words} words)\n{preview}"
     if job.state == EMPTY:
         return f"finished, but no speech was detected in {name}; output: {job.output}"
@@ -257,6 +261,20 @@ def _describe(scribe: Scribe, settings: Settings, job: Job) -> str:
         )
     remaining = max(0.0, job.eta_s - elapsed)
     return f"running: {name}, {_duration(elapsed)} elapsed, about {_duration(remaining)} left"
+
+
+def _preview(job: Job) -> str | None:
+    """The first of a finished transcript, or None when it is not there to read.
+
+    The file belongs to the user from the moment it is written: moving it, renaming
+    it or deleting it is ordinary, and none of that should turn asking after a
+    finished job into a traceback. `JobStore.log_tail` reads its file the same way.
+    """
+    try:
+        text = transcript_text(Path(job.output), job.format)
+    except OSError:
+        return None
+    return text[:PREVIEW_CHARS] + ("…" if len(text) > PREVIEW_CHARS else "")
 
 
 def _summary(job: Job) -> str:

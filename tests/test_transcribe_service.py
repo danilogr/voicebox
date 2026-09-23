@@ -247,6 +247,18 @@ async def test_status_gives_a_preview_of_a_finished_transcript(tmp_path):
     assert len(reply) < 700
 
 
+async def test_status_survives_a_transcript_that_has_been_moved(tmp_path):
+    """The transcript is the user's file from the moment it lands, and asking after a
+    job they have since filed away must not raise out of the tool."""
+    s = scribe(tmp_path)
+    await start(s, settings(tmp_path), request(media(tmp_path)), None)
+    job = s.jobs.recent()[0]
+    s.jobs.write(replace(job, state=DONE, worker_pid=ME, words=400))
+    reply = status(s, settings(tmp_path), job.job_id)
+    assert reply.startswith("done:")
+    assert "no longer at that path" in reply
+
+
 async def test_status_says_when_no_speech_was_heard(tmp_path):
     s = scribe(tmp_path)
     await start(s, settings(tmp_path), request(media(tmp_path)), None)
