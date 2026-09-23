@@ -61,6 +61,7 @@ schema the server will accept.
 | `words`, `chars`, `audio_ms` | how much was said, never *what* |
 | `queue_wait_ms`, `synth_ms`, `play_ms`, `asr_ms` | where the time goes |
 | `status` | whether it played, failed, or was interrupted |
+| `source_bytes`, `audio_codec`, `converted`, `diarize`, `format` | the shape of a transcribed file — its size, codec, whether it was converted, whether speakers were labelled, and the output format. Only on `transcribe` rows. Never the file's name, its path, or what was said |
 
 ## What is never sent
 
