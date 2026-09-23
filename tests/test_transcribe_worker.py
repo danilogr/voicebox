@@ -237,6 +237,21 @@ def test_a_file_past_the_contracts_ceilings_is_recorded_at_them(tmp_path):
     assert outcome.chars == MAX_CHARS
 
 
+def test_a_path_shaped_codec_is_dropped_rather_than_sent(tmp_path):
+    """A malformed probe could hand back anything as `codec_name`; the contract's
+    `audio_codec` pattern rejects it with a 400 the shipper never retries, taking
+    unrelated speak/listen rows in the same chunk down with it."""
+    _, job = start(tmp_path, codec="/etc/passwd")
+    outcome = outcome_for(replace(job, state=DONE))
+    assert outcome.audio_codec is None
+
+
+def test_an_ordinary_codec_survives(tmp_path):
+    _, job = start(tmp_path, codec="pcm_s16le")
+    outcome = outcome_for(replace(job, state=DONE))
+    assert outcome.audio_codec == "pcm_s16le"
+
+
 def test_the_cli_is_asked_for_everything_the_caller_chose(tmp_path):
     _, job = start(tmp_path, format="srt", language="pt", translate_to="en")
     argv = cli_argv(job, Path("/x/in.wav"))

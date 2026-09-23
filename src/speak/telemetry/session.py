@@ -11,6 +11,7 @@ store, and only the upload projection drops them.
 import hashlib
 import io
 import logging
+import re
 import sqlite3
 import uuid
 import wave
@@ -97,6 +98,14 @@ MAX_ASR_MS = 86_400_000
 MAX_WORDS = 500_000
 MAX_CHARS = 5_000_000
 
+# From the same contract: `audio_codec` must match this shape
+# (`tests/contract/v1/schema/ingest-request.schema.json`). Every codec ffprobe
+# reports matches it; a malformed probe or an exotic container might not, and the
+# server answers a non-matching value with the same 400 that ends a chunk's
+# unrelated speak/listen rows along with it - so a codec that would be rejected is
+# dropped here rather than sent.
+AUDIO_CODEC_PATTERN = re.compile(r"^[a-z0-9_]+$")
+
 
 def clamped(outcome: TranscriptionOutcome) -> TranscriptionOutcome:
     """The same outcome with every measured value inside the contract's range.
@@ -107,11 +116,19 @@ def clamped(outcome: TranscriptionOutcome) -> TranscriptionOutcome:
     return replace(
         outcome,
         source_bytes=_within(outcome.source_bytes, MAX_SOURCE_BYTES),
+        audio_codec=_codec_or_none(outcome.audio_codec),
         audio_ms=_within(outcome.audio_ms, MAX_AUDIO_MS),
         asr_ms=_within(outcome.asr_ms, MAX_ASR_MS),
         words=_within(outcome.words, MAX_WORDS),
         chars=_within(outcome.chars, MAX_CHARS),
     )
+
+
+def _codec_or_none(codec: str | None) -> str | None:
+    """None rather than a value the contract's pattern would refuse."""
+    if codec is None or not AUDIO_CODEC_PATTERN.fullmatch(codec):
+        return None
+    return codec
 
 
 def _within(value: int | None, ceiling: int) -> int | None:
