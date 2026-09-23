@@ -165,4 +165,5 @@ def build(
         asr_model=settings.nemo_asr_model,
         record_audio=consented.record,
         recordings_dir=config_dir / RECORDINGS_DIRNAME,
+        db_path=config_dir / DB_FILENAME,
     )

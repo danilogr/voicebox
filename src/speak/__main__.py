@@ -28,6 +28,7 @@ from speak.telemetry import consent as telemetry_consent
 from speak.telemetry import ship as telemetry_ship
 from speak.telemetry import store as telemetry_store
 from speak.telemetry import wiring as telemetry_wiring
+from speak.transcribe.service import build_scribe
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +165,7 @@ def build(settings: Settings) -> MCPServer:
         supervisor=supervisor,
         ears=build_ears(settings),
         telemetry=telemetry,
+        scribe=build_scribe(settings),
         on_session_start=schedule_ship,
     )
 

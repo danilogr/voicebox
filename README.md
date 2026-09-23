@@ -190,6 +190,32 @@ If transcription keeps missing your accent or your vocabulary, [`voice-tuning/`]
 records a dataset of you reading 70 sentences — many of them the way people talk to a coding
 assistant — and walks through fine-tuning the recogniser on it.
 
+## Transcribing files
+
+Claude can transcribe audio and video files on this machine with the same NeMo
+model voice input uses — ask it to transcribe a recording and it uses the
+`transcribe` tool rather than Whisper or a cloud API. Nothing leaves the machine.
+
+A transcription runs as a background job, because it takes roughly a minute of
+work for every seven minutes of audio on an Apple M5. `transcribe` returns at
+once with a job id and the path the transcript will be written to;
+`transcription_status` reports progress, a preview when it is done, or the reason
+it failed. Speakers are labelled by default. Only one runs at a time.
+
+Anything ffmpeg can read works: `.m4a`, `.mp3`, `.mp4`, `.mov`, `.mkv`,
+`.flac`, `.wav`. Video-only files are refused before any work starts. The output
+is `text`, `json` (word timings and speakers), `srt` or `vtt`, written beside the
+input unless you pass a directory or set `SPEAK_TRANSCRIBE_DIR`. An existing
+transcript is never overwritten.
+
+It needs `ffmpeg` (`brew install ffmpeg`) as well as the `/speak:setup` models.
+
+Each job also writes a small record under `SPEAK_STATE_DIR` - the path of the
+file transcribed, timings, and how it finished - so `transcription_status` can
+answer without the process that started it still being around. Local only,
+never shipped as telemetry, and pruned automatically two weeks after the job
+finishes.
+
 ## Configuration
 
 All optional, set in your shell or in the plugin's `.mcp.json`:
@@ -220,6 +246,8 @@ All optional, set in your shell or in the plugin's `.mcp.json`:
 | `SPEAK_SEED` | — | passed as `--tts.seed`; pins pacing between runs |
 | `SPEAK_STATE_DIR` | `~/Library/Caches/speak` on macOS, else `$XDG_CACHE_HOME/speak` | where the shared-server state lives |
 | `SPEAK_UV` | — | absolute path to uv, if the launcher should not search for it |
+| `SPEAK_TRANSCRIBE_DIR` | beside the input | where transcripts go when no directory is given |
+| `SPEAK_TRANSCRIBE_TIMEOUT` | 4× the estimate, min 300 s | when a running job is reported as possibly wedged |
 
 ### Engines
 

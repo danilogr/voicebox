@@ -47,6 +47,11 @@ _UTTERANCE_COLUMNS = (
     "play_ms",
     "asr_ms",
     "status",
+    "source_bytes",
+    "audio_codec",
+    "converted",
+    "diarize",
+    "format",
     "text",
     "text_sha256",
     "audio_path",
@@ -203,6 +208,20 @@ def insert_utterance(
     conn.execute(f"INSERT INTO utterances ({', '.join(present)}) VALUES ({placeholders})", row)
     conn.commit()
     _enforce_backlog_cap(conn, backlog_cap)
+
+
+def next_seq(conn: sqlite3.Connection, session_id: str) -> int:
+    """The next `seq` for a session, read from the rows already stored.
+
+    A transcription is recorded by a worker process that does not share the
+    session's in-memory counter, so it asks the table. `seq` is not unique, and a
+    worker row can take the same number as a row the session writes in the same
+    instant; `occurred_at` orders them.
+    """
+    (current,) = conn.execute(
+        "SELECT COALESCE(MAX(seq), 0) FROM utterances WHERE session_id = ?", (session_id,)
+    ).fetchone()
+    return int(current) + 1
 
 
 def _enforce_backlog_cap(conn: sqlite3.Connection, cap: int) -> None:

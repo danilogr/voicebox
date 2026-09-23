@@ -78,6 +78,12 @@ against the same shared speech server the supervisor already manages.
   process, record, transcribe, print. It is the only module besides `__main__` that
   reads the plugin's configuration from the environment, and the only one where
   printing to stdout is the point.
+- **`transcribe`** — file transcription. `service` holds the two tools' logic,
+  `probe` and `prepare` read and convert media, `jobs` keeps one JSON record per
+  job, and `worker` is the detached process that owns a job end to end. It shares
+  no state with the speech server: a transcription cannot stall speech.
+- **`exclusive`** — one holder at a time across processes, elected by an atomic
+  `mkdir`. `MicLock` and the transcription lock are both instances of it.
 
 Components communicate by direct async call. The only indirection is the supervisor's
 coordination between separate session processes, which happens through the filesystem —
@@ -222,6 +228,44 @@ are not, until staging has been verified end to end.
   are in `performance.md`.
 
 ## Key decisions (with rationale)
+
+- 2026-09-21 — **File transcription is a tool backed by a detached worker.** A tool,
+  because the failure it fixes is that Claude does not know a local option exists
+  when it chooses how to transcribe, and only a tool description is in context
+  then. A detached worker, because an hour of audio is nine minutes of work and an
+  in-process task dies with the session or a plugin reload. The worker also writes
+  the telemetry row, since the session that asked may be gone when the job ends.
+
+  The tool claims the transcription lock and the **worker takes it over** as its
+  first act, from the pid the job record names. The lock releases only for its
+  holder; a handover from the tool could not happen before the worker existed, and
+  a worker failing at once would release in that gap and leave the lock held.
+  Conversion also happens in the worker, so the tool returns in milliseconds
+  whatever the file.
+
+  That claim is refused for any live holder, this process included: a session's own
+  pid in the lock means a transcription is starting, not that this call already
+  holds it, and one turn can carry three `transcribe` calls. The tool holds an
+  `asyncio.Lock` as well, the way `listen` does, because the claim and the takeover
+  are not one step, and checks it before waiting on it so a second call is refused
+  at once rather than queued behind the first. The pid the spawn returned is written
+  to a sidecar file the tool alone owns, never onto the job record itself - a
+  read-modify-write there would race the worker writing that same record, which is
+  exactly how a finished job's outcome once got reverted back to running. A worker
+  that died before its own first write is therefore a crash at once rather than
+  after a grace window, and both `start()` and `transcription_status` give the lock
+  back whenever this session holds it and no job anywhere - not only ones this
+  session started - is still running: what a worker that never took the lock over
+  leaves behind, whichever session reconciles the job first.
+
+  Telemetry reuses `utterances` with `source: "transcribe"` and five
+  transcription-only columns, on contract v1 changed in place: there is one
+  client, it waived compatibility with data already collected, and the change is
+  additive on the wire. Rejected: an in-process `asyncio` task, which loses the
+  job; the warm speech server's HTTP route, which has no diarization, timestamps
+  or subtitle formats and would stall speech for every session for the length of
+  a job; and a separate `transcriptions` table, which would rebuild every part of
+  the shipping pipeline for a row that already fits.
 
 - 2026-09-21 — **Voice input is unconditional; there is no `SPEAK_LISTEN`.** A plugin
   that ships `/speak:converse` and `/talk` cannot make them depend on a second switch

@@ -97,7 +97,7 @@
         "install_id": { "$ref": "#/$defs/uuid" },
         "seq": { "type": "integer", "minimum": 1, "maximum": 100000 },
         "direction": { "type": "string", "enum": ["out", "in"] },
-        "source": { "type": "string", "enum": ["speak", "listen", "talk"] },
+        "source": { "type": "string", "enum": ["speak", "listen", "talk", "transcribe"] },
         "occurred_at": { "$ref": "#/$defs/timestamp" },
         "engine": { "type": "string", "maxLength": 32 },
         "model": { "type": "string", "maxLength": 64 },
@@ -107,14 +107,19 @@
           "type": "string",
           "enum": ["task_done", "blocked", "question", "recap", "progress", "takeaway", "conversation", "unspecified"]
         },
-        "words": { "type": "integer", "minimum": 0, "maximum": 20000 },
-        "chars": { "type": "integer", "minimum": 0, "maximum": 150000 },
-        "audio_ms": { "type": "integer", "minimum": 0, "maximum": 600000 },
+        "words": { "type": "integer", "minimum": 0, "maximum": 500000 },
+        "chars": { "type": "integer", "minimum": 0, "maximum": 5000000 },
+        "audio_ms": { "type": "integer", "minimum": 0, "maximum": 86400000 },
         "queue_wait_ms": { "type": "integer", "minimum": 0, "maximum": 300000 },
         "synth_ms": { "type": "integer", "minimum": 0, "maximum": 120000 },
         "play_ms": { "type": "integer", "minimum": 0, "maximum": 600000 },
-        "asr_ms": { "type": "integer", "minimum": 0, "maximum": 120000 },
-        "status": { "type": "string", "enum": ["ok", "failed", "discarded", "heard_nothing", "refused"] }
+        "asr_ms": { "type": "integer", "minimum": 0, "maximum": 86400000 },
+        "status": { "type": "string", "enum": ["ok", "failed", "discarded", "heard_nothing", "refused"] },
+        "source_bytes": { "type": "integer", "minimum": 0, "maximum": 10737418240 },
+        "audio_codec": { "type": "string", "maxLength": 32, "pattern": "^[a-z0-9_]+$" },
+        "converted": { "type": "boolean" },
+        "diarize": { "type": "boolean" },
+        "format": { "type": "string", "enum": ["text", "json", "srt", "vtt"] }
       },
       "allOf": [
         {
@@ -130,6 +135,23 @@
               "queue_wait_ms": false,
               "synth_ms": false,
               "play_ms": false
+            }
+          }
+        },
+        {
+          "if": { "required": ["source"], "properties": { "source": { "const": "transcribe" } } },
+          "then": { "properties": { "direction": { "const": "in" }, "device_kind": false } },
+          "else": {
+            "properties": {
+              "source_bytes": false,
+              "audio_codec": false,
+              "converted": false,
+              "diarize": false,
+              "format": false,
+              "audio_ms": { "type": "integer", "maximum": 600000 },
+              "asr_ms": { "type": "integer", "maximum": 120000 },
+              "words": { "type": "integer", "maximum": 20000 },
+              "chars": { "type": "integer", "maximum": 150000 }
             }
           }
         }

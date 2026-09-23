@@ -99,6 +99,8 @@ async def test_initializes_and_reports_its_name(recorder):
             "set_voice",
             "speech_status",
             "listen",
+            "transcribe",
+            "transcription_status",
         }
 
 

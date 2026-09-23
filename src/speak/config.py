@@ -93,6 +93,8 @@ class Settings:
     nemo_binary: str = "nemo-speech"
     nemo_autostart: bool = True
     seed: int | None = None
+    transcribe_dir: Path | None = None
+    transcribe_timeout: float | None = None
     state_dir: Path = Path()
 
     @property
@@ -136,6 +138,8 @@ class Settings:
             nemo_binary=_text(env, "SPEAK_NEMO_BIN") or "nemo-speech",
             nemo_autostart=_flag(env, "SPEAK_NEMO_AUTOSTART", default=True),
             seed=None if seed is None else int(seed),
+            transcribe_dir=_path(env, "SPEAK_TRANSCRIBE_DIR"),
+            transcribe_timeout=_number(env, "SPEAK_TRANSCRIBE_TIMEOUT", None),
             state_dir=_state_dir(env, platform if platform is not None else sys.platform),
         )
 

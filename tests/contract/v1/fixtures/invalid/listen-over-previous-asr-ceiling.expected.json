@@ -1,0 +1,7 @@
+{
+  "status": 400,
+  "error_code": "schema_violation",
+  "field": "/utterances/0",
+  "reason": "maximum (allOf/if-else): only transcribe rows take the raised asr_ms ceiling; every other source keeps asr_ms <= 120000. Pointer granularity for a failure inside an if/then/else is implementation-defined - ajv names the property, jsonschema the containing object - so only the prefix is binding.",
+  "field_is_prefix": true
+}
