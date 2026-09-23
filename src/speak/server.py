@@ -419,7 +419,10 @@ def create_server(
             translate_to: Annotated[
                 str | None, Field(description=tools.TRANSCRIBE_TRANSLATE)
             ] = None,
+            *,
+            ctx: Context,
         ) -> str:
+            note_harness(ctx)
             async with transcribing:
                 return await transcription.start(
                     scribe,
@@ -438,7 +441,10 @@ def create_server(
         @server.tool(name="transcription_status", description=tools.TRANSCRIPTION_STATUS)
         async def transcription_status(
             job_id: Annotated[str | None, Field(description=tools.TRANSCRIPTION_JOB_ID)] = None,
+            *,
+            ctx: Context,
         ) -> str:
+            note_harness(ctx)
             return transcription.status(scribe, settings, job_id)
 
     if ears is not None:
