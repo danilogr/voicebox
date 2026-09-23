@@ -105,7 +105,7 @@
         "device_kind": { "type": "string", "enum": ["builtin", "usb", "bluetooth", "virtual", "unknown"] },
         "intent": {
           "type": "string",
-          "enum": ["task_done", "blocked", "question", "recap", "progress", "takeaway", "conversation", "unspecified"]
+          "enum": ["task_done", "blocked", "question", "recap", "progress", "takeaway", "conversation", "narration", "unspecified"]
         },
         "words": { "type": "integer", "minimum": 0, "maximum": 500000 },
         "chars": { "type": "integer", "minimum": 0, "maximum": 5000000 },
