@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from speak.transcribe.commands import FFMPEG_REMEDY, Runner, ToolMissing, run_command
+from speak.transcribe.commands import FFMPEG_REMEDY, Runner, ToolMissing, run_probe_command
 
 PROBE_ARGS = (
     "-v",
@@ -48,7 +48,7 @@ def parse_probe(payload: bytes, size_bytes: int) -> Probe:
     )
 
 
-async def probe(path: Path, *, run: Runner = run_command, ffprobe: str = "ffprobe") -> Probe:
+async def probe(path: Path, *, run: Runner = run_probe_command, ffprobe: str = "ffprobe") -> Probe:
     try:
         result = await run([ffprobe, *PROBE_ARGS, str(path)])
     except FileNotFoundError:

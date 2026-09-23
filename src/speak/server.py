@@ -423,6 +423,8 @@ def create_server(
             ctx: Context,
         ) -> str:
             note_harness(ctx)
+            if transcribing.locked():
+                return transcription.busy_message(scribe)
             async with transcribing:
                 return await transcription.start(
                     scribe,

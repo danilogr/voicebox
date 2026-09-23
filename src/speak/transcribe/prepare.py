@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from speak.transcribe.commands import FFMPEG_REMEDY, Runner, ToolMissing, run_command
+from speak.transcribe.commands import FFMPEG_REMEDY, Runner, ToolMissing, run_convert_command
 from speak.transcribe.probe import Probe
 
 CONVERT_ARGS = ("-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le")
@@ -24,7 +24,7 @@ def needs_conversion(found: Probe) -> bool:
 
 
 async def convert(
-    source: Path, dest: Path, *, run: Runner = run_command, ffmpeg: str = "ffmpeg"
+    source: Path, dest: Path, *, run: Runner = run_convert_command, ffmpeg: str = "ffmpeg"
 ) -> None:
     argv = [
         ffmpeg,

@@ -20,7 +20,7 @@ from pathlib import Path
 from speak.supervisor import process_is_alive
 from speak.telemetry import store as telemetry_store
 from speak.telemetry.session import TranscriptionOutcome, clamped, record_transcription
-from speak.transcribe.commands import Runner, ToolMissing, run_command
+from speak.transcribe.commands import Runner, ToolMissing, run_convert_command
 from speak.transcribe.jobs import DONE, EMPTY, FAILED, Job, JobStore
 from speak.transcribe.lock import TranscriptionBusy, transcription_lock
 from speak.transcribe.output import transcript_text
@@ -116,7 +116,7 @@ async def run_job(
     state_dir: Path,
     job_id: str,
     *,
-    run: Runner = run_command,
+    run: Runner = run_convert_command,
     run_cli: CliRunner = run_cli,
     is_alive: Callable[[int], bool] = process_is_alive,
     clock: Callable[[], float] = time.time,

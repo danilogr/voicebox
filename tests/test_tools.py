@@ -145,3 +145,47 @@ async def test_two_transcribe_calls_never_run_together(tmp_path):
     release.set()
     replies = await asyncio.gather(first, second)
     assert sum(reply.startswith("Transcribing") for reply in replies) == 1
+
+
+async def test_a_second_transcribe_call_is_refused_without_waiting_for_the_first(tmp_path):
+    """The gate refuses rather than queues: the second call must come back on its own,
+    before the first ever lets go, not merely finish `asyncio.gather` alongside it."""
+    entered, release = asyncio.Event(), asyncio.Event()
+    source = tmp_path / "meeting.m4a"
+    source.write_bytes(b"x")
+
+    async def probe(path) -> Probe:
+        entered.set()
+        await release.wait()
+        return Probe(60.0, 1024, "wav", "pcm_s16le", 16000, 1)
+
+    async def spawn(argv, log) -> int:
+        return 4242
+
+    settings = Settings.from_env({"SPEAK_STATE_DIR": str(tmp_path / "state")}, platform="darwin")
+    served = create_server(
+        settings=settings,
+        engine=FakeEngine(),
+        queue=FakeQueue(),
+        supervisor=None,
+        scribe=Scribe(
+            jobs=JobStore(tmp_path / "state"),
+            lock=lambda: transcription_lock(tmp_path / "state", is_alive=lambda pid: True),
+            is_alive=lambda pid: True,
+            spawn=spawn,
+            probe=probe,
+        ),
+    )
+
+    async def call() -> str:
+        result = await served.call_tool("transcribe", {"path": str(source)})
+        return result.content[0].text
+
+    first = asyncio.create_task(call())
+    await entered.wait()
+
+    second = await asyncio.wait_for(call(), timeout=1.0)
+    assert "already running" in second
+
+    release.set()
+    assert (await first).startswith("Transcribing")
