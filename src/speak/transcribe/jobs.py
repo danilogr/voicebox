@@ -6,9 +6,14 @@ file.
 """
 
 import json
+import logging
+import time
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 RUNNING = "running"
 DONE = "done"
@@ -19,6 +24,10 @@ CRASHED = "crashed"  # the worker died without writing an outcome
 # Realtime multiples measured on an M5, cold, including model load (spec, Goal).
 REALTIME_RATIO_DIARIZED = 6.9
 REALTIME_RATIO_PLAIN = 9.5
+
+# How long a finished job's record and log stay in the directory before `recent()`
+# prunes them - generous for a human looking back at what they transcribed.
+RETENTION_S = 14 * 24 * 60 * 60  # two weeks
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,8 +73,9 @@ def new_job_id() -> str:
 
 
 class JobStore:
-    def __init__(self, state_dir: Path) -> None:
+    def __init__(self, state_dir: Path, *, clock: Callable[[], float] = time.time) -> None:
         self._dir = Path(state_dir) / "transcriptions"
+        self._clock = clock
 
     def record_path(self, job_id: str) -> Path:
         return self._dir / f"{job_id}.json"
@@ -113,8 +123,34 @@ class JobStore:
     def recent(self, limit: int = 10) -> list[Job]:
         if not self._dir.is_dir():
             return []
+        self._prune()
         jobs = [job for path in self._dir.glob("*.json") if (job := self.read(path.stem))]
         return sorted(jobs, key=lambda j: j.created_at, reverse=True)[:limit]
+
+    def _prune(self) -> None:
+        """Reclaim what a finished job no longer needs.
+
+        Any job that is not running loses its converted `.wav` at once - the audio
+        is 16 kHz mono s16, about 115 MB per hour, and nothing but this call ever
+        reclaims one left behind by a worker that never reached its own `finally`
+        (a `SIGKILL`, an OOM kill). A job's record and log outlive it for
+        `RETENTION_S` before those go too, so a status check still answers "what
+        did I transcribe last week". Never touches a running job, and never raises:
+        a `transcription_status` call failing because housekeeping hit a locked or
+        missing file would be worse than the clutter it is trying to prevent.
+        """
+        now = self._clock()
+        try:
+            for path in self._dir.glob("*.json"):
+                job = self.read(path.stem)
+                if job is None or job.state == RUNNING:
+                    continue
+                self.wav_path(job.job_id).unlink(missing_ok=True)
+                if job.finished_at is not None and now - job.finished_at >= RETENTION_S:
+                    self.record_path(job.job_id).unlink(missing_ok=True)
+                    self.log_path(job.job_id).unlink(missing_ok=True)
+        except OSError as error:
+            logger.debug("could not prune old transcription jobs: %s", error)
 
     def log_tail(self, job_id: str, lines: int = 8) -> str:
         try:

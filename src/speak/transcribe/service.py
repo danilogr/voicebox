@@ -240,6 +240,9 @@ def _reconcile(scribe: Scribe, job: Job) -> Job:
         error=job.error or "the worker stopped without recording an outcome",
     )
     scribe.jobs.write(crashed)
+    # The worker is gone, so its own `finally` never ran to delete this. Nothing
+    # else will: an hours-long recording left behind is ~115 MB per hour, unclaimed.
+    scribe.jobs.wav_path(job.job_id).unlink(missing_ok=True)
     return crashed
 
 

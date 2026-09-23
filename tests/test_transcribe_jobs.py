@@ -1,8 +1,10 @@
+import time
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
-from speak.transcribe.jobs import DONE, RUNNING, Job, JobStore, eta_seconds, new_job_id
+from speak.transcribe.jobs import DONE, RETENTION_S, RUNNING, Job, JobStore, eta_seconds, new_job_id
 from speak.transcribe.output import output_path, transcript_text
 
 
@@ -54,6 +56,50 @@ def test_recent_jobs_come_newest_first(tmp_path):
     for i, created in enumerate([10.0, 30.0, 20.0]):
         store.write(job(job_id=f"j{i}", created_at=created))
     assert [j.job_id for j in store.recent()] == ["j1", "j2", "j0"]
+
+
+def test_an_old_terminal_record_is_pruned(tmp_path):
+    store = JobStore(tmp_path)
+    store.write(job(state=DONE, finished_at=time.time() - RETENTION_S - 3600))
+    store.log_path("abc123").write_text("log")
+    assert store.recent() == []
+    assert not store.record_path("abc123").exists()
+    assert not store.log_path("abc123").exists()
+
+
+def test_a_running_job_is_never_pruned_however_old(tmp_path):
+    store = JobStore(tmp_path)
+    store.write(job(state=RUNNING, created_at=time.time() - RETENTION_S - 3600))
+    wav = store.wav_path("abc123")
+    wav.write_bytes(b"data")
+    assert [j.job_id for j in store.recent()] == ["abc123"]
+    assert wav.exists()
+
+
+def test_a_stray_wav_beside_a_finished_job_is_reclaimed_before_the_retention_window(
+    tmp_path,
+):
+    """Nothing but a status call ever reclaims the converted audio a `SIGKILL`ed
+    worker left behind, so this cannot wait for the record's own retention window -
+    it is the ~115 MB/hour that makes stranding one costly."""
+    store = JobStore(tmp_path)
+    store.write(job(state=DONE, finished_at=time.time()))
+    wav = store.wav_path("abc123")
+    wav.write_bytes(b"data")
+    store.recent()
+    assert not wav.exists()
+    assert store.read("abc123") is not None  # the record is still within the window
+
+
+def test_a_prune_failure_does_not_break_recent(tmp_path, monkeypatch):
+    store = JobStore(tmp_path)
+    store.write(job(state=DONE, finished_at=time.time() - RETENTION_S - 3600))
+
+    def boom(self: Path, missing_ok: bool = False) -> None:
+        raise OSError("disk gone")
+
+    monkeypatch.setattr(Path, "unlink", boom)
+    assert [j.job_id for j in store.recent()] == ["abc123"]
 
 
 def test_the_log_tail_is_the_last_lines(tmp_path):

@@ -41,7 +41,7 @@ def scribe(tmp_path, found=AUDIO, alive=(ME,), spawned=None, now=1000.0, pid=ME)
         return WORKER
 
     return Scribe(
-        jobs=JobStore(tmp_path / "state"),
+        jobs=JobStore(tmp_path / "state", clock=lambda: now),
         lock=lambda: transcription_lock(tmp_path / "state", is_alive=lambda p: p in alive, pid=pid),
         is_alive=lambda p: p in alive,
         spawn=spawn,
@@ -188,6 +188,19 @@ async def test_status_marks_a_dead_worker_as_crashed(tmp_path):
     s.jobs.write(replace(job, worker_pid=9999))
     assert "crashed" in status(s, settings(tmp_path), job.job_id)
     assert s.jobs.read(job.job_id).state == CRASHED
+
+
+async def test_a_crashed_jobs_wav_is_deleted(tmp_path):
+    """The worker's own `finally` never ran, so nothing else reclaims the converted
+    audio it left behind - a SIGKILL or an OOM kill is exactly this case."""
+    s = scribe(tmp_path)
+    await start(s, settings(tmp_path), request(media(tmp_path)), None)
+    job = s.jobs.recent()[0]
+    s.jobs.write(replace(job, worker_pid=9999))
+    wav = s.jobs.wav_path(job.job_id)
+    wav.write_bytes(b"RIFF....WAVEfmt ")
+    status(s, settings(tmp_path), job.job_id)
+    assert not wav.exists()
 
 
 async def test_a_worker_that_never_started_frees_the_lock(tmp_path):
