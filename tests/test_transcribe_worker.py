@@ -252,6 +252,23 @@ def test_an_ordinary_codec_survives(tmp_path):
     assert outcome.audio_codec == "pcm_s16le"
 
 
+def test_an_overlong_codec_is_dropped_rather_than_sent(tmp_path):
+    """The contract also caps `audio_codec` at 32 characters; a codec that matches
+    the pattern but is longer than that would still be rejected by the server with
+    the same 400 that ends unrelated speak/listen rows in the same chunk."""
+    _, job = start(tmp_path, codec="a" * 33)
+    outcome = outcome_for(replace(job, state=DONE))
+    assert outcome.audio_codec is None
+
+
+def test_a_non_string_codec_is_dropped_without_raising(tmp_path):
+    """A hand-edited or corrupted job record on disk could hold anything under
+    `codec`; the telemetry write must not raise a `TypeError` out of a bad type."""
+    _, job = start(tmp_path, codec=12345)
+    outcome = outcome_for(replace(job, state=DONE))
+    assert outcome.audio_codec is None
+
+
 def test_the_cli_is_asked_for_everything_the_caller_chose(tmp_path):
     _, job = start(tmp_path, format="srt", language="pt", translate_to="en")
     argv = cli_argv(job, Path("/x/in.wav"))

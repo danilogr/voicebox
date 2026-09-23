@@ -1,11 +1,21 @@
 """`TelemetrySession`: turns queue outcomes and heard attempts into stored rows,
 never blocking and never raising out to its caller."""
 
+import io
+import wave
 from pathlib import Path
 
 from speak.queue import UtteranceOutcome
 from speak.telemetry import store
-from speak.telemetry.session import TelemetrySession, classify_device, wav_duration_ms
+from speak.telemetry.session import (
+    ROW_MAX_ASR_MS,
+    ROW_MAX_AUDIO_MS,
+    ROW_MAX_CHARS,
+    ROW_MAX_WORDS,
+    TelemetrySession,
+    classify_device,
+    wav_duration_ms,
+)
 
 INSTALL = {
     "install_id": "install-1",
@@ -104,6 +114,28 @@ def test_utterance_finished_writes_one_out_row() -> None:
     assert row["text_sha256"]
 
 
+def test_utterance_finished_clamps_an_over_ceiling_speak_row() -> None:
+    """`speak`/`listen` rows have their own, tighter ceilings than a transcription's
+    in the schema's `else` branch; an unclamped one is a 400 the server rejects,
+    which stops that chunk and every one after it shipping."""
+    session = build_session()
+    outcome = UtteranceOutcome(
+        text=" ".join(["hello1234"] * 25_000),  # over both the word and char ceilings
+        voice=None,
+        intent=None,
+        status="ok",
+        queue_wait_ms=0,
+        synth_ms=None,
+        play_ms=None,
+        audio_ms=700_000,
+    )
+    session.utterance_finished(outcome)
+    row = one_row(session)
+    assert row["audio_ms"] == ROW_MAX_AUDIO_MS
+    assert row["words"] == ROW_MAX_WORDS
+    assert row["chars"] == ROW_MAX_CHARS
+
+
 def test_utterance_finished_defaults_intent_to_unspecified() -> None:
     session = build_session()
     outcome = UtteranceOutcome(
@@ -159,6 +191,38 @@ def test_a_broken_insert_does_not_raise_out_of_utterance_finished(monkeypatch) -
         audio_ms=None,
     )
     session.utterance_finished(outcome)  # must not raise
+
+
+def _wav_of_seconds(seconds: int) -> bytes:
+    """A tiny WAV whose declared duration is `seconds`, at 1 frame per second -
+    a real recording this long would be gigabytes; this is a handful of bytes."""
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(1)
+        handle.writeframes(b"\x00\x00" * seconds)
+    return buffer.getvalue()
+
+
+def test_heard_clamps_an_over_ceiling_listen_row() -> None:
+    """A `SPEAK_LISTEN_MAX_SECONDS` above ten minutes can produce a row past the
+    schema's tighter `else`-branch ceilings - the same stall the transcription
+    clamp exists to prevent, for the same reason: a 400 ends that chunk's backlog
+    and everything shipped after it."""
+    session = build_session()
+    session.heard(
+        source="listen",
+        status="ok",
+        transcript=" ".join(["hello1234"] * 25_000),  # over both word and char ceilings
+        asr_ms=200_000,
+        wav=_wav_of_seconds(700),  # 700_000 ms, over the 600_000 ceiling
+    )
+    row = one_row(session)
+    assert row["audio_ms"] == ROW_MAX_AUDIO_MS
+    assert row["asr_ms"] == ROW_MAX_ASR_MS
+    assert row["words"] == ROW_MAX_WORDS
+    assert row["chars"] == ROW_MAX_CHARS
 
 
 def test_heard_writes_one_in_row_with_device_kind_and_no_device_name_upload_concern() -> None:

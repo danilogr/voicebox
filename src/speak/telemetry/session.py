@@ -98,13 +98,24 @@ MAX_ASR_MS = 86_400_000
 MAX_WORDS = 500_000
 MAX_CHARS = 5_000_000
 
-# From the same contract: `audio_codec` must match this shape
+# The same four columns' ceilings for every other row - `speak`, `listen`, `talk` -
+# from the same contract's `else` branch, keyed on `source != "transcribe"`. Tighter,
+# because only a transcription gets the long-file exemption: a `listen` recording
+# past ten minutes (`SPEAK_LISTEN_MAX_SECONDS` set above 600) or an outsized `speak`
+# utterance would otherwise land the same 400, and stall the same backlog.
+ROW_MAX_AUDIO_MS = 600_000
+ROW_MAX_ASR_MS = 120_000
+ROW_MAX_WORDS = 20_000
+ROW_MAX_CHARS = 150_000
+
+# From the same contract: `audio_codec` must match this shape and length
 # (`tests/contract/v1/schema/ingest-request.schema.json`). Every codec ffprobe
-# reports matches it; a malformed probe or an exotic container might not, and the
+# reports matches both; a malformed probe or an exotic container might not, and the
 # server answers a non-matching value with the same 400 that ends a chunk's
 # unrelated speak/listen rows along with it - so a codec that would be rejected is
 # dropped here rather than sent.
 AUDIO_CODEC_PATTERN = re.compile(r"^[a-z0-9_]+$")
+AUDIO_CODEC_MAX_LENGTH = 32
 
 
 def clamped(outcome: TranscriptionOutcome) -> TranscriptionOutcome:
@@ -125,8 +136,17 @@ def clamped(outcome: TranscriptionOutcome) -> TranscriptionOutcome:
 
 
 def _codec_or_none(codec: str | None) -> str | None:
-    """None rather than a value the contract's pattern would refuse."""
-    if codec is None or not AUDIO_CODEC_PATTERN.fullmatch(codec):
+    """None rather than a value the contract's pattern or length would refuse.
+
+    `codec` is typed `str | None`, but it starts life as whatever a job record on
+    disk says `codec` is - JSON that a hand edit or a corrupted write could give any
+    shape at all - so the type is checked before the pattern is matched against it,
+    rather than trusting the annotation and raising a `TypeError` out of the
+    telemetry write.
+    """
+    if not isinstance(codec, str):
+        return None
+    if len(codec) > AUDIO_CODEC_MAX_LENGTH or not AUDIO_CODEC_PATTERN.fullmatch(codec):
         return None
     return codec
 
@@ -269,9 +289,9 @@ class TelemetrySession:
             "model": self.tts_model,
             "voice": outcome.voice,
             "intent": outcome.intent or "unspecified",
-            "words": len(outcome.text.split()),
-            "chars": len(outcome.text),
-            "audio_ms": outcome.audio_ms,
+            "words": _within(len(outcome.text.split()), ROW_MAX_WORDS),
+            "chars": _within(len(outcome.text), ROW_MAX_CHARS),
+            "audio_ms": _within(outcome.audio_ms, ROW_MAX_AUDIO_MS),
             "queue_wait_ms": outcome.queue_wait_ms,
             "synth_ms": outcome.synth_ms,
             "play_ms": outcome.play_ms,
@@ -303,10 +323,10 @@ class TelemetrySession:
             "engine": self.asr_engine,
             "model": self.asr_model,
             "device_kind": classify_device(device_name),
-            "words": len(transcript.split()) if transcript else None,
-            "chars": len(transcript) if transcript else None,
-            "audio_ms": audio_ms,
-            "asr_ms": asr_ms,
+            "words": _within(len(transcript.split()) if transcript else None, ROW_MAX_WORDS),
+            "chars": _within(len(transcript) if transcript else None, ROW_MAX_CHARS),
+            "audio_ms": _within(audio_ms, ROW_MAX_AUDIO_MS),
+            "asr_ms": _within(asr_ms, ROW_MAX_ASR_MS),
             "status": status,
             "text": transcript,
             "text_sha256": _sha256_text(transcript) if transcript else None,
