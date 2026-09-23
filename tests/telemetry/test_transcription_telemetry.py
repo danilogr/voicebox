@@ -70,7 +70,35 @@ def test_a_transcription_is_an_in_row_from_the_transcribe_source(tmp_path):
     assert row["device_kind"] is None
 
 
-def test_a_transcription_carries_no_text_and_no_path(tmp_path):
+# Every column a transcription row is allowed to carry a value in. Anything else
+# in the `utterances` table - `text`, `audio_path`, `device_name`, or a column
+# nobody has thought to add yet - must come back None. Spot-checking a couple of
+# known-sensitive columns would pass on a regression that wrote a filename or a
+# transcript into some other column entirely; this is the check that would not.
+MAY_BE_SET = {
+    "utterance_id",
+    "session_id",
+    "install_id",
+    "seq",
+    "direction",
+    "source",
+    "occurred_at",
+    "engine",
+    "model",
+    "words",
+    "chars",
+    "audio_ms",
+    "asr_ms",
+    "status",
+    "source_bytes",
+    "audio_codec",
+    "converted",
+    "diarize",
+    "format",
+}
+
+
+def test_a_transcription_carries_nothing_outside_its_own_columns(tmp_path):
     conn = opened(tmp_path)
     record_transcription(
         conn,
@@ -81,8 +109,12 @@ def test_a_transcription_carries_no_text_and_no_path(tmp_path):
         outcome=outcome(),
     )
     (row,) = store.unshipped_utterances(conn)
-    assert row["text"] is None
-    assert row["audio_path"] is None
+    unexpectedly_set = {
+        column: value
+        for column, value in row.items()
+        if column not in MAY_BE_SET and value is not None
+    }
+    assert unexpectedly_set == {}
 
 
 def test_the_seq_follows_whatever_the_session_already_wrote(tmp_path):
