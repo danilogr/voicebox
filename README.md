@@ -34,13 +34,15 @@ server for you.
 | `set_voice(voice)` | Changes the voice for the rest of this session. |
 | `speech_status()` | Reports how many utterances are waiting, being prepared, prepared, or playing, and how many have finished. |
 | `listen(max_seconds?)` | Records you through the microphone and returns what you said. Waits for anything queued to finish playing first — `/talk`, in its own process, cannot. |
+| `transcribe(path, …)` | Starts a background job that transcribes an audio or video file on this machine, and returns a job id and where the transcript will be written. |
+| `transcription_status(job_id?)` | How a job is going, a preview once it is done, or why it failed. Without an id, the recent jobs. |
 
 Anonymous usage data is reported by default — counts and timings, never what you say or
 what Claude says. [`TELEMETRY.md`](TELEMETRY.md) lists every field, and `speak-telemetry
 off` stops it.
 
 
-All six are always there.
+All eight are always there.
 
 Voice is per connection. Claude Code runs one plugin process per session, so
 `set_voice` in one window cannot be seen by another and nothing is written to disk.
@@ -376,7 +378,9 @@ commands/talk.md                 the /talk command, and how to read a transcript
 harness/architecture.md          system shape and the decisions behind it
 harness/user-flow.md             every path, state and early exit, end to end
 harness/performance.md           measured latency, memory, disk, and audio levels
+harness/integration.md           using the speech stack from another agent or script
 commands/converse.md             conversation mode: /speak:converse, and the converse MCP prompt
+commands/narrate.md              the /speak:narrate command, reading a long text aloud
 scripts/make-cues.py             regenerates the three shipped cue sounds
 src/speak/assets/                the cue sounds, synthesised and shipped as WAV
 src/speak/player.py              finds something on this machine that plays a WAV
