@@ -57,7 +57,7 @@ async def test_register_is_idempotent(tmp_path):
     assert [p.name for p in (tmp_path / "clients").iterdir()] == ["1234"]
 
 
-async def test_ensure_running_spawns_the_server_with_cpu_and_the_model(tmp_path):
+async def test_ensure_running_spawns_the_server_with_auto_device_and_the_model(tmp_path):
     spawns = Spawns()
     assert await build(tmp_path, spawn=spawns, model="magpie", port=8082).ensure_running() is True
 
@@ -70,7 +70,7 @@ async def test_ensure_running_spawns_the_server_with_cpu_and_the_model(tmp_path)
         "--port",
         "8082",
         "--device",
-        "cpu",
+        "auto",
         "--no-ui",
     ]
 

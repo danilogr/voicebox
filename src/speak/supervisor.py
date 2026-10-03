@@ -90,7 +90,7 @@ class NemoSupervisor:
             "--port",
             str(self._port),
             "--device",
-            "cpu",
+            "auto",
             "--no-ui",
         ]
         if self._asr_model is not None:

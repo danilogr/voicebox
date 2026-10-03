@@ -279,10 +279,11 @@ not hardcoded. The OpenAI-compatible names (`nova`, `alloy`, …) are accepted b
 resolve to the model's default speaker, so the plugin defaults to `John` explicitly
 instead.
 
-It is slower per sentence than `say` and takes about ten seconds to start, so the first
+It is slower per sentence than `say` and takes about seven seconds to start, so the first
 sentence after a cold start is spoken by `say` while the server warms up: speech is
 never delayed waiting for a model and never silently dropped. The supervisor always
-passes `--device cpu`, because Metal runs this workload slower on Apple silicon.
+passes `--device auto`, which is Metal on Apple silicon, and needs NeMo-Speech.cpp
+0.2.0 or later; `/speak:setup` upgrades an older install.
 Latency, memory and disk figures are in
 [harness/performance.md](harness/performance.md).
 

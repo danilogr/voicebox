@@ -5,12 +5,12 @@ description: Install NeMo-Speech.cpp and the models the speak plugin needs for a
 # Set up neural speech for the speak plugin
 
 Install the local speech server this plugin can talk to. Explain the cost before
-you start: about 1.2 GB of models on disk, and while the server runs, roughly 800 MB
-of resident memory for the voice alone or 1.5 GB with the transcription model beside
+you start: about 1.2 GB of models on disk, and while the server runs, roughly 830 MB
+of resident memory for the voice alone or 1.75 GB with the transcription model beside
 it.
 
 1. Run `${CLAUDE_PLUGIN_ROOT}/scripts/install-nemo.sh` and show the output. It
-   installs `nemo-speech` if it is missing, pulls the MagpieTTS voice and the
+   installs `nemo-speech` if it is missing or older than 0.2.0, pulls the MagpieTTS voice and the
    nemotron-3.5 transcription model, and runs `nemo-speech doctor`. It is
    idempotent. It pulls both models, because the plugin both speaks and listens.
 2. If the script fails, report the failure verbatim rather than working around
@@ -29,7 +29,7 @@ it.
    nothing" means something different — a live microphone whose gate never opened,
    so either nothing was said or the recording ran out first.
 6. Mention that the first sentence after a cold start is spoken by the macOS
-   `say` voice while the server warms up (about 10 seconds), and every sentence
+   `say` voice while the server warms up (about 7 seconds), and every sentence
    after that uses the neural voice.
 7. Offer to list the available voices with the `list_voices` tool and to set one
    with `set_voice`.

@@ -32,11 +32,12 @@ stops it when the last Claude Code session using it exits — your agent would l
 its voice when an unrelated editor window closed. Start a second one on another
 port:
 
-    nemo-speech serve --port 8083 --device cpu --no-ui \
+    nemo-speech serve --port 8083 --device auto --no-ui \
       --asr-model nemotron-3.5 --tts-model magpie --tts.seed 6285
 
 - `--device` takes `auto`, `cpu`, `cuda[:N]`, `metal`, or `vulkan[:N]`. The plugin
-  runs `cpu`, which is usually right when a local LLM has the GPU.
+  runs `auto` (Metal on Apple silicon) and needs NeMo-Speech.cpp 0.2.0 or later. On
+  0.2.0, CPU synthesis on an M5 is about 0.07x realtime, too slow for speech.
 - `--tts.seed` pins voice timbre. **Without it the same voice name sounds different
   from one server start to the next** — surprising enough that it cost this project
   an afternoon.
@@ -71,7 +72,8 @@ request.
 
 Returns `{"text": "..."}`. The `model` field is optional; the loaded transcription
 model is used either way, and both its full id and the short `nemotron-3.5` are
-accepted. A 5.9-second 16 kHz mono clip came back in **0.5–0.7 s** on CPU, warm.
+accepted. A 5.9-second 16 kHz mono clip came back in **0.5–0.7 s** on CPU, warm; on
+Metal with 0.2.0, a 4-second clip came back in **0.06 s**.
 
 16 kHz mono PCM WAV is the native input. The `transcribe` CLI resamples other rates
 internally — a 48 kHz stereo file transcribes correctly with no conversion — and
@@ -148,8 +150,9 @@ with a throwaway call, and do not put a tight timeout on the first request.
 
 **One accelerator, one job.** A synthesis and a transcription at the same time
 contend. This plugin serializes with a queue and a lock; give your agent an
-equivalent, even if it is one mutex. If a local LLM is on the GPU, keep speech on
-CPU.
+equivalent, even if it is one mutex. A local LLM on the GPU contends with speech
+too, but moving speech to CPU is not the way out on 0.2.0: CPU synthesis there is
+slower than realtime.
 
 **Paths must be absolute.** Anything spawned from a plugin or a launcher inherits
 that launcher's working directory, not the user's project.

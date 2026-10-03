@@ -4,8 +4,11 @@
 > retaken or a default changes because of one. Decisions that rest on these numbers
 > live in `architecture.md`; the README states behaviour, not figures.
 
-All numbers below were taken on an **Apple M5, CPU backend**, with the
-NeMo-Speech.cpp server warm unless stated otherwise. They are a guide to orders of
+All numbers below were taken on an **Apple M5** with the NeMo-Speech.cpp server warm
+unless stated otherwise. The speech-latency table, the resident-memory table and
+"Metal against CPU" are NeMo-Speech.cpp 0.2.0 on Metal, the backend the plugin runs;
+the prose figures under them were taken on the CPU backend of 0.1.0, which
+synthesised at roughly half the speed Metal does now. They are a guide to orders of
 magnitude, not a guarantee: a different machine, a busier one, or a different model
 will move them.
 
@@ -13,8 +16,8 @@ will move them.
 
 | | |
 |---|---|
-| `nemo` cold start, to first `/health` answer | ~10 s |
-| `nemo` synthesis, per sentence once warm | 0.5x to 0.9x the audio duration, load-dependent |
+| `nemo` cold start, to first `/health` answer | ~7 s |
+| `nemo` synthesis, per sentence once warm | ~0.5x the audio duration |
 | `say`, per sentence | ~0.7 s |
 
 The cold start is why the first sentence after a server start is spoken by `say`
@@ -44,8 +47,8 @@ three requests fired together finished at 3.4 s, 7.3 s and 10.6 s for a wall clo
 
 | Server | Once `/health` answers |
 |---|---|
-| Voice only (`magpie`) | 780 MB |
-| Voice plus transcription (the default) | 1.5 GB |
+| Voice only (`magpie`) | 830 MB |
+| Voice plus transcription (the default) | 1.75 GB |
 
 Both grow in use, and not by the same amount:
 
@@ -64,9 +67,17 @@ pulls both, because the same server serves speech and transcription.
 
 ## Metal against CPU
 
-Metal works, but on Apple silicon it ran this workload **slower** than CPU — about
-**1.5x realtime against 2.0x**. Hence `--device cpu` unconditionally; see the
-decision record in `architecture.md`.
+On NeMo-Speech.cpp 0.2.0 with the plugin's own server flags (voice `John`,
+`--tts.seed 6285`, both models loaded), three warm sentences of 1.7–3.3 s of audio:
+
+| Backend | Synthesis | Speed |
+|---|---|---|
+| Metal | 0.85–1.68 s | **~2.0x realtime** |
+| CPU | 21–45 s | **~0.07x realtime** |
+
+Transcription of a 4 s clip took 0.06 s warm on Metal. Hence `--device auto`, which
+is Metal on Apple silicon; see the decision record in `architecture.md`. Below 0.2.0
+the ranking was the reverse, and Metal synthesis on an M5 was silence.
 
 ## Microphone warmup
 

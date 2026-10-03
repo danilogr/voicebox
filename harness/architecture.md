@@ -319,9 +319,9 @@ are not, until staging has been verified end to end.
 
   Transcription is the other half and does stream — `WS /v1/audio/transcriptions/realtime`
   takes PCM as it is spoken and returns partial transcripts. It would shorten the gap
-  between a user finishing and the transcript arriving, it runs on the same CPU backend,
+  between a user finishing and the transcript arriving, it runs on the same backend,
   and it fits behind the existing `Transcriber` protocol beside the HTTP one. Not adopted
-  yet: the server is at v0.1.0 and says its interfaces may still change.
+  yet: the server is at v0.2.0 and says its interfaces may still change.
 
 - **Voice and rate are per connection and never persisted.** One server
   process per session means a plain attribute is already isolated. Not a
@@ -341,8 +341,11 @@ are not, until staging has been verified end to end.
   the warmup, and starting the server eagerly at session start even when the session
   never speaks.
 
-- **`--device cpu` is always passed.** On Apple silicon the Metal backend
-  measured slower than CPU for this workload, so CPU is both simpler and faster here.
+- **`--device auto` is always passed, and NeMo-Speech.cpp must be 0.2.0 or later.**
+  `auto` is Metal on Apple silicon, where 0.2.0 synthesises this workload at about
+  2x realtime against 0.07x on CPU (see `performance.md`). Before 0.2.0, MagpieTTS on
+  Metal returns DC saturation instead of speech on M5-class Macs, so
+  `install-nemo.sh` upgrades anything older.
 
 - **The `command` engine is a real feature.** It hands the sentence to any
   binary as its final argument, which covers piper, espeak, a script, or a remote
