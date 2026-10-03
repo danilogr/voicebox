@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install NeMo-Speech.cpp and the models the speak plugin uses.
-# Idempotent: safe to run again. Downloads about 1.2 GB the first time.
+# Idempotent: safe to run again. Downloads about 1.4 GB the first time.
 set -euo pipefail
 
 BIN="${SPEAK_NEMO_BIN:-nemo-speech}"
@@ -13,9 +13,13 @@ installed_version() {
   "$BIN" --version 2>/dev/null | awk '{print $2; exit}'
 }
 
+at_least_min() {
+  [ "$(printf '%s\n%s\n' "$MIN_VERSION" "$1" | sort -V | head -n 1)" = "$MIN_VERSION" ]
+}
+
 if command -v "$BIN" >/dev/null 2>&1; then
   have="$(installed_version || true)"
-  if [ "$(printf '%s\n%s\n' "$MIN_VERSION" "$have" | sort -V | head -n 1)" = "$MIN_VERSION" ]; then
+  if at_least_min "$have"; then
     echo "nemo-speech $have already installed at $(command -v "$BIN")"
   else
     echo "nemo-speech ${have:-of unknown version} is older than $MIN_VERSION; upgrading from $INSTALLER"
@@ -27,7 +31,17 @@ else
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
-echo "pulling the MagpieTTS model (520 MB with its codec, skipped if present)"
+# The upstream installer writes to its own prefix, so an older copy earlier on PATH
+# (or an absolute SPEAK_NEMO_BIN) survives an upgrade and is what the plugin would run.
+have="$(installed_version || true)"
+if ! at_least_min "$have"; then
+  echo "nemo-speech at $(command -v "$BIN" || echo "$BIN") is ${have:-of unknown version}," \
+    "still older than $MIN_VERSION." >&2
+  echo "Remove that copy or put ~/.local/bin first on PATH, then run this again." >&2
+  exit 1
+fi
+
+echo "pulling the MagpieTTS model (640 MB with its codec, skipped if present)"
 "$BIN" pull magpie
 
 echo "pulling the transcription model (710 MB, skipped if present)"

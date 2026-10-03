@@ -7,8 +7,8 @@
 All numbers below were taken on an **Apple M5** with the NeMo-Speech.cpp server warm
 unless stated otherwise. The speech-latency table, the resident-memory table and
 "Metal against CPU" are NeMo-Speech.cpp 0.2.0 on Metal, the backend the plugin runs;
-the prose figures under them were taken on the CPU backend of 0.1.0, which
-synthesised at roughly half the speed Metal does now. They are a guide to orders of
+the prose figures under them are 0.1.0 on the CPU backend and have not been retaken.
+They are a guide to orders of
 magnitude, not a guarantee: a different machine, a busier one, or a different model
 will move them.
 
@@ -61,9 +61,11 @@ than starting one per session, and behind stopping it when the last session leav
 
 ## Disk
 
-The two models together are **1.2 GB**: MagpieTTS at 523 MB and the
-`nemotron-3.5-asr-streaming-0.6b` q8_0 transcription model at 707 MB. `/speak:setup`
-pulls both, because the same server serves speech and transcription.
+The two models together are **1.4 GB**: MagpieTTS v2607 at 640 MB with its codec and
+the `nemotron-3.5-asr-streaming-0.6b` q8_0 transcription model at 707 MB. `/speak:setup`
+pulls both, because the same server serves speech and transcription. The model cache
+is keyed by revision, so an install upgraded from 0.1.0 also keeps the v2602 MagpieTTS
+file (447 MB) until it is deleted by hand.
 
 ## Metal against CPU
 
@@ -76,8 +78,12 @@ On NeMo-Speech.cpp 0.2.0 with the plugin's own server flags (voice `John`,
 | CPU | 21–45 s | **~0.07x realtime** |
 
 Transcription of a 4 s clip took 0.06 s warm on Metal. Hence `--device auto`, which
-is Metal on Apple silicon; see the decision record in `architecture.md`. Below 0.2.0
-the ranking was the reverse, and Metal synthesis on an M5 was silence.
+is Metal on Apple silicon; see the decision record in `architecture.md`. Below 0.2.0,
+Metal synthesis on an M5 is silence, which is why `install-nemo.sh` requires 0.2.0.
+
+A machine with neither Metal nor CUDA falls back to CPU under `auto`. Only the M5's
+CPU has been measured, but at that speed most sentences outrun `DEFAULT_TIMEOUT`
+(15 s) and are spoken by `say` instead.
 
 ## Microphone warmup
 

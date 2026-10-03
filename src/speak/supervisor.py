@@ -129,7 +129,7 @@ class NemoSupervisor:
         Returns True only when this call spawned it. Either way the caller is left
         with a server that has answered, because both early returns still probe: a
         server spawned a moment ago by another session has not bound its port yet,
-        and returning before it does turns a ten-second cold start into "there is no
+        and returning before it does turns a several-second cold start into "there is no
         transcription model" at the call site, whose remedies are then all wrong.
 
         The recorded server is checked here rather than only at the call sites,

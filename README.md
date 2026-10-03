@@ -21,7 +21,7 @@ the plugin syncs its own environment from `uv.lock` on first launch, and uv fetc
 Python 3.12 interpreter if the machine has none.
 
 For the neural voice, run `/speak:setup` once. It installs NeMo-Speech.cpp and pulls
-MagpieTTS and the transcription model — 1.2 GB together — then the plugin manages the
+MagpieTTS and the transcription model — 1.4 GB together — then the plugin manages the
 server for you.
 
 ## Tools
@@ -279,11 +279,13 @@ not hardcoded. The OpenAI-compatible names (`nova`, `alloy`, …) are accepted b
 resolve to the model's default speaker, so the plugin defaults to `John` explicitly
 instead.
 
-It is slower per sentence than `say` and takes about seven seconds to start, so the first
+It is slower per sentence than `say` and takes several seconds to start, so the first
 sentence after a cold start is spoken by `say` while the server warms up: speech is
 never delayed waiting for a model and never silently dropped. The supervisor always
 passes `--device auto`, which is Metal on Apple silicon, and needs NeMo-Speech.cpp
-0.2.0 or later; `/speak:setup` upgrades an older install.
+0.2.0 or later; `/speak:setup` upgrades an older install. Without Metal or CUDA,
+`auto` falls back to CPU, which on 0.2.0 is too slow for most sentences: they time out
+and are spoken by `say`.
 Latency, memory and disk figures are in
 [harness/performance.md](harness/performance.md).
 

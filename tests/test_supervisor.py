@@ -112,7 +112,7 @@ async def test_a_server_that_is_already_running_is_not_replaced(tmp_path):
 async def test_a_server_another_session_is_starting_is_waited_for(tmp_path):
     """The caller's next move is to transcribe against it. Returning the moment the
     record exists hands back a server that has not bound its port, and the call site
-    then reports a missing transcription model for a ten-second cold start."""
+    then reports a missing transcription model for a several-second cold start."""
     (tmp_path / "server.json").write_text(json.dumps({"pid": 4242, "port": 8082}))
     probes = Probes()
 

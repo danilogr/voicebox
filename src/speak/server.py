@@ -43,7 +43,7 @@ DRAIN_BACKSTOP = 600.0
 # one copy of the instruction, whichever app is asking for it.
 CONVERSE_COMMAND = Path(__file__).resolve().parents[2] / "commands" / "converse.md"
 
-# Long enough to cover a cold start, which is about ten seconds; `listen` waits it
+# Long enough to cover a cold start (see harness/performance.md); `listen` waits it
 # out rather than reporting a server that this very session is still starting.
 WARMUP_TIMEOUT = 20.0
 

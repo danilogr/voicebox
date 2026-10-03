@@ -336,7 +336,7 @@ are not, until staging has been verified end to end.
 
 - **A cold start reuses the failure path.** When the speech server is
   unreachable the engine falls back to `say` and kicks off a start without awaiting it,
-  so the first sentence is spoken immediately rather than after a ten-second warmup, and
+  so the first sentence is spoken immediately rather than after a several-second warmup, and
   every later sentence uses the neural voice. Not blocking the first utterance on
   the warmup, and starting the server eagerly at session start even when the session
   never speaks.
@@ -345,7 +345,9 @@ are not, until staging has been verified end to end.
   `auto` is Metal on Apple silicon, where 0.2.0 synthesises this workload at about
   2x realtime against 0.07x on CPU (see `performance.md`). Before 0.2.0, MagpieTTS on
   Metal returns DC saturation instead of speech on M5-class Macs, so
-  `install-nemo.sh` upgrades anything older.
+  `install-nemo.sh` upgrades anything older and fails if an older copy still wins on
+  PATH. Known limitation: with neither Metal nor CUDA, `auto` is CPU, where 0.2.0
+  synthesis is slow enough that most sentences time out and fall back to `say`.
 
 - **The `command` engine is a real feature.** It hands the sentence to any
   binary as its final argument, which covers piper, espeak, a script, or a remote

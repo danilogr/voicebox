@@ -24,7 +24,7 @@ ASR_CAPABILITY = "transcription"
 class Liveness(Enum):
     """What the speech server's port answers, before asking what it can do.
 
-    Three states rather than two, because a cold start spends about ten seconds in
+    Three states rather than two, because a cold start spends several seconds in
     the middle one. A caller that collapses STARTING into ABSENT tells the user to
     reinstall a model they already have, when the answer is to wait.
     """

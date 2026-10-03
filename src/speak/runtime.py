@@ -14,9 +14,9 @@ from speak.supervisor import Probe
 HEALTH_TIMEOUT = 30.0
 HEALTH_INTERVAL = 0.5
 
-# Enough for the request itself on top of the audio. The CPU backend transcribes at
-# roughly twice realtime, so a second of allowance per second of recording is about
-# double what the work costs.
+# Enough for the request itself on top of the audio. Transcription runs well above
+# realtime (see harness/performance.md), so a second of allowance per second of
+# recording is generous.
 TRANSCRIBE_MARGIN = 30.0
 
 

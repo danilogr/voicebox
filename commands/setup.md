@@ -5,7 +5,7 @@ description: Install NeMo-Speech.cpp and the models the speak plugin needs for a
 # Set up neural speech for the speak plugin
 
 Install the local speech server this plugin can talk to. Explain the cost before
-you start: about 1.2 GB of models on disk, and while the server runs, roughly 830 MB
+you start: about 1.4 GB of models on disk, and while the server runs, roughly 830 MB
 of resident memory for the voice alone or 1.75 GB with the transcription model beside
 it.
 
