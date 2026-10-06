@@ -25,6 +25,7 @@ from speak.telemetry import ping as telemetry_ping
 from speak.telemetry import ship as telemetry_ship
 from speak.telemetry import store as telemetry_store
 from speak.telemetry import wiring as telemetry_wiring
+from speak.telemetry.contract import SCHEMA
 from speak.transcribe.service import build_scribe
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,8 @@ async def _ship_backlog() -> None:
     try:
         conn = telemetry_store.connect(
             telemetry_consent.config_dir(env, host_platform=sys.platform)
-            / telemetry_wiring.DB_FILENAME
+            / telemetry_wiring.DB_FILENAME,
+            SCHEMA,
         )
     except OSError as error:
         logger.debug("telemetry: could not open the local store to ship: %s", error)
@@ -85,12 +87,13 @@ async def _ship_backlog() -> None:
     try:
         shipped = await telemetry_ship.ship(
             conn,
+            schema=SCHEMA,
             install_id=consented.install_id,
             url=telemetry_wiring.ingest_url(env),
             transport=telemetry_wiring.http_transport,
             debug=debug,
         )
-        logger.debug("telemetry: shipped %d utterance row(s)", shipped)
+        logger.debug("telemetry: shipped %d row(s)", shipped)
     except Exception:
         logger.debug("telemetry: shipping failed", exc_info=True)
     finally:

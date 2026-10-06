@@ -19,6 +19,7 @@ from pathlib import Path
 
 from speak.supervisor import process_is_alive
 from speak.telemetry import store as telemetry_store
+from speak.telemetry.contract import SCHEMA
 from speak.telemetry.session import TranscriptionOutcome, clamped, record_transcription
 from speak.transcribe.commands import Runner, ToolMissing, run_convert_command
 from speak.transcribe.jobs import DONE, EMPTY, FAILED, Job, JobStore
@@ -99,7 +100,7 @@ def write_telemetry(job: Job, outcome: TranscriptionOutcome) -> None:
     if job.telemetry is None:
         return
     try:
-        conn = telemetry_store.connect(Path(job.telemetry["db_path"]))
+        conn = telemetry_store.connect(Path(job.telemetry["db_path"]), SCHEMA)
     except (OSError, sqlite3.Error) as error:
         logger.debug("telemetry: could not open the local store: %s", error)
         return

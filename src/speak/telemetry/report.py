@@ -10,11 +10,12 @@ import sqlite3
 import sys
 
 from speak.telemetry import consent, store
+from speak.telemetry.contract import SCHEMA
 
 
 def _connect(env: dict[str, str], *, host_platform: str) -> sqlite3.Connection:
     path = consent.config_dir(env, host_platform=host_platform) / "telemetry.db"
-    return store.connect(path)
+    return store.connect(path, SCHEMA)
 
 
 def render(conn: sqlite3.Connection) -> str:
@@ -24,9 +25,7 @@ def render(conn: sqlite3.Connection) -> str:
     if total == 0:
         return "No utterances recorded yet."
 
-    (unshipped,) = conn.execute(
-        f"SELECT COUNT(*) FROM utterances WHERE {store.UTTERANCE_BACKLOG}"
-    ).fetchone()
+    (unshipped,) = conn.execute(f"SELECT COUNT(*) FROM utterances WHERE {store.BACKLOG}").fetchone()
     (rejected,) = conn.execute(
         "SELECT COUNT(*) FROM utterances WHERE rejected_at IS NOT NULL"
     ).fetchone()

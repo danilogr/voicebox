@@ -15,6 +15,7 @@ import httpx2
 
 from speak.settings import Settings
 from speak.telemetry import consent, machine, store
+from speak.telemetry.contract import SCHEMA
 from speak.telemetry.session import TelemetrySession
 from speak.telemetry.ship import TransportResponse
 
@@ -190,7 +191,7 @@ def build(
 
     config_dir = consent.config_dir(env, host_platform=platform_name)
     try:
-        conn = store.connect(config_dir / DB_FILENAME)
+        conn = store.connect(config_dir / DB_FILENAME, SCHEMA)
     except OSError as error:
         logger.debug("telemetry: could not open the local store: %s", error)
         return None
@@ -219,6 +220,7 @@ def build(
     session_id = str(uuid.uuid4())
     store.insert_session(
         conn,
+        SCHEMA,
         {
             "session_id": session_id,
             "install_id": consented.install_id,

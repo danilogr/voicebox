@@ -4,6 +4,7 @@ from pathlib import Path
 
 from speak.queue import UtteranceOutcome
 from speak.telemetry import store
+from speak.telemetry.contract import SCHEMA
 from speak.telemetry.session import TelemetrySession, TranscriptionOutcome, record_transcription
 
 INSTALL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -11,7 +12,7 @@ SESSION_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 
 
 def opened(tmp_path: Path):
-    conn = store.connect(tmp_path / "telemetry.db")
+    conn = store.connect(tmp_path / "telemetry.db", SCHEMA)
     store.upsert_install(
         conn,
         {
@@ -26,6 +27,7 @@ def opened(tmp_path: Path):
     )
     store.insert_session(
         conn,
+        SCHEMA,
         {
             "session_id": SESSION_ID,
             "install_id": INSTALL_ID,
@@ -64,7 +66,7 @@ def test_a_transcription_is_an_in_row_from_the_transcribe_source(tmp_path):
         model="nemotron-3.5",
         outcome=outcome(),
     )
-    (row,) = store.unshipped_utterances(conn)
+    (row,) = store.unshipped_rows(conn, SCHEMA.rows)
     assert (row["direction"], row["source"], row["status"]) == ("in", "transcribe", "ok")
     assert (row["source_bytes"], row["audio_codec"], row["format"]) == (1024, "pcm_s16le", "text")
     assert (row["converted"], row["diarize"]) == (0, 1)
@@ -109,7 +111,7 @@ def test_a_transcription_carries_nothing_outside_its_own_columns(tmp_path):
         model="nemotron-3.5",
         outcome=outcome(),
     )
-    (row,) = store.unshipped_utterances(conn)
+    (row,) = store.unshipped_rows(conn, SCHEMA.rows)
     unexpectedly_set = {
         column: value
         for column, value in row.items()
@@ -129,7 +131,7 @@ def test_the_seq_follows_whatever_the_session_already_wrote(tmp_path):
             model=None,
             outcome=outcome(),
         )
-    assert [r["seq"] for r in store.unshipped_utterances(conn)] == [1, 2, 3]
+    assert [r["seq"] for r in store.unshipped_rows(conn, SCHEMA.rows)] == [1, 2, 3]
 
 
 def test_seq_stays_unique_when_the_session_and_a_worker_interleave(tmp_path):
@@ -137,7 +139,7 @@ def test_seq_stays_unique_when_the_session_and_a_worker_interleave(tmp_path):
     session from two connections. A counter held by either side hands out a number
     the other has already used; `seq` assigned inside the INSERT does not."""
     session_conn = opened(tmp_path)
-    worker_conn = store.connect(tmp_path / "telemetry.db")
+    worker_conn = store.connect(tmp_path / "telemetry.db", SCHEMA)
     session = TelemetrySession(
         conn=session_conn,
         install_id=INSTALL_ID,
@@ -169,7 +171,7 @@ def test_seq_stays_unique_when_the_session_and_a_worker_interleave(tmp_path):
         )
         session.heard(source="listen", status="heard_nothing")
 
-    rows = store.unshipped_utterances(session_conn)
+    rows = store.unshipped_rows(session_conn, SCHEMA.rows)
     assert sorted(r["seq"] for r in rows) == list(range(1, 10))
     assert [r["source"] for r in sorted(rows, key=lambda r: r["seq"])][:3] == [
         "speak",

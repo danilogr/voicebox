@@ -21,6 +21,7 @@ from pathlib import Path
 from speak.engines import nemo, say
 from speak.queue import UtteranceOutcome
 from speak.telemetry import store
+from speak.telemetry.contract import SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -209,8 +210,9 @@ def record_transcription(
     transcription. Never raises.
     """
     try:
-        store.insert_utterance(
+        store.insert_row(
             conn,
+            SCHEMA.rows,
             {
                 "utterance_id": str(uuid.uuid4()),
                 "session_id": session_id,
@@ -330,7 +332,7 @@ class TelemetrySession:
             "text": outcome.text,
             "text_sha256": _sha256_text(outcome.text),
         }
-        store.insert_utterance(self.conn, row)
+        store.insert_row(self.conn, SCHEMA.rows, row)
 
     def _write_heard(
         self,
@@ -368,7 +370,7 @@ class TelemetrySession:
             if path is not None:
                 row["audio_path"] = str(path)
                 row["audio_sha256"] = digest
-        store.insert_utterance(self.conn, row)
+        store.insert_row(self.conn, SCHEMA.rows, row)
 
     def _store_recording(
         self, directory: Path, utterance_id: str, wav_bytes: bytes

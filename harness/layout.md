@@ -152,6 +152,8 @@ Manages local metrics collection and optional anonymous telemetry reporting:
 | File | Responsibility |
 |---|---|
 | [`src/speak/telemetry/schema.sql`](../src/speak/telemetry/schema.sql) | SQLite schema for local database tracking sessions and performance. Columns marked `-- LOCAL` are never transmitted. |
+| [`src/speak/telemetry/schema.py`](../src/speak/telemetry/schema.py) | Schema types: `RowTable` and `TelemetrySchema`, what the table-agnostic store and shipper need to know of a plugin's tables. |
+| [`src/speak/telemetry/contract.py`](../src/speak/telemetry/contract.py) | This plugin's schema: the bundled `schema.sql` plus the column lists, checked against it by a test. |
 | [`src/speak/telemetry/store.py`](../src/speak/telemetry/store.py) | SQLite client: handles database migrations and records local session events. |
 | [`src/speak/telemetry/wiring.py`](../src/speak/telemetry/wiring.py) | Instrumentation: connects server and queue lifecycle events to metrics recording. |
 | [`src/speak/telemetry/session.py`](../src/speak/telemetry/session.py) | Session tracker: records session start and end times. |

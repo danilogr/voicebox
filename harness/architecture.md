@@ -203,10 +203,16 @@ which engine produced an utterance.
   cached in the config file and re-probed only when the plugin or OS version
   changes. Every source is cheap (`platform`, `sysctl`, `/proc`); a probe that fails
   or overruns its budget yields `"unknown"` rather than blocking.
-- **`store.py`** — the local SQLite database, built from the schema `speak-telemetry`
-  vendors as `contract/v1/schema.sql`. It is the outbound queue as well as the local
-  record, so there is one mechanism rather than a database plus a spool file. An
-  utterance is in the backlog while both `shipped_at` and `rejected_at` are NULL; a
+- **`schema.py`** — `RowTable` and `TelemetrySchema`: what the store and shipper need to
+  know of a plugin's tables. Both are table-agnostic, so a plugin whose rows are jobs
+  uses the same code as one whose rows are utterances.
+- **`contract.py`** — this plugin's schema; a test checks its column lists against the
+  SQL, including every `-- LOCAL` column.
+- **`store.py`** — the local SQLite database, built from the plugin's schema
+  (`contract.SCHEMA`: `speak-telemetry`'s `contract/v1/schema.sql` and the column lists
+  in `contract.py`). It is the outbound queue as well as the local
+  record, so there is one mechanism rather than a database plus a spool file. A
+  row is in the backlog while both `shipped_at` and `rejected_at` are NULL; a
   session while its `shipped_at` is NULL, which every update to the row clears, so a
   session that shipped when it began ships again with its `ended_at`. `seq` is
   assigned inside the INSERT, from the session's highest so far: the server and a
@@ -220,8 +226,8 @@ which engine produced an utterance.
 - **`wiring.py`** — composition shared by `__main__` and `talk`, the same role
   `listening.py` plays for capture and cues: consent, the machine probe, and the
   `installs`/`sessions` rows a `TelemetrySession` is built from.
-- **`ship.py`** — projects the current install's backlog to the wire format (dropping
-  every `-- LOCAL` column) and POSTs it in chunks, off the hot path: utterance chunks
+- **`ship.py`** — projects the current install's backlog of the schema's row table to
+  the wire format (dropping every local column) and POSTs it in chunks, off the hot path: chunks of rows
   first, each carrying the sessions its rows belong to, then any changed session no
   chunk carried, on its own. Takes an injected transport. A `429`, a `5xx` or an
   unreachable server leaves the rest unshipped for the next session to retry, which

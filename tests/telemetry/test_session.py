@@ -9,6 +9,7 @@ import pytest
 
 from speak.queue import UtteranceOutcome
 from speak.telemetry import store
+from speak.telemetry.contract import SCHEMA
 from speak.telemetry.session import (
     HARNESS_VERSION_MAX_LENGTH,
     MAX_PLAY_MS,
@@ -44,9 +45,9 @@ SESSION_ROW = {
 
 
 def build_session(**overrides: object) -> TelemetrySession:
-    conn = store.connect(Path(":memory:"))
+    conn = store.connect(Path(":memory:"), SCHEMA)
     store.upsert_install(conn, INSTALL)
-    store.insert_session(conn, SESSION_ROW)
+    store.insert_session(conn, SCHEMA, SESSION_ROW)
     kwargs: dict[str, object] = {
         "conn": conn,
         "install_id": "install-1",
@@ -61,7 +62,7 @@ def build_session(**overrides: object) -> TelemetrySession:
 
 
 def one_row(session: TelemetrySession) -> dict[str, object]:
-    rows = store.unshipped_utterances(session.conn)
+    rows = store.unshipped_rows(session.conn, SCHEMA.rows)
     assert len(rows) == 1
     return rows[0]
 
@@ -172,7 +173,7 @@ def test_utterance_finished_assigns_increasing_seq() -> None:
     )
     session.utterance_finished(outcome)
     session.utterance_finished(outcome)
-    rows = sorted(store.unshipped_utterances(session.conn), key=lambda r: r["seq"])
+    rows = sorted(store.unshipped_rows(session.conn, SCHEMA.rows), key=lambda r: r["seq"])
     assert [row["seq"] for row in rows] == [1, 2]
 
 
@@ -185,7 +186,7 @@ def test_a_broken_insert_does_not_raise_out_of_utterance_finished(monkeypatch) -
 
         raise sqlite3.OperationalError("disk is full")
 
-    monkeypatch.setattr(store, "insert_utterance", explode)
+    monkeypatch.setattr(store, "insert_row", explode)
     outcome = UtteranceOutcome(
         text="hi",
         voice=None,

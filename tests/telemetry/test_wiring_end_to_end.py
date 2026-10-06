@@ -17,6 +17,7 @@ from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from speak.telemetry import store
+from speak.telemetry.contract import SCHEMA
 
 
 def _env(state_dir: str, home: str) -> dict[str, str]:
@@ -71,9 +72,9 @@ async def test_speaking_through_the_real_server_writes_a_local_row(tmp_path):
             await session.call_tool("speak", {"text": "hello", "intent": "task_done"})
             await _wait_for_a_row(home)
 
-    conn = store.connect(_telemetry_db(home))
+    conn = store.connect(_telemetry_db(home), SCHEMA)
     try:
-        rows = store.unshipped_utterances(conn)
+        rows = store.unshipped_rows(conn, SCHEMA.rows)
         assert len(rows) == 1
         assert rows[0]["direction"] == "out"
         assert rows[0]["source"] == "speak"
@@ -103,9 +104,9 @@ async def test_the_clients_own_client_info_overrides_the_environment_fallback(tm
             await session.call_tool("speak", {"text": "hello"})
             await _wait_for_a_row(home)
 
-    conn = store.connect(_telemetry_db(home))
+    conn = store.connect(_telemetry_db(home), SCHEMA)
     try:
-        rows = store.unshipped_utterances(conn)
+        rows = store.unshipped_rows(conn, SCHEMA.rows)
         sessions = store.sessions_by_id(conn, [rows[0]["session_id"]])
         assert sessions[0]["harness"] == "gemini-cli"
         assert sessions[0]["harness_version"] == "1.2.3"
@@ -129,7 +130,7 @@ async def test_transcribe_also_corrects_the_harness_from_client_info(tmp_path):
         ) as session:
             await session.call_tool("transcribe", {"path": str(tmp_path / "missing.wav")})
 
-    conn = store.connect(_telemetry_db(home))
+    conn = store.connect(_telemetry_db(home), SCHEMA)
     try:
         row = conn.execute("SELECT harness, harness_version FROM sessions").fetchone()
         assert row["harness"] == "gemini-cli"
@@ -152,7 +153,7 @@ async def test_transcription_status_also_corrects_the_harness_from_client_info(t
         ) as session:
             await session.call_tool("transcription_status", {})
 
-    conn = store.connect(_telemetry_db(home))
+    conn = store.connect(_telemetry_db(home), SCHEMA)
     try:
         row = conn.execute("SELECT harness, harness_version FROM sessions").fetchone()
         assert row["harness"] == "gemini-cli"
@@ -166,9 +167,9 @@ async def _wait_for_a_row(home: Path, timeout: float = 10.0) -> None:
     deadline = asyncio.get_running_loop().time() + timeout
     while asyncio.get_running_loop().time() < deadline:
         if db_path.exists():
-            conn = store.connect(db_path)
+            conn = store.connect(db_path, SCHEMA)
             try:
-                if store.unshipped_utterances(conn):
+                if store.unshipped_rows(conn, SCHEMA.rows):
                     return
             finally:
                 conn.close()

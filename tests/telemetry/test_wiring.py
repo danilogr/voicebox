@@ -7,6 +7,7 @@ import pytest
 from speak.config import ServerSettings, VoiceSettings
 from speak.settings import Settings
 from speak.telemetry import consent, store, wiring
+from speak.telemetry.contract import SCHEMA
 
 
 def env(tmp_path, **extra: str) -> dict[str, str]:
@@ -88,7 +89,8 @@ def test_build_reuses_the_install_id_and_first_seen_at_across_sessions(tmp_path)
     assert row is not None
     first_row = store.install_row(
         store.connect(
-            consent.config_dir(env(tmp_path), host_platform="linux") / wiring.DB_FILENAME
+            consent.config_dir(env(tmp_path), host_platform="linux") / wiring.DB_FILENAME,
+            SCHEMA,
         ),
         first.install_id,
     )

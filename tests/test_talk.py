@@ -12,6 +12,7 @@ from speak.miclock import MicrophoneBusy
 from speak.settings import Settings
 from speak.talk import capture, dictate, main
 from speak.telemetry import store
+from speak.telemetry.contract import SCHEMA
 from speak.telemetry.session import TelemetrySession
 from speak.tools import TALK_HEARD_NOTHING
 
@@ -355,7 +356,7 @@ def test_the_command_file_branches_on_the_sentinel_talk_prints():
 
 
 def _telemetry(tmp_path: Path) -> TelemetrySession:
-    conn = store.connect(tmp_path / "telemetry.db")
+    conn = store.connect(tmp_path / "telemetry.db", SCHEMA)
     store.upsert_install(
         conn,
         {
@@ -370,6 +371,7 @@ def _telemetry(tmp_path: Path) -> TelemetrySession:
     )
     store.insert_session(
         conn,
+        SCHEMA,
         {
             "session_id": "session-1",
             "install_id": "install-1",
@@ -391,7 +393,7 @@ def _telemetry(tmp_path: Path) -> TelemetrySession:
 
 
 def _rows(telemetry) -> list[tuple[str, str]]:
-    return [(r["source"], r["status"]) for r in store.unshipped_utterances(telemetry.conn)]
+    return [(r["source"], r["status"]) for r in store.unshipped_rows(telemetry.conn, SCHEMA.rows)]
 
 
 class UnwritableMicLock(FakeMicLock):
@@ -492,7 +494,7 @@ async def test_a_failed_transcription_keeps_the_recordings_length(tmp_path):
             telemetry=telemetry,
         )
 
-    (row,) = store.unshipped_utterances(telemetry.conn)
+    (row,) = store.unshipped_rows(telemetry.conn, SCHEMA.rows)
     assert (row["status"], row["audio_ms"]) == ("failed", 1000)
 
 

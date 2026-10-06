@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from speak.telemetry import report, store
+from speak.telemetry.contract import SCHEMA
 
 INSTALL = {
     "install_id": "install-1",
@@ -43,20 +44,22 @@ def utterance(**overrides: object) -> dict[str, object]:
 
 
 def test_render_on_an_empty_store_says_so() -> None:
-    conn = store.connect(Path(":memory:"))
+    conn = store.connect(Path(":memory:"), SCHEMA)
     assert report.render(conn) == "No utterances recorded yet."
 
 
 def test_render_reports_totals_and_the_interruption_rate() -> None:
-    conn = store.connect(Path(":memory:"))
+    conn = store.connect(Path(":memory:"), SCHEMA)
     store.upsert_install(conn, INSTALL)
-    store.insert_session(conn, SESSION)
-    store.insert_utterance(conn, utterance(utterance_id="u1", status="ok"))
-    store.insert_utterance(
-        conn, utterance(utterance_id="u2", seq=2, status="interrupted", intent="progress")
+    store.insert_session(conn, SCHEMA, SESSION)
+    store.insert_row(conn, SCHEMA.rows, utterance(utterance_id="u1", status="ok"))
+    store.insert_row(
+        conn,
+        SCHEMA.rows,
+        utterance(utterance_id="u2", seq=2, status="interrupted", intent="progress"),
     )
-    store.insert_utterance(
-        conn, utterance(utterance_id="u3", seq=3, status="discarded", intent="recap")
+    store.insert_row(
+        conn, SCHEMA.rows, utterance(utterance_id="u3", seq=3, status="discarded", intent="recap")
     )
 
     text = report.render(conn)
@@ -67,11 +70,12 @@ def test_render_reports_totals_and_the_interruption_rate() -> None:
 
 
 def test_render_reports_voice_input_when_there_is_any() -> None:
-    conn = store.connect(Path(":memory:"))
+    conn = store.connect(Path(":memory:"), SCHEMA)
     store.upsert_install(conn, INSTALL)
-    store.insert_session(conn, SESSION)
-    store.insert_utterance(
+    store.insert_session(conn, SCHEMA, SESSION)
+    store.insert_row(
         conn,
+        SCHEMA.rows,
         utterance(
             utterance_id="u1", direction="in", source="listen", status="heard_nothing", intent=None
         ),
@@ -88,12 +92,12 @@ def test_main_with_no_store_prints_a_plain_message(tmp_path, monkeypatch, capsys
 
 
 def test_render_counts_rejected_rows_apart_from_the_backlog() -> None:
-    conn = store.connect(Path(":memory:"))
+    conn = store.connect(Path(":memory:"), SCHEMA)
     store.upsert_install(conn, INSTALL)
-    store.insert_session(conn, SESSION)
-    store.insert_utterance(conn, utterance(utterance_id="u1"))
-    store.insert_utterance(conn, utterance(utterance_id="u2"))
-    store.mark_rejected(conn, ["u2"], "t")
+    store.insert_session(conn, SCHEMA, SESSION)
+    store.insert_row(conn, SCHEMA.rows, utterance(utterance_id="u1"))
+    store.insert_row(conn, SCHEMA.rows, utterance(utterance_id="u2"))
+    store.mark_rejected(conn, SCHEMA.rows, ["u2"], "t")
 
     assert "2 utterances across 1 sessions; 1 unshipped, 1 rejected by the server." in (
         report.render(conn)

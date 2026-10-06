@@ -10,6 +10,7 @@ from pathlib import Path
 import jsonschema
 
 from speak.telemetry import ship, store
+from speak.telemetry.contract import SCHEMA
 
 CONTRACT_DIR = Path(__file__).parent / "v1"
 REQUEST_SCHEMA = json.loads((CONTRACT_DIR / "schema" / "ingest-request.schema.json").read_text())
@@ -107,9 +108,9 @@ def in_row(**overrides: object) -> dict[str, object]:
 
 def _payload(*utterances: dict[str, object]) -> dict[str, object]:
     return {
-        "install": ship._project_install(INSTALL),
-        "sessions": [ship._project_session(SESSION)],
-        "utterances": [ship._project_utterance(u) for u in utterances],
+        "install": ship.project_install(INSTALL),
+        "sessions": [ship.project_session(SCHEMA, SESSION)],
+        "utterances": [ship.project_row(SCHEMA.rows, u) for u in utterances],
     }
 
 
@@ -141,21 +142,21 @@ def test_the_minimal_out_row_validates() -> None:
 def test_the_real_local_store_round_trips_through_a_validating_payload() -> None:
     """The same path `ship.py` runs in production: insert into the real schema,
     read it back, project it, validate it - not a hand-assembled dict."""
-    conn = store.connect(Path(":memory:"))
+    conn = store.connect(Path(":memory:"), SCHEMA)
     store.upsert_install(conn, INSTALL)
-    store.insert_session(conn, SESSION)
-    store.insert_utterance(conn, out_row())
-    store.insert_utterance(conn, in_row())
+    store.insert_session(conn, SCHEMA, SESSION)
+    store.insert_row(conn, SCHEMA.rows, out_row())
+    store.insert_row(conn, SCHEMA.rows, in_row())
 
     install = store.install_row(conn, INSTALL["install_id"])
     sessions = store.sessions_by_id(conn, [SESSION["session_id"]])
-    utterances = store.unshipped_utterances(conn)
+    utterances = store.unshipped_rows(conn, SCHEMA.rows)
     assert install is not None
 
     payload = {
-        "install": ship._project_install(install),
-        "sessions": [ship._project_session(s) for s in sessions],
-        "utterances": [ship._project_utterance(u) for u in utterances],
+        "install": ship.project_install(install),
+        "sessions": [ship.project_session(SCHEMA, s) for s in sessions],
+        "utterances": [ship.project_row(SCHEMA.rows, u) for u in utterances],
     }
     errors = list(VALIDATOR.iter_errors(payload))
     assert errors == [], [e.message for e in errors]
@@ -190,9 +191,9 @@ def test_a_transcription_of_an_oversized_file_still_validates() -> None:
         words=600_000,
         chars=6_000_000,
     )
-    conn = store.connect(Path(":memory:"))
+    conn = store.connect(Path(":memory:"), SCHEMA)
     store.upsert_install(conn, INSTALL)
-    store.insert_session(conn, SESSION)
+    store.insert_session(conn, SCHEMA, SESSION)
     record_transcription(
         conn,
         session_id=SESSION["session_id"],
@@ -205,11 +206,14 @@ def test_a_transcription_of_an_oversized_file_still_validates() -> None:
     install = store.install_row(conn, INSTALL["install_id"])
     assert install is not None
     payload = {
-        "install": ship._project_install(install),
+        "install": ship.project_install(install),
         "sessions": [
-            ship._project_session(s) for s in store.sessions_by_id(conn, [SESSION["session_id"]])
+            ship.project_session(SCHEMA, s)
+            for s in store.sessions_by_id(conn, [SESSION["session_id"]])
         ],
-        "utterances": [ship._project_utterance(u) for u in store.unshipped_utterances(conn)],
+        "utterances": [
+            ship.project_row(SCHEMA.rows, u) for u in store.unshipped_rows(conn, SCHEMA.rows)
+        ],
     }
     errors = list(VALIDATOR.iter_errors(payload))
     assert errors == [], [e.message for e in errors]
@@ -220,9 +224,9 @@ def test_a_transcription_round_trips_through_a_validating_payload() -> None:
     them `boolean`: the projection is what makes a real row acceptable."""
     from speak.telemetry.session import TranscriptionOutcome, record_transcription
 
-    conn = store.connect(Path(":memory:"))
+    conn = store.connect(Path(":memory:"), SCHEMA)
     store.upsert_install(conn, INSTALL)
-    store.insert_session(conn, SESSION)
+    store.insert_session(conn, SCHEMA, SESSION)
     record_transcription(
         conn,
         session_id=SESSION["session_id"],
@@ -246,11 +250,14 @@ def test_a_transcription_round_trips_through_a_validating_payload() -> None:
     install = store.install_row(conn, INSTALL["install_id"])
     assert install is not None
     payload = {
-        "install": ship._project_install(install),
+        "install": ship.project_install(install),
         "sessions": [
-            ship._project_session(s) for s in store.sessions_by_id(conn, [SESSION["session_id"]])
+            ship.project_session(SCHEMA, s)
+            for s in store.sessions_by_id(conn, [SESSION["session_id"]])
         ],
-        "utterances": [ship._project_utterance(u) for u in store.unshipped_utterances(conn)],
+        "utterances": [
+            ship.project_row(SCHEMA.rows, u) for u in store.unshipped_rows(conn, SCHEMA.rows)
+        ],
     }
     errors = list(VALIDATOR.iter_errors(payload))
     assert errors == [], [e.message for e in errors]
@@ -260,12 +267,12 @@ def test_a_transcription_round_trips_through_a_validating_payload() -> None:
 async def test_every_request_ship_sends_validates_including_a_session_alone() -> None:
     """The payloads `ship()` itself builds, captured at the transport: an utterance
     chunk, then a session that ships with no utterances at all."""
-    conn = store.connect(Path(":memory:"))
+    conn = store.connect(Path(":memory:"), SCHEMA)
     store.upsert_install(conn, INSTALL)
-    store.insert_session(conn, SESSION)
-    store.insert_utterance(conn, out_row(status="interrupted"))
+    store.insert_session(conn, SCHEMA, SESSION)
+    store.insert_row(conn, SCHEMA.rows, out_row(status="interrupted"))
     lonely = {**SESSION, "session_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"}
-    store.insert_session(conn, lonely)
+    store.insert_session(conn, SCHEMA, lonely)
     sent: list[dict[str, object]] = []
 
     async def transport(url: str, body: bytes) -> ship.TransportResponse:
@@ -273,7 +280,11 @@ async def test_every_request_ship_sends_validates_including_a_session_alone() ->
         return ship.TransportResponse(status=202, body=b'{"accepted": 1}')
 
     await ship.ship(
-        conn, install_id=str(INSTALL["install_id"]), url="https://x/v1/ingest", transport=transport
+        conn,
+        schema=SCHEMA,
+        install_id=str(INSTALL["install_id"]),
+        url="https://x/v1/ingest",
+        transport=transport,
     )
 
     assert [len(p["utterances"]) for p in sent] == [1, 0]
