@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="100%" height="100%" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      .bg { fill: #F4F4F6; }
+      .shadow { fill: #D6D7DC; }
+      .outline { fill: #181A20; }
+      .body-dark { fill: #2A2F3D; }
+      .body-mid { fill: #383E50; }
+      .body-light { fill: #484F65; }
+      .cream { fill: #E8E6DF; }
+      .cream-dark { fill: #D5D3CA; }
+      .orange-dark { fill: #D44211; }
+      .orange-mid { fill: #FF5722; }
+      .orange-light { fill: #FF8A50; }
+      .amber { fill: #FFA726; }
+      .green-led { fill: #00E676; }
+      .text-dark { fill: #2A2F3D; }
+    </style>
+  </defs>
+
+  <!-- Canvas Squircle Badge -->
+  <rect x="0" y="0" width="64" height="64" rx="12" class="bg" shape-rendering="auto" />
+
+  <!-- Drop Shadow -->
+  <rect x="10" y="56" width="44" height="2" class="shadow" />
+  <rect x="14" y="58" width="36" height="2" class="shadow" />
+
+  <!-- === RADIATING SOUND WAVES (3 Stepped Concentric Arcs) === -->
+  <!-- Inner Wave (Amber) -->
+  <rect x="48" y="24" width="2" height="4" class="amber" />
+  <rect x="50" y="28" width="2" height="8" class="amber" />
+  <rect x="48" y="36" width="2" height="4" class="amber" />
+
+  <!-- Middle Wave (Signal Orange) -->
+  <rect x="52" y="20" width="2" height="4" class="orange-mid" />
+  <rect x="54" y="24" width="2" height="16" class="orange-mid" />
+  <rect x="52" y="40" width="2" height="4" class="orange-mid" />
+
+  <!-- Outer Wave (Signal Orange / Dark) -->
+  <rect x="56" y="16" width="2" height="4" class="orange-dark" />
+  <rect x="58" y="20" width="2" height="24" class="orange-dark" />
+  <rect x="56" y="44" width="2" height="4" class="orange-dark" />
+
+  <!-- === OPEN DOCUMENT / BOOK (Left Half: Text Source) === -->
+  <!-- Left Cover Outline -->
+  <rect x="8" y="14" width="24" height="40" class="outline" />
+  <rect x="7" y="16" width="26" height="36" class="outline" />
+
+  <!-- Cover Fill (Dark Slate) -->
+  <rect x="8" y="16" width="24" height="36" class="body-dark" />
+  <rect x="9" y="15" width="22" height="2" class="body-light" />
+  <rect x="8" y="17" width="2" height="34" class="body-light" />
+
+  <!-- Bookmark Ribbon (Signal Orange hanging from top) -->
+  <rect x="14" y="10" width="4" height="8" class="outline" />
+  <rect x="15" y="10" width="2" height="8" class="orange-mid" />
+  <rect x="15" y="11" width="2" height="6" class="orange-light" />
+
+  <!-- Status LED (Top Left) -->
+  <rect x="9" y="18" width="4" height="2" class="outline" />
+  <rect x="10" y="18" width="2" height="2" class="green-led" />
+
+  <!-- Left Page Fill (Cream Parchment) -->
+  <rect x="11" y="20" width="18" height="30" class="outline" />
+  <rect x="12" y="21" width="16" height="28" class="cream" />
+  <rect x="12" y="21" width="16" height="2" class="cream-dark" />
+
+  <!-- Clean, Beautiful Text Lines on Page -->
+  <!-- Paragraph 1 -->
+  <rect x="14" y="24" width="2" height="2" class="orange-mid" />
+  <rect x="18" y="24" width="8" height="2" class="text-dark" />
+  <rect x="14" y="28" width="12" height="2" class="text-dark" />
+  <rect x="14" y="32" width="10" height="2" class="text-dark" />
+
+  <!-- Divider -->
+  <rect x="14" y="36" width="6" height="1" class="cream-dark" />
+
+  <!-- Paragraph 2 -->
+  <rect x="14" y="39" width="12" height="2" class="text-dark" />
+  <rect x="14" y="43" width="8" height="2" class="text-dark" />
+  <!-- Active Narration Cursor Dot -->
+  <rect x="24" y="43" width="2" height="2" class="amber" />
+
+  <!-- Page Corner Curl -->
+  <rect x="25" y="46" width="3" height="3" class="outline" />
+  <rect x="26" y="47" width="2" height="2" class="cream-dark" />
+
+  <!-- === BOOK CENTER SPINE / METALLIC DIVIDER === -->
+  <rect x="30" y="14" width="4" height="40" class="outline" />
+  <rect x="31" y="15" width="2" height="38" class="body-mid" />
+  <rect x="31" y="20" width="2" height="2" class="screw" />
+  <rect x="31" y="32" width="2" height="2" class="screw" />
+  <rect x="31" y="44" width="2" height="2" class="screw" />
+
+  <!-- === RETRO SPEAKER HORN (Right Half: Audio Output) === -->
+  <!-- Speaker Base / Driver Magnet -->
+  <rect x="34" y="26" width="4" height="12" class="outline" />
+  <rect x="35" y="27" width="2" height="10" class="body-mid" />
+
+  <!-- Speaker Cone Step 1 -->
+  <rect x="38" y="24" width="3" height="16" class="outline" />
+  <rect x="38" y="25" width="3" height="14" class="body-dark" />
+
+  <!-- Speaker Cone Step 2 -->
+  <rect x="41" y="21" width="3" height="22" class="outline" />
+  <rect x="41" y="22" width="3" height="20" class="orange-dark" />
+
+  <!-- Speaker Horn Bell Mouth (Flaring Outward) -->
+  <rect x="44" y="18" width="4" height="28" class="outline" />
+  <rect x="44" y="19" width="2" height="26" class="orange-mid" />
+  <rect x="46" y="20" width="2" height="24" class="orange-light" />
+  <!-- Horn Throat Center Highlight -->
+  <rect x="45" y="30" width="2" height="4" class="amber" />
+</svg>

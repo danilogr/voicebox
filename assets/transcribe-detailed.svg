@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="100%" height="100%" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      .bg { fill: #F4F4F6; }
+      .shadow { fill: #D6D7DC; }
+      .outline { fill: #181A20; }
+      .body-dark { fill: #2A2F3D; }
+      .body-mid { fill: #383E50; }
+      .body-light { fill: #484F65; }
+      .cream { fill: #E8E6DF; }
+      .cream-dark { fill: #D5D3CA; }
+      .orange-dark { fill: #D44211; }
+      .orange-mid { fill: #FF5722; }
+      .orange-light { fill: #FF8A50; }
+      .amber { fill: #FFA726; }
+      .green-led { fill: #00E676; }
+      .text-dark { fill: #2A2F3D; }
+      .screw { fill: #7E869B; }
+    </style>
+  </defs>
+
+  <!-- Canvas Squircle Badge -->
+  <rect x="0" y="0" width="64" height="64" rx="12" class="bg" shape-rendering="auto" />
+
+  <!-- Drop Shadow -->
+  <rect x="10" y="56" width="44" height="2" class="shadow" />
+  <rect x="14" y="58" width="36" height="2" class="shadow" />
+
+  <!-- === CASSETTE SHELL (Dark Slate) === -->
+  <!-- Outer Outline with Stepped Corners -->
+  <rect x="8" y="12" width="48" height="42" class="outline" />
+  <rect x="7" y="14" width="50" height="38" class="outline" />
+
+  <!-- Shell Fill & Highlights -->
+  <rect x="8" y="14" width="48" height="38" class="body-dark" />
+  <rect x="9" y="13" width="46" height="2" class="body-light" />
+  <rect x="8" y="15" width="2" height="36" class="body-light" />
+  <rect x="9" y="50" width="46" height="2" class="body-mid" />
+
+  <!-- Corner Screws -->
+  <rect x="10" y="15" width="2" height="2" class="screw" />
+  <rect x="52" y="15" width="2" height="2" class="screw" />
+  <rect x="10" y="48" width="2" height="2" class="screw" />
+  <rect x="52" y="48" width="2" height="2" class="screw" />
+
+  <!-- Top Write-Protect Notches -->
+  <rect x="14" y="10" width="4" height="3" class="outline" />
+  <rect x="15" y="11" width="2" height="2" class="body-dark" />
+  <rect x="46" y="10" width="4" height="3" class="outline" />
+  <rect x="47" y="11" width="2" height="2" class="body-dark" />
+
+  <!-- Status LED (Top Left: Offline Transcribe Active) -->
+  <rect x="11" y="19" width="4" height="2" class="outline" />
+  <rect x="12" y="19" width="2" height="2" class="green-led" />
+
+  <!-- Tape Counter (Pixel Digits: 0 4 2) -->
+  <rect x="47" y="18" width="6" height="3" class="outline" />
+  <rect x="48" y="19" width="4" height="1" class="amber" />
+
+  <!-- === CASSETTE FACEPLATE / TRANSCRIPT LABEL (Cream) === -->
+  <rect x="12" y="22" width="40" height="25" class="outline" />
+  <rect x="13" y="23" width="38" height="23" class="cream" />
+  <rect x="13" y="23" width="38" height="2" class="cream-dark" />
+
+  <!-- === TAPE WINDOW (Dark Smoked Bezel) === -->
+  <rect x="18" y="25" width="28" height="10" class="outline" />
+  <rect x="19" y="26" width="26" height="8" class="body-dark" />
+
+  <!-- Tape Window Glass Reflection (Diagonal white/cream pixel glint) -->
+  <rect x="29" y="27" width="2" height="2" class="body-light" />
+  <rect x="33" y="29" width="2" height="2" class="body-light" />
+
+  <!-- Left Reel Hub (Signal Orange with 4 spokes) -->
+  <rect x="21" y="27" width="6" height="6" class="orange-mid" />
+  <rect x="23" y="27" width="2" height="6" class="orange-light" />
+  <rect x="21" y="29" width="6" height="2" class="orange-light" />
+  <!-- Center Spool Hole -->
+  <rect x="23" y="29" width="2" height="2" class="cream" />
+
+  <!-- Right Reel Hub (Amber with 4 spokes) -->
+  <rect x="37" y="27" width="6" height="6" class="amber" />
+  <rect x="39" y="27" width="2" height="6" class="orange-light" />
+  <rect x="37" y="29" width="6" height="2" class="orange-light" />
+  <!-- Center Spool Hole -->
+  <rect x="39" y="29" width="2" height="2" class="cream" />
+
+  <!-- Connecting Magnetic Tape Ribbon -->
+  <rect x="27" y="30" width="10" height="2" class="orange-dark" />
+
+  <!-- Tape Path Rollers -->
+  <rect x="19" y="32" width="2" height="2" class="amber" />
+  <rect x="43" y="32" width="2" height="2" class="amber" />
+
+  <!-- === TRANSCRIPT SECTION (Audio converted into labeled text) === -->
+  <!-- Speaker 1 Diarization Badge + Text Line -->
+  <rect x="15" y="37" width="4" height="2" class="orange-mid" />
+  <rect x="21" y="37" width="12" height="2" class="text-dark" />
+  <rect x="35" y="37" width="14" height="2" class="text-dark" />
+
+  <!-- Speaker 2 Diarization Badge + Text Line -->
+  <rect x="15" y="41" width="4" height="2" class="amber" />
+  <rect x="21" y="41" width="16" height="2" class="text-dark" />
+  <rect x="39" y="41" width="8" height="2" class="text-dark" />
+
+  <!-- Blinking Cursor Dot (Word-level active timestamp) -->
+  <rect x="49" y="41" width="2" height="2" class="orange-mid" />
+
+  <!-- === CASSETTE BOTTOM TRAPEZOID HEAD AREA === -->
+  <rect x="18" y="47" width="28" height="5" class="outline" />
+  <rect x="19" y="48" width="26" height="4" class="body-mid" />
+  <!-- Head Holes -->
+  <rect x="22" y="49" width="4" height="2" class="outline" />
+  <rect x="30" y="49" width="4" height="2" class="outline" />
+  <rect x="38" y="49" width="4" height="2" class="outline" />
+</svg>

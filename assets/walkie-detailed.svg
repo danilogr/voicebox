@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="100%" height="100%" shape-rendering="crispEdges">
+  <defs>
+    <style>
+      .bg { fill: #F4F4F6; }
+      .shadow { fill: #D6D7DC; }
+      .outline { fill: #181A20; }
+      .body-dark { fill: #2A2F3D; }
+      .body-mid { fill: #383E50; }
+      .body-light { fill: #484F65; }
+      .faceplate { fill: #E8E6DF; }
+      .faceplate-dark { fill: #D5D3CA; }
+      .screen-bg { fill: #111318; }
+      .orange-dark { fill: #D44211; }
+      .orange-mid { fill: #FF5722; }
+      .orange-light { fill: #FF8A50; }
+      .amber { fill: #FFA726; }
+      .green-led { fill: #00E676; }
+      .screw { fill: #7E869B; }
+    </style>
+  </defs>
+
+  <!-- Canvas Squircle Badge -->
+  <rect x="0" y="0" width="64" height="64" rx="12" class="bg" shape-rendering="auto" />
+
+  <!-- Drop Shadow -->
+  <rect x="14" y="58" width="36" height="2" class="shadow" />
+  <rect x="18" y="60" width="28" height="2" class="shadow" />
+
+  <!-- === RADIO BROADCAST WAVES (Concentric Stepped Arcs) === -->
+  <!-- Wave 1 (Inner - Amber) -->
+  <rect x="32" y="8" width="4" height="2" class="amber" />
+  <rect x="36" y="10" width="2" height="4" class="amber" />
+  <rect x="38" y="14" width="2" height="4" class="amber" />
+
+  <!-- Wave 2 (Middle - Signal Orange) -->
+  <rect x="36" y="4" width="6" height="2" class="orange-mid" />
+  <rect x="42" y="6" width="2" height="4" class="orange-mid" />
+  <rect x="44" y="10" width="2" height="6" class="orange-mid" />
+  <rect x="46" y="16" width="2" height="4" class="orange-mid" />
+
+  <!-- Wave 3 (Outer - Orange Light/Dark) -->
+  <rect x="42" y="0" width="6" height="2" class="orange-dark" />
+  <rect x="48" y="2" width="2" height="4" class="orange-dark" />
+  <rect x="50" y="6" width="2" height="6" class="orange-dark" />
+  <rect x="52" y="12" width="2" height="8" class="orange-dark" />
+
+  <!-- === ANTENNA === -->
+  <rect x="18" y="6" width="6" height="14" class="outline" />
+  <rect x="20" y="8" width="2" height="12" class="body-light" />
+  <rect x="19" y="8" width="1" height="12" class="body-mid" />
+  <!-- Signal Orange Antenna Tip -->
+  <rect x="19" y="6" width="4" height="2" class="orange-mid" />
+  <rect x="20" y="6" width="2" height="1" class="orange-light" />
+  <!-- Antenna Threaded Collar -->
+  <rect x="17" y="18" width="8" height="2" class="outline" />
+  <rect x="18" y="18" width="6" height="2" class="body-light" />
+
+  <!-- === TOP ROTARY KNOB === -->
+  <rect x="38" y="14" width="8" height="6" class="outline" />
+  <rect x="40" y="16" width="4" height="4" class="orange-mid" />
+  <rect x="40" y="16" width="2" height="4" class="orange-light" />
+  <rect x="42" y="14" width="2" height="2" class="amber" />
+
+  <!-- === PUSH-TO-TALK BUTTON (Left Side) === -->
+  <rect x="10" y="30" width="6" height="14" class="outline" />
+  <rect x="11" y="31" width="4" height="12" class="orange-mid" />
+  <rect x="11" y="31" width="2" height="10" class="orange-light" />
+  <rect x="13" y="41" width="2" height="2" class="orange-dark" />
+  <!-- Tactile Grip Ribs -->
+  <rect x="11" y="34" width="3" height="1" class="orange-dark" />
+  <rect x="11" y="37" width="3" height="1" class="orange-dark" />
+  <rect x="11" y="40" width="3" height="1" class="orange-dark" />
+
+  <!-- === CHASSIS BODY === -->
+  <!-- Outer Outline with Stepped Rounded Corners -->
+  <rect x="16" y="20" width="34" height="38" class="outline" />
+  <rect x="15" y="22" width="36" height="34" class="outline" />
+  <rect x="17" y="21" width="32" height="36" class="body-dark" />
+
+  <!-- Top & Left Bevel Highlight -->
+  <rect x="18" y="21" width="30" height="2" class="body-light" />
+  <rect x="16" y="23" width="2" height="32" class="body-light" />
+  <!-- Bottom Shadow Bevel -->
+  <rect x="18" y="55" width="30" height="2" class="body-mid" />
+
+  <!-- Hardware Screws on Chassis Corners -->
+  <rect x="17" y="23" width="2" height="2" class="screw" />
+  <rect x="47" y="23" width="2" height="2" class="screw" />
+  <rect x="17" y="53" width="2" height="2" class="screw" />
+  <rect x="47" y="53" width="2" height="2" class="screw" />
+
+  <!-- Status LED (Top Left) -->
+  <rect x="22" y="23" width="4" height="2" class="outline" />
+  <rect x="23" y="23" width="2" height="2" class="green-led" />
+
+  <!-- === FACEPLATE INSERT (Cream) === -->
+  <rect x="21" y="26" width="24" height="27" class="outline" />
+  <rect x="22" y="27" width="22" height="25" class="faceplate" />
+  <rect x="22" y="27" width="22" height="1" class="faceplate-dark" />
+
+  <!-- === OLED DISPLAY SCREEN === -->
+  <rect x="24" y="29" width="18" height="10" class="outline" />
+  <rect x="25" y="30" width="16" height="8" class="screen-bg" />
+
+  <!-- Dynamic Waveform Frequency Bars (Green LED) -->
+  <rect x="27" y="34" width="1" height="3" class="green-led" />
+  <rect x="29" y="32" width="1" height="5" class="green-led" />
+  <rect x="31" y="31" width="1" height="6" class="green-led" />
+  <rect x="33" y="33" width="1" height="4" class="green-led" />
+  <rect x="35" y="31" width="1" height="6" class="amber" />
+  <rect x="37" y="33" width="1" height="4" class="amber" />
+  <rect x="39" y="35" width="1" height="2" class="orange-mid" />
+
+  <!-- Screen Header Text Ticks -->
+  <rect x="26" y="31" width="3" height="1" class="amber" />
+  <rect x="37" y="31" width="3" height="1" class="orange-mid" />
+
+  <!-- === SPEAKER GRILLE (Perforated Matrix) === -->
+  <rect x="25" y="42" width="16" height="8" class="outline" />
+  <rect x="26" y="43" width="14" height="6" class="body-mid" />
+  <!-- Grille Hole Rows -->
+  <rect x="27" y="44" width="2" height="1" class="outline" />
+  <rect x="31" y="44" width="2" height="1" class="outline" />
+  <rect x="35" y="44" width="2" height="1" class="outline" />
+
+  <rect x="29" y="46" width="2" height="1" class="outline" />
+  <rect x="33" y="46" width="2" height="1" class="outline" />
+  <rect x="37" y="46" width="2" height="1" class="outline" />
+
+  <rect x="27" y="48" width="2" height="1" class="outline" />
+  <rect x="31" y="48" width="2" height="1" class="outline" />
+  <rect x="35" y="48" width="2" height="1" class="outline" />
+</svg>
