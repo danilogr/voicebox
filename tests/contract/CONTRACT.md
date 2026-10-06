@@ -9,7 +9,11 @@ for the reasoning behind each rule; this document states the rules themselves.
 | Method | Route | Body cap | Notes |
 |---|---|---|---|
 | `POST` | `/v1/ingest` | 64 KB | batch of install + sessions + utterances; idempotent |
+| `POST` | `/v1/ping` | 1 KB | anonymous install ping; no identifier; returns 204 with an empty body |
 | `GET` | `/v1/health` | — | no data, no auth, returns 200 with an empty body |
+
+The ingest sections below describe `POST /v1/ingest`; the ping has its own section,
+[The install ping](#the-install-ping).
 
 ### Request shape
 
@@ -24,15 +28,18 @@ for the reasoning behind each rule; this document states the rules themselves.
   every query (spec 4.8), so the install row must already exist before a session referencing
   it can be inserted. The server upserts by `install_id`; repeating the same values is
   harmless.
-- **`sessions`** (required, 0-100 items): the `sessions` rows that the utterances in this
-  request belong to. Empty when every session in this chunk was already sent in an earlier
-  chunk of the same shipping run (a session with more than 100 utterances spans several
-  chunks; only the first chunk needs to carry the session object). The server upserts by
-  `session_id`.
-- **`utterances`** (required, 1-100 items): the chunk of the local backlog being shipped.
+- **`sessions`** (required, 0-100 items): the `sessions` rows that are new or have changed
+  since they were last sent, plus any that the utterances in this request belong to. Empty
+  when every session in this chunk was already sent in an earlier chunk of the same shipping
+  run (a session with more than 100 utterances spans several chunks; only the first chunk
+  needs to carry the session object). The server upserts by `session_id`, so a resent
+  session overwrites the stored one — this is how a session's `ended_at` reaches the server
+  after its utterances have already shipped.
+- **`utterances`** (required, 0-100 items): the chunk of the local backlog being shipped.
   This is the array the 100-row ceiling and the 48 KB client-side chunk target (spec 4.2,
   11) are sized against. The server inserts, ignoring rows whose `(install_id, utterance_id)`
-  already exist (spec 4.4).
+  already exist (spec 4.4). **It may be empty: sessions ship alone** when a session has
+  changed (or never had an utterance) and nothing else is in the backlog.
 
 `country` is deliberately **not** a property of `install` in the request. It is written by
 the server from `CF-IPCountry` on receipt (spec 1.2, 4.5); the client never collects or sends
@@ -59,7 +66,13 @@ not a per-row list: chunks are acknowledged as a unit (spec 11, "marks each batc
 it is acknowledged"), so the client needs nothing finer-grained to decide what to mark
 shipped.
 
+A request with no utterances — sessions shipping alone — is answered `202` with
+`accepted: 0`, and its install and sessions are stored. `accepted` counts utterance rows
+only, so `0` is the normal answer there, not a shortfall.
+
 ## Status codes
+
+For `POST /v1/ingest` (the ping's are in its own section):
 
 | Code | Meaning | Body |
 |---|---|---|
@@ -126,6 +139,11 @@ So both sides must agree on this, because it is counter-intuitive:
 `accepted: 0` is therefore a normal response, distinguishable from a rejection only by the
 status code being `202`.
 
+The quota counts rows: utterances plus sessions. A request carrying only sessions — an
+`ended_at` arriving after its utterances shipped — spends one row per session, and past the
+quota it is soft-dropped like any other. Otherwise a batch of empty sessions would be an
+unmetered write.
+
 ## Retry rules
 
 - The client backs off exponentially with jitter on `429` and any `5xx`, and gives up after a
@@ -137,6 +155,61 @@ status code being `202`.
 - `400` and `413` are not retried as-is — the payload itself is the problem, not the server's
   availability. (A `413` can recur if resent unchanged; the client's chunking is what should
   have prevented it.)
+
+## The install ping
+
+`POST /v1/ping`, body `contract/v1/schema/ping-request.schema.json`:
+
+```json
+{ "plugin_version": "1.7.0", "os": "darwin", "event": "install" }
+```
+
+- **`plugin_version`** (required): a release version, `major.minor.patch` with bounded
+  digits and no pre-release or build suffix. A suffix is free text that could carry an
+  identifier, and every distinct value is a new `ping_daily` row, so the ping takes none.
+- **`os`** (required): `darwin | linux | win32`, the same set as `install.os`.
+- **`event`** (required): `install` the first time the plugin runs on a machine, `upgrade`
+  the first time a new version runs.
+
+No other property is accepted (`additionalProperties: false`). In particular there is no
+`install_id` and no telemetry mode: the client sends this same ping once per install and
+once per upgrade whether telemetry is `on`, `local` or `off`, and sends nothing at all under
+`DO_NOT_TRACK`. Because the body is identical in every mode, a ping never announces that
+someone opted out, and because it carries no identifier, two pings cannot be linked to each
+other or to an install.
+
+The server keeps one counter per UTC day, `plugin_version`, `os`, `event` and country
+(`CF-IPCountry`, or `''` when the header is absent) and adds one to it. It stores no row per
+request, no IP and no time finer than the day.
+
+| Code | Meaning | Body |
+|---|---|---|
+| `204` | ping counted | empty |
+| `400` | not JSON, or a schema violation; `field` is a JSON Pointer as for ingest | error |
+| `404` | any method but `POST`, or any other version | error |
+| `413` | body over 1 KB | error |
+| `429` | rate limited at the edge, by `ip.src` — the same limit as every route | error, `Retry-After` header |
+| `500` | anything else | error |
+
+There is no per-install quota on the ping; it has no `install_id` to key one on. The
+client sends a ping at most once per version, so it retries a failed one on its next
+session rather than in a loop, and treats any `2xx` as done.
+
+Fixtures are in `contract/v1/fixtures/ping/{valid,invalid}`, in the same form as the ingest
+fixtures.
+
+## Utterance status
+
+`status` is one of:
+
+| Value | Meaning |
+|---|---|
+| `ok` | the utterance ran to completion |
+| `failed` | an error ended it: engine, player, capture, or a speech server that was absent or not ready |
+| `discarded` | an `out` utterance dropped from the queue before it started playing |
+| `interrupted` | an `out` utterance cut off while it was playing |
+| `heard_nothing` | an `in` recording or transcription that produced no speech |
+| `refused` | turned away before any work started: the microphone or worker was busy, speech was still playing, or the file was not one it takes |
 
 ## Transcriptions
 
@@ -180,11 +253,14 @@ build (`derive-remote.py` exits non-zero) rather than silently keeping the colum
 whole-line comment that carries no SQL (a section header, a doc comment) is never a tag site
 and passes through unexamined even if it discusses the mechanism by name.
 
-The nine local-only columns from spec 1 (`text`, `text_sha256`, `audio_path`,
-`audio_sha256`, `device_name`, `corrected_text`, `corrected_at`, `correction_kind`,
-`shipped_at`) are tagged, and so is the `utterances_unshipped` index — it is defined on
-`shipped_at`, a column that does not exist remotely, so the index cannot survive the
-derivation either.
+The local-only columns are tagged: on `utterances`, the nine from spec 1 (`text`,
+`text_sha256`, `audio_path`, `audio_sha256`, `device_name`, `corrected_text`,
+`corrected_at`, `correction_kind`, `shipped_at`) plus `rejected_at` (the server refused the
+row with a `400`; the client never resends it); on `sessions`, `shipped_at` (the session
+changed since it was last sent). So are the `utterances_unshipped` and `sessions_unshipped`
+indexes — each is defined on a `shipped_at` column that does not exist remotely, so neither
+index can survive the derivation either. An upload carrying any of these columns is a
+`schema_violation` naming it (`/utterances/0/rejected_at`, `/sessions/0/shipped_at`).
 
 Regenerate after any edit to `schema.sql`:
 
@@ -209,7 +285,7 @@ repo's.
   extension.
 - Each schema file is self-contained — no cross-file `$ref` — so `ajv-cli compile -s
   "contract/v1/schema/*.json"` needs no `-r` flag.
-- Verified against `ajv-cli@5` / `ajv@8` in `--spec=draft2020` mode: all three schemas compile
+- Verified against `ajv-cli@5` / `ajv@8` in `--spec=draft2020` mode: every schema compiles
   standalone with no `eval`/`new Function` in the output; every `valid/` fixture validates;
   every `invalid/` fixture is rejected at the instancePath its `.expected.json` names.
 
@@ -243,9 +319,10 @@ silently:
 Other calls, made because the spec describes the data model and the endpoints but not the
 request envelope itself:
 
-- **`install` travels on every ingest request**, not on a separate route — there isn't one
-  (spec 4.6 lists exactly `/v1/ingest` and `/v1/health`), and D1's unconditional foreign-key
-  enforcement (spec 4.8) means the install row must exist before a session can reference it.
+- **`install` travels on every ingest request**, not on a separate route — no route carries
+  it alone (the ping is anonymous and creates no install row), and D1's unconditional
+  foreign-key enforcement (spec 4.8) means the install row must exist before a session can
+  reference it.
 - **`os`, `arch`, and `ram_gb` are enforced as closed sets** (enum), even though the task's
   required list is `direction, source, status, intent, device_kind, accel, harness`. The spec
   itself presents `os`/`arch` as a fixed pipe-separated vocabulary and `ram_gb` as an explicit
@@ -259,6 +336,5 @@ request envelope itself:
   nullable. Spec 1.2 makes `unknown` the mandatory fallback when a probe fails or times out,
   so the application-level contract always has a value; the JSON schema reflects that
   stronger guarantee without changing the SQL column's own nullability.
-- **`asr_engine` is a one-value enum (`["nemo"]`)**, matching the SQL comment `nemo | NULL`
-  literally: optional in JSON (omit for the SQL-NULL case), and there is currently only one
-  legal non-null value.
+- **`asr_engine` is a one-value enum (`["nemo"]`)**: nemo is the only transcription engine.
+  It is optional in JSON; omitting it leaves the SQL column NULL.

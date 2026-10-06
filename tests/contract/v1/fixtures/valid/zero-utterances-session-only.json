@@ -1,0 +1,23 @@
+{
+  "install": {
+    "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "first_seen_at": "2026-09-13T10:00:00Z",
+    "last_seen_at": "2026-09-13T10:00:00Z",
+    "plugin_version": "1.0.0",
+    "os": "darwin",
+    "arch": "arm64",
+    "accel": "unknown"
+  },
+  "sessions": [
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-09-13T10:00:00Z",
+      "plugin_version": "1.0.0",
+      "listen_enabled": false,
+      "harness": "claude-code",
+      "ended_at": "2026-09-13T11:30:00Z"
+    }
+  ],
+  "utterances": []
+}

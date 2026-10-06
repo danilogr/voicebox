@@ -8,9 +8,10 @@
   "required": ["plugin_version", "os", "event"],
   "properties": {
     "plugin_version": {
+      "description": "A release version only: major.minor.patch with bounded digits. No pre-release or build suffix, because free text there could carry an identifier and every distinct value is a new ping_daily row.",
       "type": "string",
-      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$",
-      "maxLength": 32
+      "pattern": "^[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,6}$",
+      "maxLength": 16
     },
     "os": { "type": "string", "enum": ["darwin", "linux", "win32"] },
     "event": { "type": "string", "enum": ["install", "upgrade"] }
