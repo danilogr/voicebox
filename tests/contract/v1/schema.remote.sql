@@ -40,7 +40,7 @@ CREATE TABLE sessions (
   tts_engine      TEXT,               -- say | nemo | command
   asr_engine      TEXT,               -- nemo, the only transcription engine
   listen_enabled  INTEGER NOT NULL,
-  harness         TEXT NOT NULL,      -- claude-code|gemini-cli|codex|other|unknown
+  harness         TEXT NOT NULL,      -- claude-code|antigravity|gemini-cli|codex|other|unknown
   harness_version TEXT               -- NULL when the host does not declare one
 
 );

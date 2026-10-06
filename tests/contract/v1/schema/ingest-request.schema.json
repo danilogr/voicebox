@@ -83,7 +83,7 @@
         "tts_engine": { "type": "string", "maxLength": 32 },
         "asr_engine": { "type": "string", "enum": ["nemo"] },
         "listen_enabled": { "type": "boolean" },
-        "harness": { "type": "string", "enum": ["claude-code", "gemini-cli", "codex", "other", "unknown"] },
+        "harness": { "type": "string", "enum": ["claude-code", "antigravity", "gemini-cli", "codex", "other", "unknown"] },
         "harness_version": { "type": "string", "maxLength": 64 }
       }
     },

@@ -52,7 +52,7 @@ async def http_transport(url: str, body: bytes) -> TransportResponse:
 
 
 # The contract's `harness` enum.
-HARNESSES = frozenset({"claude-code", "gemini-cli", "codex", "other", "unknown"})
+HARNESSES = frozenset({"claude-code", "antigravity", "gemini-cli", "codex", "other", "unknown"})
 
 
 def detect_harness(env: Mapping[str, str]) -> tuple[str, str | None]:
@@ -80,6 +80,7 @@ def detect_harness(env: Mapping[str, str]) -> tuple[str, str | None]:
 _HARNESS_NAME_HINTS = (
     ("claude-code", "claude-code"),
     ("claude code", "claude-code"),
+    ("antigravity", "antigravity"),  # declares itself as "antigravity-client"
     ("gemini", "gemini-cli"),
     ("codex", "codex"),
 )
@@ -89,7 +90,7 @@ def normalize_harness(name: str) -> str:
     """MCP `client_info.name` into the `harness` enum - spec 2 tier 1.
 
     A name that does not match a known harness is `"other"`, not `"unknown"`:
-    the client declared itself, just not as one of the three this schema names.
+    the client declared itself, just not as one of the hosts this schema names.
     `"unknown"` stays reserved for "nothing was declared at all" (spec 2: a
     dashboard rendering `unknown` as a guess would manufacture the very
     conclusion this column exists to test).

@@ -68,11 +68,17 @@ def test_normalize_harness_recognises_gemini_cli() -> None:
     assert normalize_harness("gemini-cli") == "gemini-cli"
 
 
+@pytest.mark.parametrize("name", ["antigravity-client", "Antigravity"])
+def test_normalize_harness_recognises_antigravity(name) -> None:
+    """Antigravity's MCP client declares itself as "antigravity-client"."""
+    assert normalize_harness(name) == "antigravity"
+
+
 def test_normalize_harness_recognises_codex() -> None:
     assert normalize_harness("Codex CLI") == "codex"
 
 
 def test_normalize_harness_is_other_for_a_declared_but_unrecognised_client() -> None:
     """Distinct from "unknown": the client said who it is, just not one of the
-    three this schema names."""
+    hosts this schema names."""
     assert normalize_harness("SomeOtherAgent") == "other"
