@@ -98,22 +98,25 @@ def test_listen_enabled_is_projected_as_a_real_boolean() -> None:
 
 def test_chunks_split_at_100_rows() -> None:
     rows = [utterance(seq=n) for n in range(1, 151)]
-    chunks = list(ship._chunks(rows))
+    chunks = list(ship._chunks(rows, {}))
     assert [len(c) for c in chunks] == [100, 50]
 
 
 def test_chunks_split_before_the_byte_budget_is_exceeded(monkeypatch) -> None:
     monkeypatch.setattr(ship, "CHUNK_BYTES", 200)
     rows = [utterance(seq=n) for n in range(1, 6)]
-    chunks = list(ship._chunks(rows))
+    chunks = list(ship._chunks(rows, {}))
     assert len(chunks) > 1
     assert sum(len(c) for c in chunks) == 5
 
 
 async def test_ship_returns_zero_with_nothing_unshipped() -> None:
     conn = seeded_conn([])
+    store.mark_sessions_shipped(conn, store.unshipped_sessions(conn, "install-1"), "t")
     transport = FakeTransport()
-    shipped = await ship.ship(conn, url="https://example/v1/ingest", transport=transport)
+    shipped = await ship.ship(
+        conn, install_id="install-1", url="https://example/v1/ingest", transport=transport
+    )
     assert shipped == 0
     assert transport.calls == []
 
@@ -122,7 +125,11 @@ async def test_a_successful_chunk_is_marked_shipped_and_never_sent_again() -> No
     conn = seeded_conn([utterance()])
     transport = FakeTransport()
     shipped = await ship.ship(
-        conn, url="https://example/v1/ingest", transport=transport, sleep=no_sleep
+        conn,
+        install_id="install-1",
+        url="https://example/v1/ingest",
+        transport=transport,
+        sleep=no_sleep,
     )
     assert shipped == 1
     assert store.unshipped_utterances(conn) == []
@@ -131,7 +138,13 @@ async def test_a_successful_chunk_is_marked_shipped_and_never_sent_again() -> No
 async def test_the_request_body_never_contains_a_local_only_column() -> None:
     conn = seeded_conn([utterance()])
     transport = FakeTransport()
-    await ship.ship(conn, url="https://example/v1/ingest", transport=transport, sleep=no_sleep)
+    await ship.ship(
+        conn,
+        install_id="install-1",
+        url="https://example/v1/ingest",
+        transport=transport,
+        sleep=no_sleep,
+    )
 
     _, payload = transport.calls[0]
     for row in payload["utterances"]:
@@ -145,29 +158,46 @@ async def test_a_quota_shortfall_is_not_a_failure_and_the_chunk_still_ships() ->
     conn = seeded_conn([utterance()])
     transport = FakeTransport([ship.TransportResponse(status=202, body=b'{"accepted": 0}')])
     shipped = await ship.ship(
-        conn, url="https://example/v1/ingest", transport=transport, sleep=no_sleep
+        conn,
+        install_id="install-1",
+        url="https://example/v1/ingest",
+        transport=transport,
+        sleep=no_sleep,
     )
     assert shipped == 1
     assert len(transport.calls) == 1  # no retry
     assert store.unshipped_utterances(conn) == []
 
 
-async def test_a_400_is_not_retried_and_leaves_the_row_unshipped() -> None:
+async def test_a_400_is_not_retried_and_sets_the_chunk_aside() -> None:
+    """The payload is the problem, so resending it cannot succeed. Left in the
+    backlog it would be resent first every session, ahead of every good row."""
     conn = seeded_conn([utterance()])
     transport = FakeTransport([ship.TransportResponse(status=400)])
     shipped = await ship.ship(
-        conn, url="https://example/v1/ingest", transport=transport, sleep=no_sleep
+        conn,
+        install_id="install-1",
+        url="https://example/v1/ingest",
+        transport=transport,
+        sleep=no_sleep,
     )
     assert shipped == 0
-    assert len(transport.calls) == 1
-    assert len(store.unshipped_utterances(conn)) == 1
+    assert [len(payload["utterances"]) for _, payload in transport.calls] == [1, 0]
+    assert store.unshipped_utterances(conn) == []
+    (row,) = conn.execute("SELECT shipped_at, rejected_at FROM utterances").fetchall()
+    assert row["shipped_at"] is None
+    assert row["rejected_at"] is not None
 
 
 async def test_a_413_is_not_retried() -> None:
     conn = seeded_conn([utterance()])
     transport = FakeTransport([ship.TransportResponse(status=413)])
     shipped = await ship.ship(
-        conn, url="https://example/v1/ingest", transport=transport, sleep=no_sleep
+        conn,
+        install_id="install-1",
+        url="https://example/v1/ingest",
+        transport=transport,
+        sleep=no_sleep,
     )
     assert shipped == 0
     assert len(transport.calls) == 1
@@ -187,7 +217,11 @@ async def test_a_429_is_retried_with_backoff_and_then_succeeds() -> None:
         slept.append(seconds)
 
     shipped = await ship.ship(
-        conn, url="https://example/v1/ingest", transport=transport, sleep=record_sleep
+        conn,
+        install_id="install-1",
+        url="https://example/v1/ingest",
+        transport=transport,
+        sleep=record_sleep,
     )
     assert shipped == 1
     assert len(transport.calls) == 2
@@ -200,7 +234,11 @@ async def test_a_5xx_is_retried() -> None:
         [ship.TransportResponse(status=503), ship.TransportResponse(status=202, body=b"{}")]
     )
     shipped = await ship.ship(
-        conn, url="https://example/v1/ingest", transport=transport, sleep=no_sleep
+        conn,
+        install_id="install-1",
+        url="https://example/v1/ingest",
+        transport=transport,
+        sleep=no_sleep,
     )
     assert shipped == 1
 
@@ -209,7 +247,11 @@ async def test_retries_give_up_after_a_fixed_number_of_attempts() -> None:
     conn = seeded_conn([utterance()])
     transport = FakeTransport([ship.TransportResponse(status=503)] * 10)
     shipped = await ship.ship(
-        conn, url="https://example/v1/ingest", transport=transport, sleep=no_sleep
+        conn,
+        install_id="install-1",
+        url="https://example/v1/ingest",
+        transport=transport,
+        sleep=no_sleep,
     )
     assert shipped == 0
     assert len(transport.calls) == ship.MAX_ATTEMPTS
@@ -224,7 +266,11 @@ async def test_a_transport_failure_is_retried_then_gives_up(monkeypatch) -> None
         raise OSError("connection refused")
 
     shipped = await ship.ship(
-        conn, url="https://example/v1/ingest", transport=flaky, sleep=no_sleep
+        conn,
+        install_id="install-1",
+        url="https://example/v1/ingest",
+        transport=flaky,
+        sleep=no_sleep,
     )
     assert shipped == 0
     assert len(attempts) == ship.MAX_ATTEMPTS
@@ -232,7 +278,7 @@ async def test_a_transport_failure_is_retried_then_gives_up(monkeypatch) -> None
 
 async def test_no_endpoint_configured_leaves_everything_unshipped() -> None:
     conn = seeded_conn([utterance()])
-    shipped = await ship.ship(conn, url=None, transport=FakeTransport())
+    shipped = await ship.ship(conn, install_id="install-1", url=None, transport=FakeTransport())
     assert shipped == 0
     assert len(store.unshipped_utterances(conn)) == 1
 
@@ -240,7 +286,9 @@ async def test_no_endpoint_configured_leaves_everything_unshipped() -> None:
 async def test_debug_mode_never_calls_the_transport_and_marks_nothing_shipped() -> None:
     conn = seeded_conn([utterance()])
     transport = FakeTransport()
-    shipped = await ship.ship(conn, url=None, transport=transport, debug=True)
+    shipped = await ship.ship(
+        conn, install_id="install-1", url=None, transport=transport, debug=True
+    )
     assert shipped == 0
     assert transport.calls == []
     assert len(store.unshipped_utterances(conn)) == 1
@@ -256,7 +304,13 @@ async def test_a_session_is_carried_only_in_the_chunk_that_first_needs_it(monkey
             ship.TransportResponse(status=202, body=b'{"accepted": 1}'),
         ]
     )
-    await ship.ship(conn, url="https://example/v1/ingest", transport=transport, sleep=no_sleep)
+    await ship.ship(
+        conn,
+        install_id="install-1",
+        url="https://example/v1/ingest",
+        transport=transport,
+        sleep=no_sleep,
+    )
 
     first_sessions = transport.calls[0][1]["sessions"]
     second_sessions = transport.calls[1][1]["sessions"]
@@ -291,8 +345,160 @@ async def test_an_install_outside_the_contracts_platforms_sends_nothing(os_name,
     store.insert_utterance(conn, utterance())
     transport = FakeTransport()
 
-    shipped = await ship.ship(conn, url="https://example.test/v1/ingest", transport=transport)
+    shipped = await ship.ship(
+        conn, install_id="install-1", url="https://example.test/v1/ingest", transport=transport
+    )
 
     assert shipped == 0
     assert transport.calls == []
     assert len(store.unshipped_utterances(conn)) == 1
+
+
+URL = "https://example/v1/ingest"
+
+
+async def test_a_400_sets_aside_only_its_own_chunk_and_the_next_one_still_ships(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(ship, "CHUNK_ROWS", 1)
+    conn = seeded_conn([utterance(seq=1), utterance(seq=2)])
+    transport = FakeTransport(
+        [ship.TransportResponse(status=400), ship.TransportResponse(status=202, body=b"{}")]
+    )
+
+    shipped = await ship.ship(
+        conn, install_id="install-1", url=URL, transport=transport, sleep=no_sleep
+    )
+
+    assert shipped == 1
+    states = {
+        row["utterance_id"]: (row["shipped_at"] is not None, row["rejected_at"] is not None)
+        for row in conn.execute("SELECT * FROM utterances")
+    }
+    assert states == {"utterance-1": (False, True), "utterance-2": (True, False)}
+    # The refused chunk's session was never stored, so the next chunk carries it.
+    assert len(transport.calls[1][1]["sessions"]) == 1
+
+
+async def test_a_429_that_never_clears_stops_the_run_and_sets_nothing_aside() -> None:
+    conn = seeded_conn([utterance()])
+    transport = FakeTransport([ship.TransportResponse(status=429)] * ship.MAX_ATTEMPTS)
+    await ship.ship(conn, install_id="install-1", url=URL, transport=transport, sleep=no_sleep)
+    (row,) = conn.execute("SELECT shipped_at, rejected_at FROM utterances").fetchall()
+    assert (row["shipped_at"], row["rejected_at"]) == (None, None)
+
+
+async def test_a_session_with_no_utterances_ships_on_its_own() -> None:
+    conn = seeded_conn([])
+    transport = FakeTransport()
+
+    await ship.ship(conn, install_id="install-1", url=URL, transport=transport)
+
+    ((_, payload),) = transport.calls
+    assert payload["utterances"] == []
+    assert [s["session_id"] for s in payload["sessions"]] == ["session-1"]
+    assert store.unshipped_sessions(conn, "install-1") == []
+
+    await ship.ship(conn, install_id="install-1", url=URL, transport=transport)
+    assert len(transport.calls) == 1  # shipped once, not every session
+
+
+async def test_ending_a_shipped_session_ships_it_again_with_its_end() -> None:
+    """A session ships when it starts, before it has an `ended_at`; closing it puts
+    it back in the backlog so the next run sends the end."""
+    conn = seeded_conn([utterance()])
+    transport = FakeTransport()
+    await ship.ship(conn, install_id="install-1", url=URL, transport=transport)
+
+    store.end_session(conn, "session-1", "2026-09-13T11:00:00Z")
+    await ship.ship(conn, install_id="install-1", url=URL, transport=transport)
+
+    _, payload = transport.calls[-1]
+    assert payload["utterances"] == []
+    assert payload["sessions"][0]["ended_at"] == "2026-09-13T11:00:00Z"
+
+
+async def test_a_session_changed_while_its_request_is_in_flight_stays_unshipped() -> None:
+    conn = seeded_conn([])
+
+    async def closes_it_meanwhile(url: str, body: bytes) -> ship.TransportResponse:
+        store.end_session(conn, "session-1", "2026-09-13T11:00:00Z")
+        return ship.TransportResponse(status=202, body=b"{}")
+
+    await ship.ship(conn, install_id="install-1", url=URL, transport=closes_it_meanwhile)
+
+    (pending,) = store.unshipped_sessions(conn, "install-1")
+    assert pending["ended_at"] == "2026-09-13T11:00:00Z"
+
+
+async def test_only_the_current_install_ships_under_its_own_install_row() -> None:
+    """Rows left by an earlier install id are neither sent under the current one -
+    the server refuses a session whose install is not the request's - nor sent
+    with the earlier install's row, whichever of the two sorts first."""
+    conn = store.connect(Path(":memory:"))
+    store.upsert_install(conn, {**INSTALL, "install_id": "install-0"})
+    store.insert_session(conn, {**SESSION, "session_id": "session-0", "install_id": "install-0"})
+    store.insert_utterance(
+        conn,
+        utterance(utterance_id="old", session_id="session-0", install_id="install-0"),
+    )
+    store.upsert_install(conn, INSTALL)
+    store.insert_session(conn, SESSION)
+    store.insert_utterance(conn, utterance())
+    transport = FakeTransport()
+
+    await ship.ship(conn, install_id="install-1", url=URL, transport=transport)
+
+    ((_, payload),) = transport.calls
+    assert payload["install"]["install_id"] == "install-1"
+    assert {s["install_id"] for s in payload["sessions"]} == {"install-1"}
+    assert {u["install_id"] for u in payload["utterances"]} == {"install-1"}
+    assert [u["utterance_id"] for u in store.unshipped_utterances(conn)] == ["old"]
+
+
+async def test_a_chunk_budgets_for_the_sessions_it_carries() -> None:
+    """A backlog of single-utterance sessions - one per `/talk` - puts a session
+    beside every row. Counting the rows alone would build a request over the
+    server's body cap, which is answered `413` and never delivered."""
+    conn = store.connect(Path(":memory:"))
+    store.upsert_install(conn, INSTALL)
+    for n in range(1, 101):
+        session_id = f"{n:08d}-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        store.insert_session(
+            conn, {**SESSION, "session_id": session_id, "harness_version": "9" * 60}
+        )
+        store.insert_utterance(
+            conn, utterance(seq=n, session_id=session_id, engine="nemo", voice="custom")
+        )
+    transport = FakeTransport()
+
+    await ship.ship(conn, install_id="install-1", url=URL, transport=transport)
+
+    assert len(transport.calls) > 1
+    for _, payload in transport.calls:
+        carried = json.dumps(payload["sessions"]) + json.dumps(payload["utterances"])
+        assert len(carried) <= ship.CHUNK_BYTES
+
+
+async def test_debug_mode_logs_a_session_only_batch_and_marks_nothing(caplog) -> None:
+    conn = seeded_conn([])
+    transport = FakeTransport()
+    with caplog.at_level("INFO", logger="speak.telemetry.ship"):
+        await ship.ship(conn, install_id="install-1", url=URL, transport=transport, debug=True)
+    assert transport.calls == []
+    assert "SPEAK_TELEMETRY_DEBUG payload" in caplog.text
+    assert len(store.unshipped_sessions(conn, "install-1")) == 1
+
+
+def _local_columns(table: str) -> set[str]:
+    sql = (Path(__file__).parents[1] / "contract" / "v1" / "schema.sql").read_text()
+    body = sql.split(f"CREATE TABLE {table} (", 1)[1].split(");", 1)[0]
+    return {line.split()[0] for line in body.splitlines() if "-- LOCAL" in line and line.strip()}
+
+
+def test_every_local_column_of_the_contract_is_kept_out_of_the_upload() -> None:
+    """The projection names its local columns by hand; a LOCAL column added to the
+    contract and not to the projection would ship."""
+    assert _local_columns("utterances") == ship.LOCAL_ONLY_UTTERANCE_COLUMNS
+    assert _local_columns("sessions") == {"shipped_at"}
+    assert not _local_columns("sessions") & set(ship._SESSION_UPLOAD_FIELDS)

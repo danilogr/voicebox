@@ -163,3 +163,36 @@ def test_the_unshipped_backlog_is_capped_oldest_first() -> None:
 
     rows = store.unshipped_utterances(conn)
     assert [row["utterance_id"] for row in rows] == ["utterance-2", "utterance-3", "utterance-4"]
+
+
+def test_updating_a_session_puts_it_back_in_the_backlog() -> None:
+    """Every write to a session row clears `shipped_at`, or the server keeps the
+    version it was first sent - a session with no end and the wrong harness."""
+    conn = store.connect(Path(":memory:"))
+    store.upsert_install(conn, INSTALL)
+    store.insert_session(conn, SESSION)
+
+    def ship_all() -> None:
+        store.mark_sessions_shipped(conn, store.unshipped_sessions(conn, "install-1"), "t")
+        assert store.unshipped_sessions(conn, "install-1") == []
+
+    ship_all()
+    store.end_session(conn, "session-1", "2026-09-13T11:00:00Z")
+    assert len(store.unshipped_sessions(conn, "install-1")) == 1
+
+    ship_all()
+    store.update_session_harness(conn, "session-1", "codex", "1.0")
+    assert len(store.unshipped_sessions(conn, "install-1")) == 1
+
+
+def test_a_rejected_row_leaves_the_backlog_and_the_cap() -> None:
+    conn = store.connect(Path(":memory:"))
+    store.upsert_install(conn, INSTALL)
+    store.insert_session(conn, SESSION)
+    store.insert_utterance(conn, utterance(utterance_id="bad"))
+    store.mark_rejected(conn, ["bad"], "t")
+    store.insert_utterance(conn, utterance(utterance_id="good"), backlog_cap=1)
+
+    assert [r["utterance_id"] for r in store.unshipped_utterances(conn)] == ["good"]
+    (count,) = conn.execute("SELECT COUNT(*) FROM utterances").fetchone()
+    assert count == 2  # the cap counted only the backlog, so nothing was pruned

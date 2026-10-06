@@ -85,3 +85,16 @@ def test_main_with_no_store_prints_a_plain_message(tmp_path, monkeypatch, capsys
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     report.main()
     assert "No telemetry recorded yet." in capsys.readouterr().out
+
+
+def test_render_counts_rejected_rows_apart_from_the_backlog() -> None:
+    conn = store.connect(Path(":memory:"))
+    store.upsert_install(conn, INSTALL)
+    store.insert_session(conn, SESSION)
+    store.insert_utterance(conn, utterance(utterance_id="u1"))
+    store.insert_utterance(conn, utterance(utterance_id="u2"))
+    store.mark_rejected(conn, ["u2"], "t")
+
+    assert "2 utterances across 1 sessions; 1 unshipped, 1 rejected by the server." in (
+        report.render(conn)
+    )

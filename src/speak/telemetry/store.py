@@ -1,7 +1,9 @@
 """Local SQLite: the full schema from `contract/v1/schema.sql`, and plain CRUD over it.
 
-The local database is the outbound queue: `shipped_at IS NULL` on `utterances` is the
-backlog, so there is one mechanism rather than a database plus a spool file.
+The local database is the outbound queue, so there is one mechanism rather than a
+database plus a spool file. An utterance is in the backlog until it is shipped or the
+server refuses it (`shipped_at` and `rejected_at` both NULL); a session is until it
+has been sent as it stands now (`shipped_at` NULL, cleared by every update to it).
 
 D1 enforces foreign keys on every query, unconditionally; Python's `sqlite3` defaults
 `PRAGMA foreign_keys` to off, per connection. Every connection this module opens turns
@@ -61,7 +63,12 @@ _UTTERANCE_COLUMNS = (
     "corrected_at",
     "correction_kind",
     "shipped_at",
+    "rejected_at",
 )
+
+# The backlog: neither shipped nor refused by the server. One definition, shared by
+# the read, the cap and `speak-stats`.
+UTTERANCE_BACKLOG = "shipped_at IS NULL AND rejected_at IS NULL"
 
 _INSTALL_COLUMNS = (
     "install_id",
@@ -169,7 +176,12 @@ def insert_session(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
 
 
 def end_session(conn: sqlite3.Connection, session_id: str, ended_at: str) -> None:
-    conn.execute("UPDATE sessions SET ended_at = ? WHERE session_id = ?", (ended_at, session_id))
+    """Close the session row. Clearing `shipped_at` puts it back in the backlog, which
+    is how `ended_at` reaches the server: the session already shipped when it began."""
+    conn.execute(
+        "UPDATE sessions SET ended_at = ?, shipped_at = NULL WHERE session_id = ?",
+        (ended_at, session_id),
+    )
     conn.commit()
 
 
@@ -180,8 +192,39 @@ def update_session_harness(
     request carries is known - the better source (spec 2), available only once a
     request is in flight, never at the moment the session row is first written."""
     conn.execute(
-        "UPDATE sessions SET harness = ?, harness_version = ? WHERE session_id = ?",
+        "UPDATE sessions SET harness = ?, harness_version = ?, shipped_at = NULL "
+        "WHERE session_id = ?",
         (harness, harness_version, session_id),
+    )
+    conn.commit()
+
+
+def unshipped_sessions(conn: sqlite3.Connection, install_id: str) -> list[dict[str, Any]]:
+    """This install's sessions that changed since they were last sent, or never were."""
+    cursor = conn.execute(
+        "SELECT * FROM sessions WHERE shipped_at IS NULL AND install_id = ? "
+        "ORDER BY started_at ASC, rowid ASC",
+        (install_id,),
+    )
+    return [_row_to_dict(row) for row in cursor.fetchall()]
+
+
+def mark_sessions_shipped(
+    conn: sqlite3.Connection, sessions: Sequence[dict[str, Any]], shipped_at: str
+) -> None:
+    """Mark each session shipped, unless it changed after it was read.
+
+    The columns an update can touch are compared with what was sent, so a session
+    closed or corrected while its request was in flight stays in the backlog with
+    its new values instead of being marked as though the server had them.
+    """
+    conn.executemany(
+        "UPDATE sessions SET shipped_at = ? WHERE session_id = ? "
+        "AND ended_at IS ? AND harness IS ? AND harness_version IS ?",
+        [
+            (shipped_at, s["session_id"], s["ended_at"], s["harness"], s["harness_version"])
+            for s in sessions
+        ],
     )
     conn.commit()
 
@@ -221,15 +264,15 @@ def insert_utterance(
 
 
 def _enforce_backlog_cap(conn: sqlite3.Connection, cap: int) -> None:
-    (count,) = conn.execute("SELECT COUNT(*) FROM utterances WHERE shipped_at IS NULL").fetchone()
+    (count,) = conn.execute(f"SELECT COUNT(*) FROM utterances WHERE {UTTERANCE_BACKLOG}").fetchone()
     over = count - cap
     if over <= 0:
         return
     conn.execute(
-        """
+        f"""
         DELETE FROM utterances WHERE utterance_id IN (
             SELECT utterance_id FROM utterances
-            WHERE shipped_at IS NULL
+            WHERE {UTTERANCE_BACKLOG}
             ORDER BY occurred_at ASC, rowid ASC
             LIMIT ?
         )
@@ -240,23 +283,37 @@ def _enforce_backlog_cap(conn: sqlite3.Connection, cap: int) -> None:
     logger.debug("telemetry backlog over %d rows; dropped the oldest %d", cap, over)
 
 
-def unshipped_utterances(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    """Every unshipped row, oldest first - the whole local backlog.
+def unshipped_utterances(
+    conn: sqlite3.Connection, install_id: str | None = None
+) -> list[dict[str, Any]]:
+    """The backlog, oldest first - one install's, or every install's when `None`.
 
-    Bounded by construction: `insert_utterance` never lets the unshipped count grow
-    past its cap, so this is always a small, in-memory-sized read.
+    Bounded by construction: `insert_utterance` never lets the backlog grow past its
+    cap, so this is always a small, in-memory-sized read.
     """
+    where = UTTERANCE_BACKLOG + ("" if install_id is None else " AND install_id = ?")
     cursor = conn.execute(
-        "SELECT * FROM utterances WHERE shipped_at IS NULL ORDER BY occurred_at ASC, rowid ASC"
+        f"SELECT * FROM utterances WHERE {where} ORDER BY occurred_at ASC, rowid ASC",
+        () if install_id is None else (install_id,),
     )
     return [_row_to_dict(row) for row in cursor.fetchall()]
 
 
-def mark_shipped(conn: sqlite3.Connection, utterance_ids: Sequence[str], shipped_at: str) -> None:
+def _stamp(conn: sqlite3.Connection, column: str, utterance_ids: Sequence[str], at: str) -> None:
     if not utterance_ids:
         return
     conn.executemany(
-        "UPDATE utterances SET shipped_at = ? WHERE utterance_id = ?",
-        [(shipped_at, uid) for uid in utterance_ids],
+        f"UPDATE utterances SET {column} = ? WHERE utterance_id = ?",
+        [(at, uid) for uid in utterance_ids],
     )
     conn.commit()
+
+
+def mark_shipped(conn: sqlite3.Connection, utterance_ids: Sequence[str], shipped_at: str) -> None:
+    _stamp(conn, "shipped_at", utterance_ids, shipped_at)
+
+
+def mark_rejected(conn: sqlite3.Connection, utterance_ids: Sequence[str], rejected_at: str) -> None:
+    """Take rows the server refused out of the backlog for good. They stay in the
+    local store, where `speak-stats` still counts them."""
+    _stamp(conn, "rejected_at", utterance_ids, rejected_at)

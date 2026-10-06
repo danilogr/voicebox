@@ -255,3 +255,28 @@ def test_a_transcription_round_trips_through_a_validating_payload() -> None:
     errors = list(VALIDATOR.iter_errors(payload))
     assert errors == [], [e.message for e in errors]
     assert payload["utterances"][0]["converted"] is True
+
+
+async def test_every_request_ship_sends_validates_including_a_session_alone() -> None:
+    """The payloads `ship()` itself builds, captured at the transport: an utterance
+    chunk, then a session that ships with no utterances at all."""
+    conn = store.connect(Path(":memory:"))
+    store.upsert_install(conn, INSTALL)
+    store.insert_session(conn, SESSION)
+    store.insert_utterance(conn, out_row(status="interrupted"))
+    lonely = {**SESSION, "session_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"}
+    store.insert_session(conn, lonely)
+    sent: list[dict[str, object]] = []
+
+    async def transport(url: str, body: bytes) -> ship.TransportResponse:
+        sent.append(json.loads(body))
+        return ship.TransportResponse(status=202, body=b'{"accepted": 1}')
+
+    await ship.ship(
+        conn, install_id=str(INSTALL["install_id"]), url="https://x/v1/ingest", transport=transport
+    )
+
+    assert [len(p["utterances"]) for p in sent] == [1, 0]
+    for payload in sent:
+        errors = list(VALIDATOR.iter_errors(payload))
+        assert errors == [], [e.message for e in errors]

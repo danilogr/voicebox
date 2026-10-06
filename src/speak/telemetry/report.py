@@ -25,10 +25,16 @@ def render(conn: sqlite3.Connection) -> str:
         return "No utterances recorded yet."
 
     (unshipped,) = conn.execute(
-        "SELECT COUNT(*) FROM utterances WHERE shipped_at IS NULL"
+        f"SELECT COUNT(*) FROM utterances WHERE {store.UTTERANCE_BACKLOG}"
+    ).fetchone()
+    (rejected,) = conn.execute(
+        "SELECT COUNT(*) FROM utterances WHERE rejected_at IS NOT NULL"
     ).fetchone()
     (sessions,) = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()
-    lines.append(f"{total} utterances across {sessions} sessions; {unshipped} unshipped.")
+    summary = f"{total} utterances across {sessions} sessions; {unshipped} unshipped"
+    # Refused by the server and never resent: kept here so a rejection is visible.
+    summary += f", {rejected} rejected by the server." if rejected else "."
+    lines.append(summary)
 
     lines.append("")
     lines.append("By direction and status:")

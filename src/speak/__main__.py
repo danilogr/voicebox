@@ -116,10 +116,14 @@ async def _ship_backlog() -> None:
         logger.debug("telemetry: could not open the local store to ship: %s", error)
         return
     try:
-        # No endpoint is configured yet (spec 11's rollout still needs a domain);
-        # `ship` itself no-ops on the network step but still runs the debug branch.
         url = env.get("SPEAK_TELEMETRY_ENDPOINT") or DEFAULT_TELEMETRY_ENDPOINT
-        shipped = await telemetry_ship.ship(conn, url=url, transport=_http_transport, debug=debug)
+        shipped = await telemetry_ship.ship(
+            conn,
+            install_id=consented.install_id,
+            url=url,
+            transport=_http_transport,
+            debug=debug,
+        )
         logger.debug("telemetry: shipped %d utterance row(s)", shipped)
     except Exception:
         logger.debug("telemetry: shipping failed", exc_info=True)
