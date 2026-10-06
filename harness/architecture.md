@@ -17,7 +17,7 @@ returns a transcript, and the `/talk` slash command dictates a prompt instead of
 typing it. There are therefore two entry points into the same code: the long-lived
 MCP server (`__main__`) and a short-lived one-shot process (`talk`) that a slash
 command runs and whose stdout is injected into the user's message. Both transcribe
-against the same shared speech server the supervisor already manages.
+against the same shared speech server that `speak_core.supervisor.NemoSupervisor` manages.
 
 The engines, the supervisor, the playback queue, the speaker lock, the shared settings and the telemetry mechanism are [speak-core](https://github.com/danilogr/speak-core)'s, a git dependency pinned by tag; their design and the decisions behind them are in its `harness/architecture.md`. This document covers what this plugin builds on top.
 
@@ -68,7 +68,7 @@ Almost nothing is persistent.
 
 - **Session state** (in memory, per process): the active voice and rate, whether the
   voice is re-rolled per utterance, the warmup task, and whether this session has
-  registered with the supervisor. Claude Code runs one server process
+  registered with `speak_core.supervisor.NemoSupervisor`. Claude Code runs one server process
   per session, so this is already isolated from every other window. Deliberately never
   written to disk.
 - **Plugin state** (on disk, per machine), under `SPEAK_STATE_DIR` (`<cache>/speak`):
@@ -140,7 +140,7 @@ would wait for it until the host closed the pipe.
   platform, and shipping another vendor's audio is not ours to do.
 - **NVIDIA NeMo-Speech.cpp** (https://github.com/NVIDIA/NeMo-Speech.cpp, optional) — the
   local neural speech server: MagpieTTS for speech, Nemotron 3.5 for recognition.
-  Installed by `speak-core-setup` and managed by the supervisor. Not vendored: it is a
+  Installed by `speak-core-setup` and managed by `speak_core.supervisor.NemoSupervisor`. Not vendored: it is a
   per-platform binary plus both models, which is over a gigabyte of download. Sizes
   are in `performance.md`.
 
@@ -170,8 +170,8 @@ would wait for it until the host closed the pipe.
   machine-wide voice file, which would leak one window's choice into every other.
 
 - **Dependencies are injected, and the server is built by a factory.**
-  `create_server` closes over its engine, queue, and supervisor; the queue takes its
-  process launcher, and the supervisor its spawn, liveness, and kill callables. This is
+  `create_server` closes over its engine, queue, and `NemoSupervisor`; the queue takes its
+  process launcher, and `NemoSupervisor` its spawn, liveness, and kill callables. This is
   what lets the suite cover the real code paths with no audio, no sockets, and no
   speech server. Not module-level singletons, which would force monkeypatching.
 
@@ -238,22 +238,9 @@ would wait for it until the host closed the pipe.
   the first 300 ms rather than fixed, because a fixed threshold fails on a quiet
   microphone and in a noisy room alike.
 
-- **`--asr-model` is only added when listening is enabled.** A missing
-  ASR model makes `serve` fail, which would take neural speech down with it. Gating
-  the flag means a session that never listens cannot regress, and a session that opts
-  in without running setup degrades to the `say` fallback that already exists rather
-  than breaking.
-
-  The cost of gating is a mixed machine: a session using neural speech without
-  listening can win the start election and leave an ASR-less server running, which a
-  listening session then finds. `listen` cannot tell that apart from an unpulled model
-  by probing alone, so it names both causes rather than guessing one. It does not
-  restart the server to fix itself — that would cut off whichever session is
-  mid-sentence.
-
 - **The microphone is arbitrated by a lock, and contention fails fast.**
   There is one microphone and any number of sessions; two recordings at once produce
-  garbage in both. The election is the supervisor's, reused: an atomic `mkdir` on
+  garbage in both. The election is `NemoSupervisor`'s, reused: an atomic `mkdir` on
   `mic/`, an owner pid in the file inside it, and a lock left by a dead session
   reclaimed by the next caller. Not queueing on the lock, which is worse than
   refusing — you would start talking and a window you are not looking at would take
@@ -265,57 +252,6 @@ would wait for it until the host closed the pipe.
   would acquire it, and the first to finish would release the cross-process lock while
   the other was still recording. `listen` therefore also holds an `asyncio.Lock` and
   refuses a concurrent call rather than queueing it, so the answer is immediate.
-
-- **A session registers with the supervisor at session start.** `/talk` runs as its own short-lived process, so without a warm server it
-  pays a cold start on every invocation. Registering eagerly trades resident memory
-  from session start for an instant `/talk`; the transcription model roughly doubles
-  what the server holds, and `performance.md` has the figures. Sessions that do not
-  enable listening register lazily instead.
-
-- **A running speech server is never replaced, and the listening paths
-  guard it twice.** A second server would overwrite `server.json` with a pid that
-  cannot bind the port and orphan the first — the last session out would then stop
-  the wrong process and leave a gigabyte resident.
-
-  The two listening paths, the session warmup and `/talk`, call `reachable()` before
-  `ensure_running()`. That check is liveness, not readiness: any HTTP answer means
-  the port is taken, including the 503 of a server still warming up and the case of a
-  server with no ASR model, neither of which may be replaced.
-
-  Every path, those two included, is then guarded again inside `ensure_running`,
-  which refuses when `server.json` names a live pid. That is the only guard on the
-  TTS fallback (`__main__.start_speech_server`), which cannot make the first check:
-  it starts the server from `except (HTTPError, OSError)`, so a 5xx or a synthesis
-  timeout from a loaded server reaches it as "the server is gone". The pid check is
-  the weaker of the two — it trusts `server.json`, so a record whose pid the OS has
-  since reused reads as a live server — but guarding at the supervisor covers every
-  call site at once, including future ones.
-
-- **A cold start is reported as a cold start, not as a missing model.**
-  `has_asr` answers False for any HTTP failure, so a server that is absent or still
-  loading its models looks exactly like one served without `--asr-model` — and that
-  message tells the user to run `/speak:setup` or restart another session, neither of
-  which applies to a server that is eight seconds from ready. The server is started as
-  the session opens, which makes that window the ordinary first run.
-  Three pieces hold it together, and all three are required: `liveness()` answers
-  ABSENT, STARTING or READY off one `/health` request, so both entry points can say
-  "wait"; `ensure_running` probes on its early returns too, so a caller that finds
-  another session's start already under way is handed a server that has answered and
-  not merely one that has been recorded; and `listen` awaits its own session's warmup
-  task. Readiness must not be inferred from `has_asr`, which answers False for any HTTP
-  failure and so cannot tell a loading server from one with no model.
-
-- **Transcription and liveness get different timeouts, and the
-  transcription one is derived.** They are the same HTTP client but not the same
-  wait: `/health` and `/v1/models` are localhost questions a live server answers in
-  milliseconds, while a transcription is minutes of audio through a model. A single
-  value cannot serve both: short enough for a probe will not transcribe a long
-  recording, and long enough to transcribe holds `listen` for that whole time against
-  a server that has wedged. A transcription that times out has already discarded its
-  audio and blames the server rather than reporting that it gave up. So the probes take
-  a short fixed timeout and the transcription timeout is derived from the configured
-  recording cap, which is the only number that can bound it. A single raised constant
-  breaks again the moment `SPEAK_LISTEN_MAX_SECONDS` goes up.
 
 - **Capture uses the `sounddevice` package rather than an ffmpeg
   subprocess.** It is the first native-wheel dependency here, and it is what makes
