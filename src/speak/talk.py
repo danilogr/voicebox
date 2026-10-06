@@ -16,17 +16,11 @@ from typing import NoReturn
 from speak.capture import Recorder, RecorderUnavailable, Recording, describe
 from speak.cue import Cue
 from speak.engines.asr import Liveness, NemoTranscriber, Transcriber, TranscriptionFailed
+from speak.listening import build_cue, build_recorder, capture_limits, transcription_timeout
 from speak.miclock import MicLock, MicrophoneBusy
-from speak.runtime import (
-    build_cue,
-    build_recorder,
-    capture_limits,
-    configure_logging,
-    supervisor_for,
-    transcription_timeout,
-)
+from speak.runtime import configure_logging, supervisor_for
 from speak.server import VERSION
-from speak.settings import Settings
+from speak.settings import PLUGIN, Settings
 from speak.supervisor import NemoSupervisor, process_is_alive
 from speak.telemetry import ping as telemetry_ping
 from speak.telemetry import wiring as telemetry_wiring
@@ -284,7 +278,7 @@ def _fail(message: str) -> NoReturn:
 
 
 def main() -> None:
-    configure_logging()
+    configure_logging(PLUGIN)
     settings = Settings.from_env(os.environ)
     try:
         text = asyncio.run(_run(settings))

@@ -1,4 +1,5 @@
-"""Wiring shared by the two entry points: logging, the health probe, capture, cues."""
+"""What every plugin's entry points build the same way: logging, the speech server's
+health probe, and the supervisor for the one shared speech server."""
 
 import asyncio
 import logging
@@ -8,29 +9,31 @@ from collections.abc import Callable
 
 import httpx2
 
-from speak.capture import MicrophoneRecorder, TrackerSettings
 from speak.config import ServerSettings
-from speak.cue import Cue
-from speak.settings import Settings
 from speak.supervisor import NemoSupervisor, Probe, Spawn, process_is_alive, spawn_server
 
 HEALTH_TIMEOUT = 30.0
 HEALTH_INTERVAL = 0.5
 
-# Enough for the request itself on top of the audio. Transcription runs well above
-# realtime (see harness/performance.md), so a second of allowance per second of
-# recording is generous.
-TRANSCRIBE_MARGIN = 30.0
+# The package these modules live in. Its loggers need the handler as much as the
+# plugin's do, and the two are different packages.
+CORE_LOGGER = __name__.partition(".")[0]
 
 
-def configure_logging() -> None:
-    """Log to stderr only. stdout carries the protocol and nothing else."""
+def configure_logging(plugin: str) -> None:
+    """Log to stderr only, for the plugin's loggers and this package's. stdout carries
+    the protocol and nothing else.
+
+    Both, because a logger with no handler of its own falls through to Python's
+    last-resort handler, which drops everything below WARNING.
+    """
     handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter("[speak] %(message)s"))
-    root = logging.getLogger("speak")
-    root.addHandler(handler)
-    root.setLevel(logging.INFO)
-    root.propagate = False
+    handler.setFormatter(logging.Formatter(f"[{plugin}] %(message)s"))
+    for name in dict.fromkeys((plugin, CORE_LOGGER)):
+        logger = logging.getLogger(name)
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
 
 
 def health_probe(base_url: str, timeout: float = HEALTH_TIMEOUT) -> Probe:
@@ -53,41 +56,6 @@ def health_probe(base_url: str, timeout: float = HEALTH_TIMEOUT) -> Probe:
     return probe
 
 
-def transcription_timeout(settings: Settings) -> float:
-    """How long one transcription may take, derived from the longest recording allowed.
-
-    A fixed timeout cannot serve a configurable cap: at the default 240 seconds the
-    old 30-second one could not have transcribed a one-minute answer, and a
-    transcription that times out has already discarded the audio and blames the
-    server rather than reporting that it gave up.
-    """
-    return settings.listen_max_seconds + TRANSCRIBE_MARGIN
-
-
-def capture_limits(settings: Settings) -> TrackerSettings:
-    """Turn the configured seconds and milliseconds into one recording's limits."""
-    return TrackerSettings(
-        silence_ms=settings.listen_silence_ms,
-        start_timeout_ms=settings.listen_timeout * 1000,
-        max_ms=settings.listen_max_seconds * 1000,
-    )
-
-
-def build_cue(settings: Settings) -> Cue:
-    """The chimes that bracket one recording, built the same way by both entry points."""
-    return Cue(
-        enabled=settings.listen_cue,
-        start=settings.listen_cue_start,
-        end=settings.listen_cue_end,
-        empty=settings.listen_cue_empty,
-    )
-
-
-def build_recorder(settings: Settings) -> MicrophoneRecorder:
-    """The microphone, built the same way by both entry points."""
-    return MicrophoneRecorder(device=settings.input_device)
-
-
 def supervisor_for(
     server: ServerSettings,
     *,
@@ -100,8 +68,9 @@ def supervisor_for(
     """The supervisor for the one shared speech server, built from the shared settings.
 
     Only `ServerSettings` goes in, so the server a plugin would start is the same
-    whichever plugin starts it: it requests both models, the shared port and seed, and its lock,
-    pid record and client registry in the shared state directory.
+    whichever plugin starts it: it requests both models on the shared port with the
+    shared seed, and keeps its lock, pid record and client registry in the shared
+    state directory.
     """
     return NemoSupervisor(
         state_dir=server.shared_dir,

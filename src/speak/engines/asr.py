@@ -8,10 +8,10 @@ import httpx2
 
 logger = logging.getLogger(__name__)
 
-# A backstop, not the operating value: both entry points derive their own from the
-# recording cap via `runtime.transcription_timeout`. It has to stay above the default
-# SPEAK_LISTEN_MAX_SECONDS, because a transcription that times out has already thrown
-# the audio away and reports the server's fault instead of its own.
+# A backstop, not the operating value: a caller derives its own from the longest
+# recording it allows. It has to stay above any plugin's default recording cap,
+# because a transcription that times out has already thrown the audio away and
+# reports the server's fault instead of its own.
 DEFAULT_TIMEOUT = 300.0
 
 # Liveness against localhost: a server that is up answers in milliseconds, and one

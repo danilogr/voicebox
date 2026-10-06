@@ -88,7 +88,8 @@ System specifications and engineering guidelines:
 | [`src/speak/tools.py`](../src/speak/tools.py) | Tool metadata, parameter schemas, and the guidance prompt that tells Claude when to speak. |
 | [`src/speak/config.py`](../src/speak/config.py) | Settings every plugin reads the same way: shared `NEMO_*` server settings, a prefixed voice, the plugin and shared state directories. |
 | [`src/speak/settings.py`](../src/speak/settings.py) | This plugin's `Settings`: embeds the server and voice settings and adds the `SPEAK_LISTEN_*`, input device, transcription and state-directory settings. |
-| [`src/speak/runtime.py`](../src/speak/runtime.py) | Centralized logging configuration, process health probes, and timeout helpers. |
+| [`src/speak/runtime.py`](../src/speak/runtime.py) | Logging for the plugin's and the core's loggers, the speech server health probe, and the supervisor factory. |
+| [`src/speak/listening.py`](../src/speak/listening.py) | Capture limits, microphone, cue and transcription timeout, built the same way by `__main__` and `talk`. |
 
 ### Audio Output & Playback
 

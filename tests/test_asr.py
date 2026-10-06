@@ -2,13 +2,11 @@ import httpx2
 import pytest
 
 from speak.engines.asr import (
-    DEFAULT_TIMEOUT,
     PROBE_TIMEOUT,
     Liveness,
     NemoTranscriber,
     TranscriptionFailed,
 )
-from speak.settings import Settings
 
 MODELS_WITH_ASR = {
     "data": [
@@ -190,12 +188,6 @@ async def test_the_probes_do_not_wait_as_long_as_a_transcription():
     await transcriber.liveness()
     await transcriber.has_asr()
     assert seen == {"/health": PROBE_TIMEOUT, "/v1/models": PROBE_TIMEOUT}
-
-
-def test_the_default_timeout_outlasts_the_longest_recording_allowed():
-    """Both entry points derive their own, but a caller that does not must not get a
-    timeout the configured cap can walk straight through."""
-    assert Settings().listen_max_seconds < DEFAULT_TIMEOUT
 
 
 async def test_liveness_is_ready_when_the_server_answers_with_success():

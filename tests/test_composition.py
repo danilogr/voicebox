@@ -5,7 +5,7 @@ from pathlib import Path
 from speak.__main__ import build_ears, build_supervisor
 from speak.config import ServerSettings, VoiceSettings
 from speak.cue import END_SOUND
-from speak.runtime import transcription_timeout
+from speak.listening import transcription_timeout
 from speak.settings import Settings
 
 

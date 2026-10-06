@@ -11,19 +11,13 @@ from mcp.server.mcpserver import MCPServer
 
 from speak.engines import build_engine
 from speak.engines.asr import NemoTranscriber
+from speak.listening import build_cue, build_recorder, capture_limits, transcription_timeout
 from speak.miclock import MicLock
 from speak.queue import SpeechQueue, UtteranceOutcome
-from speak.runtime import (
-    build_cue,
-    build_recorder,
-    capture_limits,
-    configure_logging,
-    supervisor_for,
-    transcription_timeout,
-)
+from speak.runtime import configure_logging, supervisor_for
 from speak.server import VERSION as PLUGIN_VERSION
 from speak.server import Ears, create_server
-from speak.settings import Settings
+from speak.settings import PLUGIN, Settings
 from speak.supervisor import NemoSupervisor, process_is_alive
 from speak.telemetry import consent as telemetry_consent
 from speak.telemetry import ping as telemetry_ping
@@ -241,7 +235,7 @@ def run(server: StdioServer) -> None:
 
 
 def main() -> None:
-    configure_logging()
+    configure_logging(PLUGIN)
     settings = Settings.from_env(os.environ)
     try:
         server = build(settings)

@@ -76,9 +76,12 @@ against the same shared speech server the supervisor already manages.
   route. It must not record anything.
 - **`miclock`** — one holder at a time for the single microphone, elected the same
   way the speech server's start lock is. It must not know what the microphone is for.
-- **`runtime`** — what both entry points build the same way: logging, the health
-  probe, the capture limits, the transcription timeout, and the recording cue. It
-  installs the one log handler, on stderr, and is the only module that installs one.
+- **`runtime`** — what every entry point builds the same way: logging, the health
+  probe and the shared server's supervisor (`supervisor_for`). It installs the one log
+  handler, on stderr, on both the plugin's logger and the core package's, and is the
+  only module that installs one.
+- **`listening`** — what both of this plugin's entry points build the same way for
+  listening: the capture limits, the microphone, the cue and the transcription timeout.
 - **`talk`** — the `/talk` one-shot: hold the shared server for the life of the
   process, record, transcribe, print. It is the only module besides `__main__` that
   reads the plugin's configuration from the environment, and the only one where
@@ -207,7 +210,7 @@ which engine produced an utterance.
   Every public method catches its own failures: a dead telemetry backend has to be
   indistinguishable from a healthy one.
 - **`wiring.py`** — composition shared by `__main__` and `talk`, the same role
-  `runtime.py` plays for capture and cues: consent, the machine probe, and the
+  `listening.py` plays for capture and cues: consent, the machine probe, and the
   `installs`/`sessions` rows a `TelemetrySession` is built from.
 - **`ship.py`** — projects the current install's backlog to the wire format (dropping
   every `-- LOCAL` column) and POSTs it in chunks, off the hot path: utterance chunks

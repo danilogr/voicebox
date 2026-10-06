@@ -193,7 +193,7 @@ class BrokenSupervisor(FakeSupervisor):
 @pytest.fixture(autouse=True)
 def _quiet_logging(monkeypatch) -> None:
     """`main` reconfigures the `speak` logger; leave the rest of the suite's alone."""
-    monkeypatch.setattr(talk_module, "configure_logging", lambda: None)
+    monkeypatch.setattr(talk_module, "configure_logging", lambda plugin: None)
 
 
 async def _dictate(supervisor, transcriber, lock=None, settings=None) -> str:
