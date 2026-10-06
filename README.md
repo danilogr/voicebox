@@ -18,7 +18,7 @@ Give Claude Code a voice, an ear, and a **private local transcription workstatio
 
 ---
 
-## <img src="assets/transcribe-pixel.svg" width="26" height="26" alt="Offline Transcribe" valign="middle" /> Local Audio & Video Transcription
+## <img src="assets/transcribe-detailed.svg" width="28" height="28" alt="Offline Transcribe" valign="middle" /> Local Audio & Video Transcription
 
 If you regularly transcribe meetings, user interviews, lectures, podcasts, or video clips, `speak` gives you a dedicated local transcription workflow directly inside Claude Code.
 
@@ -93,7 +93,7 @@ Say your prompt instead of typing:
 ### Interactive Conversation Mode (`/speak:converse`)
 Run `/speak:converse` to turn the session into a continuous voice conversation. Claude speaks its responses aloud and automatically listens for your voice reply whenever it needs input. Tell Claude to stop or ask for quiet to return to text mode at any time.
 
-### <img src="assets/narrate-pixel.svg" width="22" height="22" alt="Offline Narrate" valign="middle" /> Reading Long Documents Aloud (`/speak:narrate`)
+### <img src="assets/narrate-detailed.svg" width="24" height="24" alt="Offline Narrate" valign="middle" /> Reading Long Documents Aloud (`/speak:narrate`)
 Have Claude read any local file or web article:
 
 ```bash
