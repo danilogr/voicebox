@@ -279,3 +279,20 @@ def test_should_retry_matches_contract_md_exactly(status: int) -> None:
 @pytest.mark.parametrize("status", [200, 202, 400, 404, 413])
 def test_should_not_retry_these(status: int) -> None:
     assert ship._should_retry(status) is False
+
+
+@pytest.mark.parametrize(("os_name", "arch"), [("darwin", "riscv64"), ("freebsd", "x86_64")])
+async def test_an_install_outside_the_contracts_platforms_sends_nothing(os_name, arch) -> None:
+    """`os` and `arch` are required and have no "other" value, so such an install
+    would be refused on every chunk. Nothing is sent and nothing is marked."""
+    conn = store.connect(Path(":memory:"))
+    store.upsert_install(conn, {**INSTALL, "os": os_name, "arch": arch})
+    store.insert_session(conn, SESSION)
+    store.insert_utterance(conn, utterance())
+    transport = FakeTransport()
+
+    shipped = await ship.ship(conn, url="https://example.test/v1/ingest", transport=transport)
+
+    assert shipped == 0
+    assert transport.calls == []
+    assert len(store.unshipped_utterances(conn)) == 1

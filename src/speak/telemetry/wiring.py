@@ -4,6 +4,7 @@ does the same job for capture and cues.
 """
 
 import logging
+import re
 import sys
 import uuid
 from collections.abc import Mapping
@@ -58,9 +59,42 @@ def normalize_harness(name: str) -> str:
     return "other"
 
 
-def _language(env: Mapping[str, str]) -> str | None:
+# The shapes and lengths the contract accepts for these install fields and session
+# columns (`tests/contract/v1/schema/ingest-request.schema.json`). The install and
+# its sessions travel with every chunk, so one value outside them would have every
+# chunk refused; a value that does not fit is dropped or cut here instead.
+LANGUAGE_PATTERN = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
+LANGUAGE_MAX_LENGTH = 35
+TIMEZONE_PATTERN = re.compile(r"^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+){1,2}$")
+TIMEZONE_MAX_LENGTH = 64
+TTS_ENGINE_MAX_LENGTH = 32
+MACHINE_NAME_MAX_LENGTH = 128  # cpu_model, accel_name
+
+# Zone names that `/etc/localtime` can point at with no area, and their IANA name
+# under `Etc/`, which is the only form the contract's pattern accepts.
+_AREALESS_ZONES = frozenset({"UTC", "UCT", "GMT", "Universal", "Zulu", "Greenwich"})
+
+
+def language(env: Mapping[str, str]) -> str | None:
+    """The BCP-47 tag from `LANG`, or `None` for anything that is not one.
+
+    `C` and `POSIX` are the absence of a locale, not a language, and a value with a
+    modifier (`en_US@euro`) or any other shape is not a tag the contract accepts.
+    """
     lang = (env.get("LANG") or "").split(".")[0].replace("_", "-")
-    return lang or None
+    if len(lang) > LANGUAGE_MAX_LENGTH or not LANGUAGE_PATTERN.fullmatch(lang):
+        return None
+    return lang
+
+
+def timezone_name(raw: str | None) -> str | None:
+    """`raw` as an IANA name the contract accepts, or `None`."""
+    if raw is None:
+        return None
+    name = f"Etc/{raw}" if raw in _AREALESS_ZONES else raw
+    if len(name) > TIMEZONE_MAX_LENGTH or not TIMEZONE_PATTERN.fullmatch(name):
+        return None
+    return name
 
 
 def _timezone() -> str | None:
@@ -75,7 +109,7 @@ def _timezone() -> str | None:
         return None
     marker = "zoneinfo/"
     index = target.find(marker)
-    return target[index + len(marker) :] if index != -1 else None
+    return timezone_name(target[index + len(marker) :]) if index != -1 else None
 
 
 def _utc_offset_min() -> int | None:
@@ -129,13 +163,16 @@ def build(
             "last_seen_at": now,
             "plugin_version": plugin_version,
             "disclosure_ver": consented.disclosure_ver,
-            "language": _language(env),
+            "language": language(env),
             "timezone": _timezone(),
             "utc_offset_min": _utc_offset_min(),
             **facts.to_mapping(),
+            "cpu_model": facts.cpu_model[:MACHINE_NAME_MAX_LENGTH],
+            "accel_name": facts.accel_name[:MACHINE_NAME_MAX_LENGTH],
         },
     )
 
+    tts_engine = settings.engine[:TTS_ENGINE_MAX_LENGTH]
     session_id = str(uuid.uuid4())
     store.insert_session(
         conn,
@@ -144,7 +181,7 @@ def build(
             "install_id": consented.install_id,
             "started_at": now,
             "plugin_version": plugin_version,
-            "tts_engine": settings.engine,
+            "tts_engine": tts_engine,
             "asr_engine": "nemo",
             # Always true since voice input stopped being optional. Kept as a column
             # because it is part of the shipped row contract; dropping it is a schema
@@ -159,7 +196,7 @@ def build(
         conn=conn,
         install_id=consented.install_id,
         session_id=session_id,
-        tts_engine=settings.engine,
+        tts_engine=tts_engine,
         tts_model=settings.nemo_model if settings.engine == "nemo" else None,
         asr_engine="nemo",
         asr_model=settings.nemo_asr_model,

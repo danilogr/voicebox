@@ -131,6 +131,16 @@ ROW_MAX_ASR_MS = 120_000
 ROW_MAX_WORDS = 20_000
 ROW_MAX_CHARS = 150_000
 
+# The `out` row's timings, from the same contract. A sentence stuck behind a wedged
+# queue, or a player that hangs, would otherwise measure past them.
+MAX_QUEUE_WAIT_MS = 300_000
+MAX_SYNTH_MS = 120_000
+MAX_PLAY_MS = 600_000
+
+# `harness_version` is whatever the MCP client declares about itself; the contract
+# caps its length, and the session row travels with every chunk.
+HARNESS_VERSION_MAX_LENGTH = 64
+
 # From the same contract: `audio_codec` must match this shape and length
 # (`tests/contract/v1/schema/ingest-request.schema.json`). Every codec ffprobe
 # reports matches both; a malformed probe or an exotic container might not, and the
@@ -285,6 +295,8 @@ class TelemetrySession:
     def update_harness(self, harness: str, harness_version: str | None) -> None:
         """Correct the harness the session row was opened with, once spec 2's
         better source (MCP `client_info`) is known."""
+        if harness_version is not None:
+            harness_version = harness_version[:HARNESS_VERSION_MAX_LENGTH]
         try:
             store.update_session_harness(self.conn, self.session_id, harness, harness_version)
         except Exception:
@@ -311,9 +323,9 @@ class TelemetrySession:
             "words": _within(len(outcome.text.split()), ROW_MAX_WORDS),
             "chars": _within(len(outcome.text), ROW_MAX_CHARS),
             "audio_ms": _within(outcome.audio_ms, ROW_MAX_AUDIO_MS),
-            "queue_wait_ms": outcome.queue_wait_ms,
-            "synth_ms": outcome.synth_ms,
-            "play_ms": outcome.play_ms,
+            "queue_wait_ms": _within(outcome.queue_wait_ms, MAX_QUEUE_WAIT_MS),
+            "synth_ms": _within(outcome.synth_ms, MAX_SYNTH_MS),
+            "play_ms": _within(outcome.play_ms, MAX_PLAY_MS),
             "status": outcome.status,
             "text": outcome.text,
             "text_sha256": _sha256_text(outcome.text),

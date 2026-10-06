@@ -84,6 +84,14 @@ _SESSION_UPLOAD_FIELDS = (
 )
 
 
+# The contract's enums for the two required install fields that come straight from
+# the platform. Neither has a value for "something else", so an install on any
+# other OS or architecture cannot be sent at all: every chunk would carry an install
+# the server refuses. Its rows stay local, where `speak-stats` still shows them.
+CONTRACT_OS = frozenset({"darwin", "linux", "win32"})
+CONTRACT_ARCH = frozenset({"arm64", "x86_64"})
+
+
 @dataclass(frozen=True, slots=True)
 class TransportResponse:
     status: int
@@ -214,6 +222,13 @@ async def ship(
     install = store.install_row(conn)
     if install is None:
         logger.debug("telemetry: no install row recorded yet; nothing to ship")
+        return 0
+    if install["os"] not in CONTRACT_OS or install["arch"] not in CONTRACT_ARCH:
+        logger.debug(
+            "telemetry: %s/%s is outside the contract; keeping every row local",
+            install["os"],
+            install["arch"],
+        )
         return 0
 
     rng = rng or random.Random()

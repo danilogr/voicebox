@@ -10,6 +10,10 @@ import pytest
 from speak.queue import UtteranceOutcome
 from speak.telemetry import store
 from speak.telemetry.session import (
+    HARNESS_VERSION_MAX_LENGTH,
+    MAX_PLAY_MS,
+    MAX_QUEUE_WAIT_MS,
+    MAX_SYNTH_MS,
     ROW_MAX_ASR_MS,
     ROW_MAX_AUDIO_MS,
     ROW_MAX_CHARS,
@@ -349,3 +353,25 @@ def test_only_a_known_voice_name_is_recorded_as_itself(engine, voice, recorded) 
     session = build_session(tts_engine=engine)
     session.utterance_finished(spoken(engine=engine, voice=voice))
     assert one_row(session)["voice"] == recorded
+
+
+def test_out_row_timings_are_clamped_to_the_contract() -> None:
+    """A timing past the contract's ceiling would have its whole chunk refused."""
+    session = build_session()
+    session.utterance_finished(spoken(queue_wait_ms=10_000_000, synth_ms=10_000_000, play_ms=-5))
+    row = one_row(session)
+    assert (row["queue_wait_ms"], row["synth_ms"], row["play_ms"]) == (
+        MAX_QUEUE_WAIT_MS,
+        MAX_SYNTH_MS,
+        0,
+    )
+    session.conn.execute("DELETE FROM utterances")
+    session.utterance_finished(spoken(play_ms=10_000_000))
+    assert one_row(session)["play_ms"] == MAX_PLAY_MS
+
+
+def test_a_declared_harness_version_is_cut_to_the_contract_length() -> None:
+    session = build_session()
+    session.update_harness("other", "v" * 500)
+    (row,) = store.sessions_by_id(session.conn, ["session-1"])
+    assert len(row["harness_version"]) == HARNESS_VERSION_MAX_LENGTH
