@@ -29,21 +29,23 @@ The ingest sections below describe `POST /v1/ingest`; the ping has its own secti
   it can be inserted. The server upserts by `install_id`; repeating the same values is
   harmless.
 - **`sessions`** (required, 0-100 items): the `sessions` rows that are new or have changed
-  since they were last sent, plus any that the utterances in this request belong to. Empty
-  when every session in this chunk was already sent in an earlier chunk of the same shipping
-  run (a session with more than 100 utterances spans several chunks; only the first chunk
-  needs to carry the session object). The server upserts by `session_id`, so a resent
-  session overwrites the stored one — this is how a session's `ended_at` reaches the server
-  after its utterances have already shipped.
+  since they were last sent, plus every session the utterances in this request belong to.
+  A session whose utterances span several chunks travels in each of them, so no chunk
+  depends on an earlier one having been stored. The server upserts by `session_id`, so a
+  resent session overwrites the stored one — this is how a session's `ended_at` reaches the
+  server after its utterances have already shipped. A copy without `ended_at` never clears
+  one already stored.
 - **`utterances`** (required, 0-100 items): the chunk of the local backlog being shipped.
   This is the array the 100-row ceiling and the 48 KB client-side chunk target (spec 4.2,
   11) are sized against. The server inserts, ignoring rows whose `(install_id, utterance_id)`
   already exist (spec 4.4). **It may be empty: sessions ship alone** when a session has
-  changed (or never had an utterance) and nothing else is in the backlog.
+  changed (or never had an utterance) and nothing else is in the backlog. A request with
+  neither sessions nor utterances is answered `202 {accepted: 0}` and stores nothing.
 
 `country` is deliberately **not** a property of `install` in the request. It is written by
 the server from `CF-IPCountry` on receipt (spec 1.2, 4.5); the client never collects or sends
-it, and `additionalProperties: false` rejects a client that tries.
+it, and `additionalProperties: false` rejects a client that tries. A request that arrives
+without the header leaves the stored country as it was.
 
 Referential integrity between the three arrays (a session's `install_id` matching the
 request's `install.install_id`; an utterance's `session_id` matching a `sessions` entry

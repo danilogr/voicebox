@@ -149,10 +149,10 @@ def _chunks(
 ) -> Iterator[list[dict[str, Any]]]:
     """Split rows at 100 items or ~48 KB of projected JSON, whichever comes first.
 
-    The budget counts every distinct session the chunk's rows belong to as though it
-    travels with them, which is the most it can carry: a backlog of single-utterance
-    `/talk` sessions puts a session beside nearly every row, and a budget of the rows
-    alone would build a request over the server's body cap.
+    The budget counts every distinct session the chunk's rows belong to, since each
+    travels with them: a backlog of single-utterance `/talk` sessions puts a session
+    beside nearly every row, and a budget of the rows alone would build a request over
+    the server's body cap.
     """
     chunk: list[dict[str, Any]] = []
     chunk_sessions: set[str] = set()
@@ -301,7 +301,10 @@ async def ship(
     )
 
     for chunk in _chunks(rows, sessions):
-        carried = [sessions[i] for i in _session_ids(chunk) if i not in sender.delivered]
+        # Every chunk carries every session its rows belong to, even one an earlier
+        # chunk of this run carried: that one may have been soft-dropped by the
+        # server's quota, and a row whose session the server lacks is refused.
+        carried = [sessions[i] for i in _session_ids(chunk)]
         if not await sender.send(carried, chunk):
             return sender.shipped
 
@@ -337,8 +340,7 @@ class _Sender:
         self._debug = debug
         self._sleep = sleep
         self._rng = rng
-        # Sessions the server holds as of this run, so a later chunk of the same
-        # session's utterances need not carry it again.
+        # Sessions delivered in this run, so none is sent again on its own.
         self.delivered: set[str] = set()
         self.shipped = 0
 

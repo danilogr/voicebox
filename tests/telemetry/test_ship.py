@@ -309,13 +309,15 @@ async def test_debug_mode_never_calls_the_transport_and_marks_nothing_shipped() 
     assert len(store.unshipped_utterances(conn)) == 1
 
 
-async def test_a_session_is_carried_only_in_the_chunk_that_first_needs_it(monkeypatch) -> None:
+async def test_a_session_travels_with_every_chunk_of_its_rows(monkeypatch) -> None:
+    """The first chunk may have been soft-dropped by the server's quota (`202`,
+    `accepted: 0`), and a later row whose session the server lacks is refused."""
     monkeypatch.setattr(ship, "CHUNK_ROWS", 1)
     rows = [utterance(seq=1), utterance(seq=2)]
     conn = seeded_conn(rows)
     transport = FakeTransport(
         [
-            ship.TransportResponse(status=202, body=b'{"accepted": 1}'),
+            ship.TransportResponse(status=202, body=b'{"accepted": 0}'),
             ship.TransportResponse(status=202, body=b'{"accepted": 1}'),
         ]
     )
@@ -330,7 +332,8 @@ async def test_a_session_is_carried_only_in_the_chunk_that_first_needs_it(monkey
     first_sessions = transport.calls[0][1]["sessions"]
     second_sessions = transport.calls[1][1]["sessions"]
     assert len(first_sessions) == 1
-    assert second_sessions == []
+    assert second_sessions == first_sessions
+    assert len(transport.calls) == 2  # and not sent a third time on its own
 
 
 def test_bounds_not_given_by_the_spec_match_contract_md() -> None:
