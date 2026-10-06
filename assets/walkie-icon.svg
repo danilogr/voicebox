@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Soft Shadow -->
+    <filter id="badge-shadow" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="0" dy="16" stdDeviation="22" flood-color="#0F172A" flood-opacity="0.08" />
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0F172A" flood-opacity="0.04" />
+    </filter>
+    <!-- Device Tactile Shadow -->
+    <filter id="device-shadow" x="-20%" y="-10%" width="140%" height="130%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#1E232E" flood-opacity="0.18" />
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#FF6B35" flood-opacity="0.12" />
+    </filter>
+  </defs>
+
+  <!-- Canvas Badge (Squircle) -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="#FBFBFC" stroke="#ECECEF" stroke-width="2" filter="url(#badge-shadow)" />
+
+  <!-- Radio Broadcast Waves (Warm Signal Orange Tones) -->
+  <!-- Inner Arc -->
+  <path d="M 226 68 A 42 42 0 0 1 246 98" fill="none" stroke="#FF8C42" stroke-width="11" stroke-linecap="round" />
+  <!-- Middle Arc -->
+  <path d="M 248 50 A 68 68 0 0 1 280 100" fill="none" stroke="#FF6B35" stroke-width="11" stroke-linecap="round" />
+  <!-- Outer Arc -->
+  <path d="M 270 32 A 96 96 0 0 1 312 102" fill="none" stroke="#E25822" stroke-width="11" stroke-linecap="round" />
+
+  <!-- Walkie-Talkie Device Group -->
+  <g filter="url(#device-shadow)">
+    <!-- Antenna -->
+    <rect x="176" y="86" width="22" height="96" rx="11" fill="#2A2F3D" />
+    <!-- Antenna Accent Collar -->
+    <rect x="176" y="162" width="22" height="8" rx="2" fill="#FF6B35" />
+
+    <!-- Volume / Channel Dial Knob (Top Right) -->
+    <rect x="306" y="142" width="34" height="26" rx="8" fill="#FF8C42" />
+    <!-- Dial ridges -->
+    <line x1="316" y1="145" x2="316" y2="165" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" opacity="0.6" />
+    <line x1="324" y1="145" x2="324" y2="165" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" opacity="0.6" />
+    <line x1="332" y1="145" x2="332" y2="165" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" opacity="0.6" />
+
+    <!-- Push-to-Talk (PTT) Button (Side Left in Signal Orange) -->
+    <rect x="124" y="240" width="22" height="76" rx="11" fill="#FF6B35" />
+
+    <!-- Device Main Body (Matte Titanium / Deep Slate) -->
+    <rect x="140" y="162" width="232" height="276" rx="48" fill="#20242E" stroke="#2D3342" stroke-width="3" />
+
+    <!-- Inset Faceplate Panel (Warm Dark Tone with Subtle Border) -->
+    <rect x="156" y="178" width="200" height="244" rx="36" fill="#181B22" stroke="#282E3D" stroke-width="2" />
+
+    <!-- Display Screen (OLED style) -->
+    <rect x="172" y="196" width="168" height="82" rx="20" fill="#0C0E12" stroke="#222836" stroke-width="1.5" />
+
+    <!-- Active Waveform Bars on Screen (Warm Amber / Orange) -->
+    <rect x="194" y="230" width="7" height="14" rx="3.5" fill="#FF8C42" opacity="0.5" />
+    <rect x="208" y="222" width="7" height="30" rx="3.5" fill="#FF8C42" opacity="0.8" />
+    <rect x="222" y="214" width="7" height="46" rx="3.5" fill="#FF6B35" />
+    <rect x="236" y="224" width="7" height="26" rx="3.5" fill="#FF8C42" />
+    <rect x="250" y="210" width="7" height="54" rx="3.5" fill="#FF6B35" />
+    <rect x="264" y="218" width="7" height="38" rx="3.5" fill="#FF8C42" />
+    <rect x="278" y="226" width="7" height="22" rx="3.5" fill="#FF8C42" />
+    <rect x="292" y="232" width="7" height="10" rx="3.5" fill="#FF8C42" opacity="0.5" />
+
+    <!-- Microphone Status LED Indicator -->
+    <circle cx="318" cy="212" r="4" fill="#10B981" />
+
+    <!-- Speaker Acoustic Slits (Teenage Engineering / Braun minimalist style) -->
+    <rect x="192" y="306" width="128" height="7" rx="3.5" fill="#2F3647" />
+    <rect x="192" y="324" width="128" height="7" rx="3.5" fill="#2F3647" />
+    <rect x="192" y="342" width="128" height="7" rx="3.5" fill="#2F3647" />
+    <rect x="192" y="360" width="128" height="7" rx="3.5" fill="#2F3647" />
+    <rect x="192" y="378" width="128" height="7" rx="3.5" fill="#2F3647" />
+
+    <!-- Subtle hardware screws in 4 corners of faceplate -->
+    <circle cx="170" cy="192" r="2.5" fill="#3E475C" />
+    <circle cx="342" cy="192" r="2.5" fill="#3E475C" />
+    <circle cx="170" cy="408" r="2.5" fill="#3E475C" />
+    <circle cx="342" cy="408" r="2.5" fill="#3E475C" />
+  </g>
+</svg>

@@ -1,8 +1,8 @@
-# Speak for Claude Code
+# <img src="assets/favicon.png" width="36" height="36" alt="Walkie logo" valign="middle" /> Walkie
 
 Give Claude Code a voice, an ear, and a **private local transcription workstation**.
 
-`speak` gives your terminal agent audio superpowers:
+**Walkie** (formerly `speak`) gives your terminal agent audio superpowers:
 1. **Speaks & Listens**: Claude speaks a short sentence aloud when a long task completes or when it needs input, and lets you speak prompts back instead of typing.
 2. **On-Device Audio & Video Transcription**: Transcribe meetings, interviews, voice memos, and videos entirely on your machine using a compact, local speech model—with zero cloud fees, complete data privacy, speaker labeling, and subtitle exports.
 
