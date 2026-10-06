@@ -31,6 +31,14 @@ Spawn = Callable[[str, Sequence[str]], Awaitable[Process]]
 OnError = Callable[[BaseException], None]
 
 
+class Speaker(Protocol):
+    """The cross-process claim on the machine's speakers, held around each playback."""
+
+    async def acquire(self, stopped: asyncio.Event) -> bool: ...
+
+    def release(self) -> None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class UtteranceOutcome:
     """One utterance's timings and result, in whatever detail the queue could measure.
@@ -155,6 +163,9 @@ class SpeechQueue:
     file is gone. `size` reads those references, so no path can drop an utterance from
     the count by forgetting to decrement - including a prefetch cancelled before its
     task ever runs, whose `finally` would never fire.
+
+    With a `speaker`, each utterance waits for the machine's speakers before its player
+    starts, and a `stop()` ends that wait at once.
     """
 
     def __init__(
@@ -164,11 +175,14 @@ class SpeechQueue:
         spawn: Spawn = spawn_detached,
         on_error: OnError | None = None,
         on_finish: OnFinish | None = None,
+        speaker: Speaker | None = None,
     ) -> None:
         self._prepare = prepare
         self._spawn = spawn
         self._on_error = on_error or self._log_error
         self._on_finish = on_finish
+        self._speaker = speaker
+        self._stopped = asyncio.Event()
         self._waiting: deque[_Pending] = deque()
         self._wake = asyncio.Event()
         self._idle = asyncio.Event()
@@ -248,6 +262,9 @@ class SpeechQueue:
         """Silence everything and return how many utterances were dropped."""
         dropped = self.size
         self._generation += 1
+        # Ends any wait for the speakers at once; the next wait gets a fresh event.
+        self._stopped.set()
+        self._stopped = asyncio.Event()
         waiting, self._waiting = list(self._waiting), deque()
         for pending in waiting:
             self._finish(
@@ -391,13 +408,21 @@ class SpeechQueue:
                 # played late.
                 status = "discarded"
                 return
-            self._playing = True
+            if not await self._claim_speaker(prepared.generation):
+                # stop() ran while this waited for another process to finish speaking.
+                status = "discarded"
+                return
             try:
-                status, play_ms = await self._spawn_and_wait(
-                    prepared.utterance, prepared.generation
-                )
+                self._playing = True
+                try:
+                    status, play_ms = await self._spawn_and_wait(
+                        prepared.utterance, prepared.generation
+                    )
+                finally:
+                    self._playing = False
             finally:
-                self._playing = False
+                if self._speaker is not None:
+                    self._speaker.release()
         finally:
             try:
                 if prepared.utterance is not None:
@@ -406,6 +431,23 @@ class SpeechQueue:
                 self._inflight = None
                 self._finished += 1
                 self._finish(self._outcome(prepared, status, play_ms))
+
+    async def _claim_speaker(self, generation: int) -> bool:
+        """Wait for the machine's speakers, unless a `stop()` makes this moot first.
+
+        The stop event is taken before the generation is compared, so a `stop()`
+        landing between the two is caught by one or the other.
+        """
+        if self._speaker is None:
+            return True
+        stopped = self._stopped
+        if generation != self._generation:
+            return False
+        held = await self._speaker.acquire(stopped)
+        if held and generation != self._generation:
+            self._speaker.release()
+            return False
+        return held
 
     async def _spawn_and_wait(
         self, utterance: Utterance, generation: int

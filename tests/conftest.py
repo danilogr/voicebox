@@ -19,7 +19,8 @@ def _telemetry_off_by_default(
     under which nothing is sent.
 
     The shared state directory is pinned to a temporary one for the same reason: a
-    subprocess test would otherwise register with the developer's real speech server.
+    subprocess test would otherwise register with the developer's real speech server
+    and take the real speaker lock.
     """
     monkeypatch.setenv("SPEAK_TELEMETRY", "off")
     monkeypatch.setenv("DO_NOT_TRACK", "1")

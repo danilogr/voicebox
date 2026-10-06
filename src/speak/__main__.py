@@ -18,6 +18,7 @@ from speak.runtime import configure_logging, supervisor_for
 from speak.server import VERSION as PLUGIN_VERSION
 from speak.server import Ears, create_server
 from speak.settings import PLUGIN, Settings
+from speak.speaker import SpeakerLock
 from speak.supervisor import NemoSupervisor, process_is_alive
 from speak.telemetry import consent as telemetry_consent
 from speak.telemetry import ping as telemetry_ping
@@ -136,7 +137,11 @@ def build(settings: Settings) -> MCPServer:
         if telemetry is not None:
             telemetry.utterance_finished(outcome)
 
-    queue = SpeechQueue(prepare=engine.prepare, on_finish=on_finish)
+    queue = SpeechQueue(
+        prepare=engine.prepare,
+        on_finish=on_finish,
+        speaker=SpeakerLock(shared_dir=settings.server.shared_dir),
+    )
 
     def schedule_sends() -> None:
         """Deferred to the server's lifespan: `build()` runs before `server.run()`

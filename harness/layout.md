@@ -107,6 +107,7 @@ System specifications and engineering guidelines:
 | [`src/speak/cue.py`](../src/speak/cue.py) | Plays chime sounds when recording starts, stops, or detects no speech. |
 | [`src/speak/miclock.py`](../src/speak/miclock.py) | Microphone lock: ensures only one terminal session records audio at a time. |
 | [`src/speak/exclusive.py`](../src/speak/exclusive.py) | Cross-process lock using filesystem directories, with automatic cleanup if a process exits unexpectedly. |
+| [`src/speak/speaker.py`](../src/speak/speaker.py) | Cross-process speaker lock: one utterance plays at a time across every process that speaks, with turns that alternate. |
 | [`src/speak/supervisor.py`](../src/speak/supervisor.py) | Speech server supervisor: starts, shares, and shuts down the local NeMo speech server across open terminal windows. |
 | [`src/speak/talk.py`](../src/speak/talk.py) | CLI entry point for `/talk`: coordinates microphone recording, transcribes speech, and outputs the result. |
 | [`src/speak/assets/`](../src/speak/assets/) | Shipped WAV audio chimes: `cue-open.wav`, `cue-close.wav`, and `cue-empty.wav`. |
@@ -183,6 +184,7 @@ Personalized speech recognition fine-tuning toolkit:
 | `tests/contract/` | Telemetry wire protocol compliance against JSON schemas and fixtures. |
 | `tests/telemetry/` | Telemetry storage, consent states, hardware probes, ping delivery, and batch upload mechanisms. |
 | `tests/test_engines_*.py` | Synthesis engines (`say`, `nemo`, `command`) under normal, degraded, and fallback conditions. |
+| `tests/test_speaker.py` | The speaker lock: waiting, immediate stop, dead-holder reclaim, alternating turns, and an unusable directory. |
 | `tests/test_queue.py` | FIFO playback order, depth-1 prefetch pipelining, and `stop_speaking` cancellation. |
 | `tests/test_capture.py` | Microphone energy gating, calibration, silence timeouts, and device selection. |
 | `tests/test_supervisor.py` | NeMo server process management, election locks, PID tracking, and graceful shutdowns. |

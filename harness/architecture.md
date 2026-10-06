@@ -50,7 +50,12 @@ against the same shared speech server the supervisor already manages.
   task drains the queue. `drain()` waits until nothing is queued, being synthesized, or
   playing, and is part of the `Queue` protocol because `listen` opens the microphone
   only once the speaker has finished. It must not know which engine produced an
-  utterance.
+  utterance. With a speaker lock it waits for the speakers before each player starts;
+  a `stop()` ends that wait at once.
+- **`speaker`** — the machine's speakers, claimed for one utterance at a time across
+  processes: an `ExclusiveLock` (not re-entrant) in the shared state directory, plus a
+  `speaker-waiting/<pid>` marker per waiting process. It must never silence speech: a
+  directory it cannot use is a warning and an uncoordinated utterance.
 - **`supervisor.NemoSupervisor`** — starts, shares, and stops the local speech server.
   It must not synthesize or play anything.
 - **`server.create_server`** — the transport layer. Defines the tools inside a
@@ -167,6 +172,9 @@ Almost nothing is persistent.
     what to stop.
   - `starting/` — a lock directory. Its existence means a session is mid-start; its
     mtime dates the attempt so an abandoned lock can be taken over.
+  - `speaker/owner` — the pid of the process playing an utterance. Its directory is the
+    lock, reclaimed when its holder has died.
+  - `speaker-waiting/<pid>` — one empty file per process waiting for the speakers.
 - **Plugin state** (on disk, per machine), under `SPEAK_STATE_DIR` (`<cache>/speak`):
   - `mic/owner` — the pid of the session currently recording. Its directory is the
     lock; the file says who holds it, so a lock left by a dead session is reclaimed.
@@ -686,6 +694,15 @@ would wait for it until the host closed the pipe.
   log. Not playing the cue without awaiting it, which is exactly the
   calibration bug above; and a cue on only one end, which leaves the more useful half
   of the question — am I still being recorded? — unanswered.
+
+- **Every process that plays speech takes the speaker lock around each utterance.** Two
+  plugins mean two playback queues in two processes, and each queue's own ordering
+  cannot see the other. The lock is per utterance, not per batch, so sentences from two
+  processes interleave rather than one reading holding the speakers for minutes; a
+  process that has just spoken and finds another waiting stays out of the race for a
+  quarter of a second, which is what makes the turns alternate. Rejected: one queue per
+  machine in a daemon, which is new infrastructure; and holding the lock for a whole
+  batch, which makes a status line wait for a whole read-aloud.
 
 - **Speech server settings are unprefixed and its state lives in a shared directory.**
   Whichever plugin starts the server decides its arguments for every plugin using it,

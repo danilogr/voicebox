@@ -26,7 +26,7 @@ DEFAULT_NEMO_PORT = 8082
 RANDOM_VOICE = "random"
 
 # Where everything the plugins must agree on lives: the speech server's start lock,
-# its pid record, and its client registry. These files' formats are
+# its pid record, its client registry, and the speaker lock. These files' formats are
 # a contract between speak-core versions; a release that changes one must change this
 # name, so an older and a newer plugin never misread each other.
 SHARED_STATE_DIRNAME = "speak-core"

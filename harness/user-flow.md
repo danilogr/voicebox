@@ -13,7 +13,9 @@
    `SPEAK_MAX_CHARS` (400) at a word boundary. Empty after collapsing is an error.
 2. The worker asks the engine to prepare it. For `nemo` that is an HTTP request for
    audio, written to a temp file; for `say` and `command` it is just a command line.
-3. The player is spawned and waited on. The generation counter is checked before the
+3. The worker waits for the speaker lock, which another process may hold for one
+   utterance at a time; a `stop_speaking` ends that wait and discards the utterance.
+   Then the player is spawned and waited on. The generation counter is checked before the
    spawn, after it, and once more after the player exits: a `stop_speaking` landing
    before or during the spawn discards the utterance, and one landing while it plays
    interrupts it. A player that exits non-zero on its own has failed.

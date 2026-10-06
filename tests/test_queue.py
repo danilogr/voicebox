@@ -1,9 +1,12 @@
 import asyncio
+import time
+from collections.abc import Callable
 
 import pytest
 
 from speak.engines.base import Utterance
 from speak.queue import Process, SpeechQueue
+from speak.speaker import WAITING_DIRNAME, SpeakerLock
 
 
 class FakeProcess:
@@ -52,10 +55,16 @@ async def running():
     started: list[tuple[SpeechQueue, asyncio.Task[None]]] = []
 
     def build(
-        prepare=prepare_say, spawn=None, on_error=None, on_finish=None
+        prepare=prepare_say, spawn=None, on_error=None, on_finish=None, speaker=None
     ) -> tuple[SpeechQueue, Spawner]:
         spawner = spawn or Spawner()
-        queue = SpeechQueue(prepare=prepare, spawn=spawner, on_error=on_error, on_finish=on_finish)
+        queue = SpeechQueue(
+            prepare=prepare,
+            spawn=spawner,
+            on_error=on_error,
+            on_finish=on_finish,
+            speaker=speaker,
+        )
         started.append((queue, asyncio.create_task(queue.run())))
         return queue, spawner
 
@@ -1154,3 +1163,66 @@ async def test_on_finish_passes_through_the_engine_and_voice_the_utterance_repor
     await settle()
 
     assert (outcomes[0].engine, outcomes[0].voice) == ("say", None)
+
+
+def speaker(directory, pid, *, poll=0.01):
+    return SpeakerLock(shared_dir=directory, pid=pid, is_alive=lambda p: p in (1, 2), poll=poll)
+
+
+async def until(predicate: Callable[[], bool], timeout: float = 2.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        assert time.monotonic() < deadline, "condition never became true"
+        await asyncio.sleep(0.005)
+
+
+async def test_two_queues_sharing_the_speaker_never_play_at_once(running, tmp_path):
+    first, first_spawner = running(spawn=Spawner(autofinish=False), speaker=speaker(tmp_path, 1))
+    second, second_spawner = running(spawn=Spawner(autofinish=False), speaker=speaker(tmp_path, 2))
+
+    first.enqueue("one", voice=None, rate=None)
+    await until(lambda: len(first_spawner.calls) == 1)
+    second.enqueue("two", voice=None, rate=None)
+    await until(lambda: (tmp_path / WAITING_DIRNAME / "2").exists())
+    assert second_spawner.calls == []
+
+    first_spawner.processes[0].finished.set()
+    await until(lambda: len(second_spawner.calls) == 1)
+    second_spawner.processes[0].finished.set()
+    await asyncio.wait_for(second.drain(), timeout=2.0)
+
+
+async def test_a_queue_waiting_for_the_speaker_stops_at_once(running, tmp_path):
+    outcomes = []
+    first, first_spawner = running(spawn=Spawner(autofinish=False), speaker=speaker(tmp_path, 1))
+    second, second_spawner = running(
+        spawn=Spawner(autofinish=False),
+        speaker=speaker(tmp_path, 2, poll=60.0),
+        on_finish=outcomes.append,
+    )
+    first.enqueue("one", voice=None, rate=None)
+    await until(lambda: len(first_spawner.calls) == 1)
+    second.enqueue("two", voice=None, rate=None)
+    await until(lambda: (tmp_path / WAITING_DIRNAME / "2").exists())
+
+    assert await second.stop() == 1
+    await asyncio.wait_for(second.drain(), timeout=1.0)
+
+    assert [outcome.status for outcome in outcomes] == ["discarded"]
+    assert second_spawner.calls == []
+    first_spawner.processes[0].finished.set()
+
+
+async def test_the_speaker_is_released_when_playback_is_cancelled(tmp_path):
+    spawner = Spawner(autofinish=False)
+    queue = SpeechQueue(prepare=prepare_say, spawn=spawner, speaker=speaker(tmp_path, 1))
+    worker = asyncio.create_task(queue.run())
+    queue.enqueue("one", voice=None, rate=None)
+    await until(lambda: len(spawner.calls) == 1)
+
+    worker.cancel()
+    await asyncio.gather(worker, return_exceptions=True)
+
+    assert not (tmp_path / "speaker").exists()
+    other = speaker(tmp_path, 2)
+    assert await asyncio.wait_for(other.acquire(asyncio.Event()), 1.0) is True
