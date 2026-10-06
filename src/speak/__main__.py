@@ -215,11 +215,14 @@ async def serve_stdio(server: StdioServer) -> int | None:
             received.append(signum)
             task.cancel()
 
+    handled: list[int] = []
     for signum in STOP_SIGNALS:
         try:
             loop.add_signal_handler(signum, stop, signum)
         except (NotImplementedError, RuntimeError):  # no loop signal support here
             logger.debug("cannot handle signal %s; it will end the process", signum)
+        else:
+            handled.append(signum)
     try:
         await server.run_stdio_async()
     except asyncio.CancelledError:
@@ -227,7 +230,7 @@ async def serve_stdio(server: StdioServer) -> int | None:
             raise
         logger.debug("stopped by signal %d", received[0])
     finally:
-        for signum in STOP_SIGNALS:
+        for signum in handled:
             loop.remove_signal_handler(signum)
     return received[0] if received else None
 
