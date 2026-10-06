@@ -112,9 +112,9 @@ class TranscriptionOutcome:
 
 # What an `in`/`transcribe` row may carry, from the vendored contract
 # (`tests/contract/v1/schema/ingest-request.schema.json`). Respecting them is the
-# client's job: the server answers a row above a ceiling with a 400, the shipper
-# does not retry a 400, and so that chunk and every chunk after it stop - one
-# eleven-gigabyte video would end telemetry for that install.
+# client's job: the server answers a row above a ceiling with a 400, and the
+# shipper sets that whole chunk aside for good - one eleven-gigabyte video would
+# cost every row that happened to ship beside it.
 MAX_SOURCE_BYTES = 10_737_418_240
 MAX_AUDIO_MS = 86_400_000
 MAX_ASR_MS = 86_400_000
@@ -125,7 +125,7 @@ MAX_CHARS = 5_000_000
 # from the same contract's `else` branch, keyed on `source != "transcribe"`. Tighter,
 # because only a transcription gets the long-file exemption: a `listen` recording
 # past ten minutes (`SPEAK_LISTEN_MAX_SECONDS` set above 600) or an outsized `speak`
-# utterance would otherwise land the same 400, and stall the same backlog.
+# utterance would otherwise land the same 400, and lose the same chunk.
 ROW_MAX_AUDIO_MS = 600_000
 ROW_MAX_ASR_MS = 120_000
 ROW_MAX_WORDS = 20_000

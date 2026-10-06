@@ -243,7 +243,7 @@ def test_an_unopenable_telemetry_store_does_not_raise(tmp_path):
 
 def test_a_file_past_the_contracts_ceilings_is_recorded_at_them(tmp_path):
     """Nothing upstream bounds a file, and a row above a ceiling comes back 400 - which
-    the shipper does not retry, so that chunk and every one after it stop shipping."""
+    the shipper never resends, losing every row in that chunk."""
     _, job = start(
         tmp_path,
         size_bytes=20 * 1024**3,  # a 20 GiB video, over the 10 GiB ceiling

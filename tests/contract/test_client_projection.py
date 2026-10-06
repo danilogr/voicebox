@@ -163,8 +163,8 @@ def test_the_real_local_store_round_trips_through_a_validating_payload() -> None
 
 def test_a_transcription_of_an_oversized_file_still_validates() -> None:
     """What the worker builds for a file past the contract's ceilings has to be a row
-    the server accepts: it answers anything above one with a 400, the shipper does not
-    retry a 400, and that chunk and every chunk behind it stop going out."""
+    the server accepts: it answers anything above one with a 400, and the shipper sets
+    that chunk aside, losing every row in it."""
     from speak.telemetry.session import record_transcription
     from speak.transcribe.jobs import DONE, Job
     from speak.transcribe.worker import outcome_for

@@ -123,7 +123,7 @@ def test_utterance_finished_writes_one_out_row() -> None:
 def test_utterance_finished_clamps_an_over_ceiling_speak_row() -> None:
     """`speak`/`listen` rows have their own, tighter ceilings than a transcription's
     in the schema's `else` branch; an unclamped one is a 400 the server rejects,
-    which stops that chunk and every one after it shipping."""
+    which loses every row in that chunk."""
     session = build_session()
     outcome = UtteranceOutcome(
         text=" ".join(["hello1234"] * 25_000),  # over both the word and char ceilings
