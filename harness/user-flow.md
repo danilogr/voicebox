@@ -14,9 +14,11 @@
 2. The worker asks the engine to prepare it. For `nemo` that is an HTTP request for
    audio, written to a temp file; for `say` and `command` it is just a command line.
 3. The player is spawned and waited on. The generation counter is checked before the
-   spawn and again after it: a `stop_speaking` landing at either moment would otherwise
-   leave an utterance neither discarded nor terminated.
-4. Its temp file is deleted.
+   spawn, after it, and once more after the player exits: a `stop_speaking` landing
+   before or during the spawn discards the utterance, and one landing while it plays
+   interrupts it. A player that exits non-zero on its own has failed.
+4. Its temp file is deleted, and its outcome is recorded once: `ok`, `interrupted`,
+   `discarded` or `failed`.
 
 ```mermaid
 stateDiagram-v2
@@ -25,6 +27,7 @@ stateDiagram-v2
     preparing --> prepared: synthesis returns
     prepared --> playing: player spawned
     playing --> [*]: player exits
+    playing --> [*]: stop_speaking interrupted it
     preparing --> [*]: synthesis failed
     prepared --> [*]: stop_speaking ran first
     waiting --> [*]: stop_speaking cleared the queue
@@ -131,7 +134,8 @@ A separate short-lived process, so it can neither see nor drain the speech queue
 
 1. Voice input off → one `speak:` line and a non-zero exit.
 2. It registers with the supervisor for the life of the process, so a standalone
-   `/talk` cannot leave a gigabyte of speech server behind it.
+   `/talk` cannot leave a gigabyte of speech server behind it. The install ping, if one
+   is due, goes out alongside the recording and is abandoned rather than waited for.
 3. If the server does not answer and autostart is off, that is reported rather than
    a server being started behind the user's back. Otherwise it is started.
 4. Capture runs exactly as for `listen`, minus the drain.
@@ -140,6 +144,38 @@ A separate short-lived process, so it can neither see nor drain the speech queue
    into the prompt.
 7. Any failure prints one `speak:`-prefixed line to **both** streams and exits
    non-zero. Never a traceback — stdout is read as the user's own words.
+
+Every attempt leaves exactly one telemetry row, whatever ended it: `ok`,
+`heard_nothing`, `refused` for a busy microphone, and `failed` for everything else,
+including a server that is not there or will not start.
+
+## Telemetry: the install ping and shipping
+
+At the start of each MCP session, before the consent file can be created:
+
+1. `DO_NOT_TRACK` set → no ping, no file, and nothing collected or shipped. Stop.
+2. The ping is due unless `ping.json` already names this version: with no `ping.json`,
+   it is an `install` when there is no `telemetry.json` either and an `upgrade` when
+   there is; with an older version in it, an `upgrade`. This is the same in every
+   telemetry mode.
+
+Then, in the background, once the session's event loop is running:
+
+3. A due ping is sent. A `2xx` writes `ping.json`; anything else leaves it due for the
+   next session. `SPEAK_TELEMETRY_DEBUG` logs it instead and writes nothing.
+4. In mode `on`, this install's backlog ships: utterance chunks of up to 100 rows,
+   each with the sessions its rows belong to, then every changed session no chunk
+   carried, on its own.
+
+| Answer | Utterances in that chunk | Its sessions | The run |
+|---|---|---|---|
+| `202` | shipped | shipped, unless changed while in flight | continues |
+| `400` | `rejected_at`, never resent | stay in the backlog | continues |
+| `429`, `5xx`, unreachable | stay in the backlog | stay in the backlog | stops after retries |
+
+When the session ends, by stdin closing or by SIGTERM or SIGHUP, the lifespan's
+shutdown writes `ended_at`, which puts the session back in the backlog; the next
+session ships it.
 
 ## The shared speech server
 

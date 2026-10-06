@@ -35,7 +35,9 @@ MODES = (MODE_OFF, MODE_LOCAL, MODE_ON)
 # few heavy users apart from many light ones.
 DEFAULT_MODE = MODE_ON
 
-DISCLOSURE_VERSION = 1
+# Which version of TELEMETRY.md describes what this install sends; 2 is the first
+# that includes the install ping.
+DISCLOSURE_VERSION = 2
 CONFIG_FILENAME = "telemetry.json"
 
 

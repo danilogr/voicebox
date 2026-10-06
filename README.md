@@ -38,8 +38,8 @@ server for you.
 | `transcription_status(job_id?)` | How a job is going, a preview once it is done, or why it failed. Without an id, the recent jobs. |
 
 Anonymous usage data is reported by default — counts and timings, never what you say or
-what Claude says. [`TELEMETRY.md`](TELEMETRY.md) lists every field, and `speak-telemetry
-off` stops it.
+what Claude says. [`TELEMETRY.md`](TELEMETRY.md) lists every field. `speak-telemetry off`
+stops it apart from an anonymous install ping, and `DO_NOT_TRACK=1` stops that too.
 
 
 All eight are always there.

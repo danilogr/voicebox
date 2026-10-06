@@ -159,7 +159,8 @@ that launcher's working directory, not the user's project.
 
 **Telemetry is the plugin's, not the server's.** Calling `nemo-speech` directly
 sends nothing anywhere. The plugin's own collection is documented in
-`TELEMETRY.md`, and `SPEAK_TELEMETRY=off` or `DO_NOT_TRACK=1` disables it.
+`TELEMETRY.md`. `SPEAK_TELEMETRY=off` disables it apart from the anonymous install
+ping, and `DO_NOT_TRACK=1` disables both.
 
 ## Where things are
 

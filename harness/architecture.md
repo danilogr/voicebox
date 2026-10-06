@@ -129,6 +129,14 @@ Two properties hold this together, both structural rather than remembered:
 An utterance prepared ahead that never reaches playback is released by the worker's own
 `finally`, which cancels the prefetch and deletes whatever it produced.
 
+The release point is also where each utterance's outcome is reported, exactly once:
+`ok`; `discarded` when nobody heard it (a stop before or during the spawn, or while it
+waited or was prepared); `interrupted` when a stop landed while it was audible, which
+the generation re-checked after the player exits is what tells apart; and `failed`
+when synthesis failed, the player would not start, or it exited non-zero on its own.
+A player that a stop terminated exits non-zero too, so the generation is checked
+before the exit code.
+
 ## Data model
 
 Almost nothing is persistent.
@@ -178,26 +186,44 @@ which engine produced an utterance.
   or overruns its budget yields `"unknown"` rather than blocking.
 - **`store.py`** — the local SQLite database, built from the schema `speak-telemetry`
   vendors as `contract/v1/schema.sql`. It is the outbound queue as well as the local
-  record: `shipped_at IS NULL` is the backlog, so there is one mechanism rather than
-  a database plus a spool file. `PRAGMA foreign_keys = ON` is set on every connection
-  this module opens, matching D1's unconditional enforcement in production.
+  record, so there is one mechanism rather than a database plus a spool file. An
+  utterance is in the backlog while both `shipped_at` and `rejected_at` are NULL; a
+  session while its `shipped_at` is NULL, which every update to the row clears, so a
+  session that shipped when it began ships again with its `ended_at`. `seq` is
+  assigned inside the INSERT, from the session's highest so far: the server and a
+  transcription worker write to the same session from two processes, and only a
+  statement under SQLite's single write lock cannot hand both the same number.
+  `PRAGMA foreign_keys = ON` is set on every connection this module opens, matching
+  D1's unconditional enforcement in production.
 - **`session.py`** — turns queue outcomes and listen/talk attempts into stored rows.
   Every public method catches its own failures: a dead telemetry backend has to be
   indistinguishable from a healthy one.
 - **`wiring.py`** — composition shared by `__main__` and `talk`, the same role
   `runtime.py` plays for capture and cues: consent, the machine probe, and the
   `installs`/`sessions` rows a `TelemetrySession` is built from.
-- **`ship.py`** — projects the local backlog to the wire format (dropping every
-  `-- LOCAL` column) and POSTs it in chunks, off the hot path. Takes an injected
-  transport; a chunk's failure leaves it unshipped for the next session to retry,
-  which is the entire retry mechanism.
+- **`ship.py`** — projects the current install's backlog to the wire format (dropping
+  every `-- LOCAL` column) and POSTs it in chunks, off the hot path: utterance chunks
+  first, each carrying the sessions its rows belong to, then any changed session no
+  chunk carried, on its own. Takes an injected transport. A `429`, a `5xx` or an
+  unreachable server leaves the rest unshipped for the next session to retry, which
+  is the entire retry mechanism; a `400` sets that chunk's rows aside with
+  `rejected_at` and the run goes on, because a payload the server refuses will be
+  refused again and would otherwise hold back every row behind it.
+- **`ping.py`** — the anonymous install ping (see the decision below). Whether one is
+  due is a file read, made before `wiring.build` can create the consent file it
+  consults; the request itself is a background task.
 - **`report.py`** — `speak-stats`, plain SQL over the raw local tables.
 
-Shipping runs once per session, scheduled from `create_server`'s lifespan rather
-than from `__main__.build()` itself: `build()` runs before `server.run()` starts an
-event loop, so nothing there can call `asyncio.create_task`. The default mode is
-`local` for this landing (`consent.DEFAULT_MODE`): local collection is on, uploads
-are not, until staging has been verified end to end.
+Shipping and the ping run once per session, scheduled from `create_server`'s lifespan
+rather than from `__main__.build()` itself: `build()` runs before the event loop
+starts, so nothing there can call `asyncio.create_task`. `/talk` sends the ping
+alongside its recording but never ships; the next MCP session ships its rows.
+
+The lifespan's shutdown is what closes a session row, so `__main__.serve_stdio`
+turns SIGTERM and SIGHUP into a cancellation that unwinds through it, as Ctrl-C does.
+Left at their defaults, either signal kills the process before any of it runs. The
+process itself still exits only once stdin closes, because the MCP transport reads
+stdin on a thread no signal interrupts.
 
 ## External dependencies
 
@@ -228,6 +254,28 @@ are not, until staging has been verified end to end.
   are in `performance.md`.
 
 ## Key decisions (with rationale)
+
+- **An anonymous install ping goes out in every mode except `DO_NOT_TRACK`.** If
+  `off` and `local` sent nothing, an install that opts out would be invisible, and the
+  number of installs could not be known at all. The ping is `plugin_version`, `os` and
+  `install`/`upgrade`, once per install and once per version, recorded locally in
+  `ping.json` only after the server answers `2xx`. It is identical in every mode, so it
+  never reveals that someone opted out, and it has no identifier, so it cannot be
+  joined to an install's other data or to another ping. `DO_NOT_TRACK` is the one
+  switch that means nothing is sent, and under it the ping module does not run at all:
+  no request and no file. Rejected: an install id on the ping, which would make it a tracking beacon for
+  people who said no; and keying install-versus-upgrade on anything but files already
+  in the config directory, which would need a second identity to persist.
+
+- **Sessions ship on their own, and a refused chunk is set aside.** A session row is
+  written when the session starts and changes when it ends or learns its harness, long
+  after its utterances may have shipped, and a session in which nothing was said had
+  no utterance to carry it at all. So a session has its own local `shipped_at`, cleared
+  by every update, and `ship` sends changed sessions with or without utterances. A
+  `400` marks only its own chunk's rows `rejected_at`: they stay in the local store
+  and in `speak-stats`, leave the backlog, and are never resent. Rejected: retrying a
+  `400`, which resends a payload the server already refused; and dropping refused rows,
+  which would hide that it happened.
 
 - 2026-09-21 — **File transcription is a tool backed by a detached worker.** A tool,
   because the failure it fixes is that Claude does not know a local option exists
