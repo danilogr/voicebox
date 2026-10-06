@@ -4,6 +4,7 @@ This file covers the tier this repo can only reach from inside a live request:
 `server.client_info` and the enum it normalises into.
 """
 
+import pytest
 from mcp.server.mcpserver import Context
 
 from speak.server import client_info
@@ -51,8 +52,16 @@ def test_client_info_is_none_outside_of_a_live_request() -> None:
     assert client_info(ctx) is None
 
 
-def test_normalize_harness_recognises_claude_code() -> None:
-    assert normalize_harness("Claude Code") == "claude-code"
+@pytest.mark.parametrize("name", ["claude-code", "Claude Code", "claude-code-sdk"])
+def test_normalize_harness_recognises_claude_code(name) -> None:
+    assert normalize_harness(name) == "claude-code"
+
+
+@pytest.mark.parametrize("name", ["Claude Desktop", "claude-ai", "my-claude-client"])
+def test_a_name_that_only_mentions_claude_is_another_host(name) -> None:
+    """Counting every client with "claude" in its name as Claude Code would inflate
+    the one number this column exists to measure."""
+    assert normalize_harness(name) == "other"
 
 
 def test_normalize_harness_recognises_gemini_cli() -> None:

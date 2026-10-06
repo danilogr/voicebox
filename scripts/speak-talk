@@ -5,6 +5,14 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
+# The host this runs under, named by the command file that invoked it. Passed as
+# an argument rather than a `VAR=value` prefix, which a `Bash(sh:*)` permission
+# rule does not match; telemetry records it as the session's harness.
+if [ $# -gt 0 ]; then
+  SPEAK_HARNESS=$1
+  export SPEAK_HARNESS
+fi
+
 run() { exec "$1" run --directory "$root" --quiet speak-talk; }
 
 [ -n "${SPEAK_UV:-}" ] && [ -x "${SPEAK_UV:-}" ] && run "$SPEAK_UV"

@@ -21,23 +21,35 @@ DB_FILENAME = "telemetry.db"
 RECORDINGS_DIRNAME = "recordings"
 
 
+# The contract's `harness` enum.
+HARNESSES = frozenset({"claude-code", "gemini-cli", "codex", "other", "unknown"})
+
+
 def detect_harness(env: Mapping[str, str]) -> tuple[str, str | None]:
     """(harness, harness_version) from environment signals - spec 2's tiers 2 and 3.
 
     The MCP `client_info` a session negotiates is the better source (tier 1), but it
     is only available once a request is in flight, not at session start where the
     `sessions` row is first written; `server.py` corrects the row with it on the
-    first tool call, via `normalize_harness` below. Claude Code sets
-    `CLAUDE_PLUGIN_ROOT`, which `commands/talk.md` already relies on. Anything else
+    first tool call, via `normalize_harness` below. `/talk` is no MCP session and
+    never gets that correction, so `commands/talk.md` names its host outright in
+    `SPEAK_HARNESS`, read first and taken only when it is a value of the enum.
+    Claude Code sets `CLAUDE_PLUGIN_ROOT` for the servers it launches. Anything else
     is reported honestly as "unknown" rather than guessed.
     """
+    declared = (env.get("SPEAK_HARNESS") or "").strip().lower()
+    if declared in HARNESSES:
+        return declared, None
     if env.get("CLAUDE_PLUGIN_ROOT"):
         return "claude-code", None
     return "unknown", None
 
 
+# Claude Code declares itself as "claude-code"; a name that merely contains
+# "claude" (Claude Desktop, a third-party "claude-*" client) is another host.
 _HARNESS_NAME_HINTS = (
-    ("claude", "claude-code"),
+    ("claude-code", "claude-code"),
+    ("claude code", "claude-code"),
     ("gemini", "gemini-cli"),
     ("codex", "codex"),
 )

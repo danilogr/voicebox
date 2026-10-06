@@ -92,6 +92,9 @@ async def capture(
     except MicrophoneBusy:
         _note(telemetry, "refused")
         raise
+    except OSError:
+        _note(telemetry, "failed")
+        raise
 
     recording: Recording | None = None
     try:
@@ -109,8 +112,13 @@ async def capture(
             return ""
         started = time.monotonic()
         text = await transcriber.transcribe(recording.wav, language=settings.listen_language)
-    except (TranscriptionFailed, RecorderUnavailable):
-        _note(telemetry, "failed", device_name=recording.device if recording else None)
+    except (TranscriptionFailed, RecorderUnavailable, OSError):
+        _note(
+            telemetry,
+            "failed",
+            device_name=recording.device if recording else None,
+            wav=recording.wav if recording else None,
+        )
         raise
     finally:
         lock.release()
@@ -137,27 +145,25 @@ async def dictate(
     cue: Cue,
     telemetry: TelemetrySession | None = None,
 ) -> str:
-    """Hold the shared speech server for this process, then capture against it."""
+    """Hold the shared speech server for this process, then capture against it.
+
+    Every way this attempt can fail before `capture` takes over writes its `failed`
+    row here; `capture` writes its own, so each attempt is recorded exactly once.
+    """
     # Register for this process's lifetime so a standalone /talk cannot leave a
     # gigabyte of speech server running behind it. When a Claude Code session is
     # already holding the server, release is a no-op and the server stays warm.
-    await supervisor.register()
     try:
-        # `ensure_running` spawns unconditionally: its lock only excludes another
-        # session starting at the same moment. So a server that is already up must
-        # not be met with a second one, which would overwrite the record of the
-        # first and leave the last process out stopping the wrong pid. Liveness,
-        # not readiness - any HTTP answer means the port is taken. A server that is
-        # up but has no transcription model is likewise not replaced; `capture`
-        # reports that case instead. `speak.server.warm_speech_server` guards the
-        # session path the same way for the same reason: change the two together.
-        if not await transcriber.reachable():
-            if not settings.nemo_autostart:
-                # `__main__.build_supervisor` builds no supervisor under this setting;
-                # a user who said they would run the server must not get one spawned
-                # behind their back here either.
-                raise TranscriptionFailed(SERVER_UNREACHABLE)
-            await _start(supervisor)
+        await supervisor.register()
+    except OSError:
+        _note(telemetry, "failed")
+        raise
+    try:
+        try:
+            await _ensure_server(settings, supervisor, transcriber)
+        except (TranscriptionFailed, OSError):
+            _note(telemetry, "failed")
+            raise
         return await capture(
             settings,
             recorder=recorder,
@@ -168,6 +174,30 @@ async def dictate(
         )
     finally:
         await supervisor.release()
+
+
+async def _ensure_server(
+    settings: Settings, supervisor: NemoSupervisor, transcriber: Transcriber
+) -> None:
+    """Start the speech server unless something already answers on its port.
+
+    `ensure_running` spawns unconditionally: its lock only excludes another session
+    starting at the same moment. So a server that is already up must not be met with
+    a second one, which would overwrite the record of the first and leave the last
+    process out stopping the wrong pid. Liveness, not readiness - any HTTP answer
+    means the port is taken. A server that is up but has no transcription model is
+    likewise not replaced; `capture` reports that case instead.
+    `speak.server.warm_speech_server` guards the session path the same way for the
+    same reason: change the two together.
+    """
+    if await transcriber.reachable():
+        return
+    if not settings.nemo_autostart:
+        # `__main__.build_supervisor` builds no supervisor under this setting; a user
+        # who said they would run the server must not get one spawned behind their
+        # back here either.
+        raise TranscriptionFailed(SERVER_UNREACHABLE)
+    await _start(supervisor)
 
 
 async def _start(supervisor: NemoSupervisor) -> None:

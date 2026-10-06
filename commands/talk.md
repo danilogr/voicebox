@@ -20,4 +20,4 @@ it reaches you whichever one this message carries.
 
 ---
 
-!`sh "${CLAUDE_PLUGIN_ROOT}/scripts/speak-talk"`
+!`sh "${CLAUDE_PLUGIN_ROOT}/scripts/speak-talk" claude-code`

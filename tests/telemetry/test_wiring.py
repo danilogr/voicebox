@@ -168,3 +168,18 @@ def test_an_overlong_engine_name_is_cut_to_the_contract_length(tmp_path) -> None
     (row,) = store.sessions_by_id(session.conn, [session.session_id])
     assert row["tts_engine"] == "x" * wiring.TTS_ENGINE_MAX_LENGTH
     assert session.tts_engine == row["tts_engine"]
+
+
+@pytest.mark.parametrize(
+    ("declared", "expected"),
+    [("claude-code", "claude-code"), ("Codex", "codex"), ("something-else", "unknown")],
+)
+def test_detect_harness_takes_a_declared_harness_only_from_the_enum(declared, expected) -> None:
+    """`/talk` is no MCP session, so the host it runs under is passed in by name; a
+    value outside the contract's enum would have its session refused."""
+    assert wiring.detect_harness({"SPEAK_HARNESS": declared}) == (expected, None)
+
+
+def test_a_declared_harness_wins_over_the_plugin_root() -> None:
+    env = {"SPEAK_HARNESS": "gemini-cli", "CLAUDE_PLUGIN_ROOT": "/plugin"}
+    assert wiring.detect_harness(env) == ("gemini-cli", None)
