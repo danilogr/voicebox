@@ -47,14 +47,14 @@ def render(conn: sqlite3.Connection) -> str:
         lines.append(f"  {intent:<14} {count}")
 
     lines.append("")
-    lines.append("Interruption rate by intent (discarded / total, direction=out):")
-    for intent, discarded, count in conn.execute(
+    lines.append("Interruption rate by intent (interrupted / total, direction=out):")
+    for intent, interrupted, count in conn.execute(
         "SELECT COALESCE(intent, 'unspecified'), "
-        "SUM(CASE WHEN status = 'discarded' THEN 1 ELSE 0 END), COUNT(*) AS n "
+        "SUM(CASE WHEN status = 'interrupted' THEN 1 ELSE 0 END), COUNT(*) AS n "
         "FROM utterances WHERE direction = 'out' GROUP BY intent ORDER BY n DESC"
     ):
-        rate = (discarded / count * 100) if count else 0.0
-        lines.append(f"  {intent:<14} {discarded}/{count} ({rate:.0f}%)")
+        rate = (interrupted / count * 100) if count else 0.0
+        lines.append(f"  {intent:<14} {interrupted}/{count} ({rate:.0f}%)")
 
     lines.append("")
     lines.append("Synthesis latency (synth_ms), by engine:")

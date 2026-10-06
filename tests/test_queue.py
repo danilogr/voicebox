@@ -1044,3 +1044,99 @@ async def test_a_telemetry_callback_that_raises_does_not_break_playback(running)
     await settle()
 
     assert spawner.calls == [("say", ["one"]), ("say", ["two"])]
+
+
+class ExitingProcess(FakeProcess):
+    """A player whose exit status the test chooses, and which reports the signal
+    exit status a real player gives when it is terminated."""
+
+    def __init__(self, returncode: int = 0) -> None:
+        super().__init__()
+        self._returncode = returncode
+
+    async def wait(self) -> int:
+        await self.finished.wait()
+        return -15 if self.terminated else self._returncode
+
+
+async def test_a_stop_during_playback_reports_interrupted_not_ok(running):
+    """Cut off while audible is its own outcome: counting it as `ok` hides every
+    interruption, and counting it as `discarded` merges it with sentences nobody
+    heard at all."""
+    from speak.queue import UtteranceOutcome
+
+    process = ExitingProcess()
+
+    async def spawn(command: str, args: list[str]) -> ExitingProcess:
+        return process
+
+    outcomes: list[UtteranceOutcome] = []
+    queue, _ = running(spawn=spawn, on_finish=outcomes.append)
+    queue.enqueue("cut me off", voice=None, rate=None)
+    await settle()
+    assert queue.stats().playing
+
+    await queue.stop()
+    await settle()
+
+    assert process.terminated
+    assert [o.status for o in outcomes] == ["interrupted"]
+    assert outcomes[0].play_ms is not None
+
+
+async def test_a_player_that_exits_non_zero_on_its_own_reports_failed(running):
+    from speak.queue import UtteranceOutcome
+
+    async def spawn(command: str, args: list[str]) -> ExitingProcess:
+        process = ExitingProcess(returncode=1)
+        process.finished.set()
+        return process
+
+    errors: list[BaseException] = []
+    outcomes: list[UtteranceOutcome] = []
+    queue, _ = running(spawn=spawn, on_error=errors.append, on_finish=outcomes.append)
+    queue.enqueue("broken player", voice=None, rate=None)
+    await settle()
+
+    assert [o.status for o in outcomes] == ["failed"]
+    assert len(errors) == 1
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+async def test_queue_wait_ends_when_synthesis_starts_not_when_playback_ends(running, monkeypatch):
+    """`queue_wait_ms` is time spent behind other utterances. The first sentence
+    waits for nothing however long it plays; the second waits only for the first
+    one's synthesis, because it is prepared while the first is playing."""
+    from speak.queue import UtteranceOutcome
+
+    clock = FakeClock()
+    monkeypatch.setattr("speak.queue.time", clock)
+
+    async def prepare(text, *, voice, rate) -> Utterance:
+        clock.now += 1.0  # each synthesis takes one second
+        return Utterance(command="say", args=[text])
+
+    outcomes: list[UtteranceOutcome] = []
+    queue, spawner = running(
+        prepare=prepare, spawn=Spawner(autofinish=False), on_finish=outcomes.append
+    )
+    queue.enqueue("first", voice=None, rate=None)
+    queue.enqueue("second", voice=None, rate=None)
+    await settle()
+
+    clock.now = 30.0  # the first sentence plays for a long time
+    spawner.processes[0].finished.set()
+    await settle()
+    spawner.processes[1].finished.set()
+    await settle()
+
+    waits = {o.text: o.queue_wait_ms for o in outcomes}
+    assert waits == {"first": 0, "second": 1000}
+    assert all(o.synth_ms == 1000 for o in outcomes)

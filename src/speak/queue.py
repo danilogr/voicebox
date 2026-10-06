@@ -44,7 +44,14 @@ class UtteranceOutcome:
     text: str
     voice: str | None
     intent: str | None
-    status: str  # "ok" | "failed" | "discarded"
+    # "ok" played to the end; "interrupted" a `stop()` cut it off while it was
+    # audible; "discarded" dropped before anyone heard it - still waiting, still
+    # being prepared, or killed while its player was starting; "failed" synthesis
+    # failed, the player would not start, or it exited non-zero on its own.
+    status: str
+    # From `enqueue` until synthesis started - the time spent behind other
+    # utterances - or until it was dropped, for one that never reached synthesis.
+    # Never includes this utterance's own synthesis or playback.
     queue_wait_ms: int
     synth_ms: int | None
     play_ms: int | None
@@ -70,12 +77,13 @@ class _Pending:
 @dataclass(frozen=True, slots=True)
 class _Prepared:
     """One prepared attempt: the utterance (or `None`, meaning prepare failed), the
-    generation it was prepared under, the pending request it came from, and how
-    long preparing it took."""
+    generation it was prepared under, the pending request it came from, how long it
+    waited before preparing began, and how long preparing it took."""
 
     utterance: Utterance | None
     generation: int
     pending: _Pending
+    queue_wait_ms: int
     synth_ms: int | None
 
 
@@ -191,7 +199,7 @@ class SpeechQueue:
             voice=pending.voice,
             intent=pending.intent,
             status=status,
-            queue_wait_ms=_ms_since(pending.enqueued_at),
+            queue_wait_ms=prepared.queue_wait_ms,
             synth_ms=prepared.synth_ms,
             play_ms=play_ms,
             audio_ms=audio_ms,
@@ -317,17 +325,26 @@ class SpeechQueue:
     async def _prepare_one(self, pending: _Pending, generation: int) -> _Prepared:
         """Synthesize one utterance. `utterance` is `None` when it failed; either way
         the attempt and its timing are reported, so a caller downstream can tell a
-        failed prepare from one that never got the chance."""
+        failed prepare from one that never got the chance.
+
+        The wait ends here, when synthesis begins, not when the task was created: with
+        a prefetch in hand the next utterance starts preparing while the previous one
+        is still playing, so its wait is only the time spent behind earlier syntheses.
+        """
         started = time.monotonic()
+        waited = round((started - pending.enqueued_at) * 1000)
+        utterance: Utterance | None
         try:
             utterance = await self._prepare(pending.text, voice=pending.voice, rate=pending.rate)
         except Exception as error:
             self._on_error(error)
-            return _Prepared(
-                utterance=None, generation=generation, pending=pending, synth_ms=_ms_since(started)
-            )
+            utterance = None
         return _Prepared(
-            utterance=utterance, generation=generation, pending=pending, synth_ms=_ms_since(started)
+            utterance=utterance,
+            generation=generation,
+            pending=pending,
+            queue_wait_ms=waited,
+            synth_ms=_ms_since(started),
         )
 
     async def _discard_prefetch(self) -> None:
@@ -369,15 +386,11 @@ class SpeechQueue:
                 return
             self._playing = True
             try:
-                interrupted, play_ms = await self._spawn_and_wait(
+                status, play_ms = await self._spawn_and_wait(
                     prepared.utterance, prepared.generation
                 )
             finally:
                 self._playing = False
-            if play_ms is None:
-                status = "failed"  # the spawn itself never started
-            elif interrupted:
-                status = "discarded"
         finally:
             try:
                 if prepared.utterance is not None:
@@ -389,30 +402,41 @@ class SpeechQueue:
 
     async def _spawn_and_wait(
         self, utterance: Utterance, generation: int
-    ) -> tuple[bool, int | None]:
+    ) -> tuple[str, int | None]:
         """Start the player and wait for it to exit, killing it if a `stop` lands first.
 
-        Returns `(interrupted, play_ms)`. `play_ms` is `None` only when the process
-        never started at all; `interrupted` is true whenever a `stop()` cut this play
-        short, whether it landed before the spawn or during it.
+        Returns `(status, play_ms)`. `play_ms` is `None` only when the process never
+        started at all. The generation is checked twice: a `stop()` that landed while
+        the player was starting means nobody heard it (`discarded`); one that landed
+        while it was playing cut it off (`interrupted`). Checked before the exit code,
+        because a player that `stop()` terminated exits non-zero and that is not a
+        failure.
         """
         started = time.monotonic()
         try:
             player = await self._spawn(utterance.command, utterance.args)
         except OSError as error:
             self._on_error(error)
-            return False, None
+            return "failed", None
 
         self._player = player
-        interrupted = generation != self._generation
-        if interrupted:
+        stopped_while_starting = generation != self._generation
+        if stopped_while_starting:
             # stop() ran while the player was starting; kill it before it is heard.
             player.terminate()
         try:
-            await player.wait()
+            returncode = await player.wait()
         finally:
             self._player = None
-        return interrupted, _ms_since(started)
+        play_ms = _ms_since(started)
+        if stopped_while_starting:
+            return "discarded", play_ms
+        if generation != self._generation:
+            return "interrupted", play_ms
+        if returncode != 0:
+            self._on_error(OSError(f"{utterance.command} exited with status {returncode}"))
+            return "failed", play_ms
+        return "ok", play_ms
 
     async def _cleanup(self, utterance: Utterance) -> None:
         if utterance.cleanup is None:

@@ -53,13 +53,17 @@ def test_render_reports_totals_and_the_interruption_rate() -> None:
     store.insert_session(conn, SESSION)
     store.insert_utterance(conn, utterance(utterance_id="u1", status="ok"))
     store.insert_utterance(
-        conn, utterance(utterance_id="u2", seq=2, status="discarded", intent="progress")
+        conn, utterance(utterance_id="u2", seq=2, status="interrupted", intent="progress")
+    )
+    store.insert_utterance(
+        conn, utterance(utterance_id="u3", seq=3, status="discarded", intent="recap")
     )
 
     text = report.render(conn)
-    assert "2 utterances" in text
+    assert "3 utterances" in text
     assert "progress" in text
-    assert "1/1 (100%)" in text  # progress: 1 discarded of 1
+    assert "1/1 (100%)" in text  # progress: 1 interrupted of 1
+    assert "0/1 (0%)" in text  # recap: dropped before it played is not an interruption
 
 
 def test_render_reports_voice_input_when_there_is_any() -> None:
