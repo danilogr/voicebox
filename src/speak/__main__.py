@@ -192,7 +192,7 @@ STOP_SIGNALS = tuple(
 )
 
 
-async def serve_stdio(server: StdioServer) -> None:
+async def serve_stdio(server: StdioServer) -> int | None:
     """Serve on stdio until the client closes it or the process is told to stop.
 
     A stop signal's default action kills the process without unwinding it, which
@@ -202,9 +202,9 @@ async def serve_stdio(server: StdioServer) -> None:
     the lifespan the way Ctrl-C does. Only the first signal counts, so a second one
     cannot cut that shutdown short.
 
-    The shutdown runs at once, but the process exits only when stdin closes: the MCP
-    transport reads it on a worker thread that no signal interrupts, and the
-    interpreter waits for that thread before it exits.
+    Returns the signal that stopped it, or `None` when stdin closed. After a signal
+    the MCP transport's stdin reader is still blocked on a worker thread that no
+    signal interrupts, so the caller must not leave the exit to the interpreter.
     """
     loop = asyncio.get_running_loop()
     task = asyncio.current_task()
@@ -229,6 +229,20 @@ async def serve_stdio(server: StdioServer) -> None:
     finally:
         for signum in STOP_SIGNALS:
             loop.remove_signal_handler(signum)
+    return received[0] if received else None
+
+
+def run(server: StdioServer) -> None:
+    """Serve until stopped, then exit - at once, if a signal did the stopping.
+
+    The interpreter's normal exit joins every non-daemon thread, and the transport's
+    stdin reader only returns when stdin closes. A host that signals the process and
+    keeps the pipe open would wait for an exit that never comes, so a signalled stop
+    ends the process directly once the shutdown has run.
+    """
+    if asyncio.run(serve_stdio(server)) is not None:
+        logging.shutdown()
+        os._exit(0)
 
 
 def main() -> None:
@@ -239,7 +253,7 @@ def main() -> None:
     except ValueError as error:
         logger.error("%s", error)
         raise SystemExit(2) from error
-    asyncio.run(serve_stdio(server))
+    run(server)
 
 
 if __name__ == "__main__":

@@ -206,9 +206,10 @@ which engine produced an utterance.
   first, each carrying the sessions its rows belong to, then any changed session no
   chunk carried, on its own. Takes an injected transport. A `429`, a `5xx` or an
   unreachable server leaves the rest unshipped for the next session to retry, which
-  is the entire retry mechanism; a `400` sets that chunk's rows aside with
-  `rejected_at` and the run goes on, because a payload the server refuses will be
-  refused again and would otherwise hold back every row behind it.
+  is the entire retry mechanism; a `400` sets that chunk aside and the run goes on,
+  because a payload the server refuses will be refused again and would otherwise
+  hold back every row behind it. Rows are set aside with `rejected_at`; sessions
+  refused on their own are marked sent.
 - **`ping.py`** — the anonymous install ping (see the decision below). Whether one is
   due is a file read, made before `wiring.build` can create the consent file it
   consults; the request itself is a background task.
@@ -221,9 +222,10 @@ alongside its recording but never ships; the next MCP session ships its rows.
 
 The lifespan's shutdown is what closes a session row, so `__main__.serve_stdio`
 turns SIGTERM and SIGHUP into a cancellation that unwinds through it, as Ctrl-C does.
-Left at their defaults, either signal kills the process before any of it runs. The
-process itself still exits only once stdin closes, because the MCP transport reads
-stdin on a thread no signal interrupts.
+Left at their defaults, either signal kills the process before any of it runs. Once
+that shutdown has run, `__main__.run` ends the process with `os._exit`: the MCP
+transport reads stdin on a non-daemon thread no signal interrupts, and a normal exit
+would wait for it until the host closed the pipe.
 
 ## External dependencies
 
@@ -273,7 +275,10 @@ stdin on a thread no signal interrupts.
   no utterance to carry it at all. So a session has its own local `shipped_at`, cleared
   by every update, and `ship` sends changed sessions with or without utterances. A
   `400` marks only its own chunk's rows `rejected_at`: they stay in the local store
-  and in `speak-stats`, leave the backlog, and are never resent. Rejected: retrying a
+  and in `speak-stats`, leave the backlog, and are never resent. The sessions carried
+  with those rows stay in the backlog, since the fault may be in the rows alone; a
+  chunk of sessions alone that is refused marks them sent, or they would be refused
+  again every session. Rejected: retrying a
   `400`, which resends a payload the server already refused; and dropping refused rows,
   which would hide that it happened.
 
