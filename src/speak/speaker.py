@@ -108,6 +108,11 @@ class SpeakerLock:
             self._lock.acquire()
         except SpeakerBusyError:
             return False
+        except FileNotFoundError:
+            # The holder released between this process's `mkdir` failing and its owner
+            # file being written: a handoff race, not a broken directory (the parent is
+            # created first). Try again at the next poll.
+            return False
         except OSError as error:
             # Once per lock: a broken directory fails every utterance the same way.
             log = logger.debug if self._warned else logger.warning

@@ -101,3 +101,23 @@ async def test_releasing_a_lock_this_process_does_not_hold_changes_nothing(tmp_p
     assert await first.acquire(asyncio.Event())
     lock(tmp_path, 2).release()
     assert (tmp_path / LOCK_DIRNAME / "owner").read_text() == "1"
+
+
+async def test_a_handoff_race_is_retried_not_played_unlocked(tmp_path, caplog):
+    """The holder releasing between another process's failed `mkdir` and its owner
+    write surfaces as FileNotFoundError; that is contention, not a broken directory."""
+    speaker = lock(tmp_path, 2)
+    real = speaker._lock.acquire
+    attempts = []
+
+    def racing() -> None:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise FileNotFoundError("owner file vanished")
+        real()
+
+    speaker._lock.acquire = racing  # type: ignore[method-assign]
+    assert await asyncio.wait_for(speaker.acquire(asyncio.Event()), 1.0) is True
+    assert len(attempts) == 2
+    assert (tmp_path / LOCK_DIRNAME / "owner").read_text() == "2"
+    assert "playing anyway" not in caplog.text
