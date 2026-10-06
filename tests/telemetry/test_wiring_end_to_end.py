@@ -27,6 +27,10 @@ def _env(state_dir: str, home: str) -> dict[str, str]:
         "SPEAK_NEMO_AUTOSTART": "0",
         "SPEAK_STATE_DIR": state_dir,
         "SPEAK_TELEMETRY": "local",
+        # Collecting needs DO_NOT_TRACK cleared, which lets the install ping run;
+        # debug turns it, and any shipping, into a log line instead of a request.
+        "DO_NOT_TRACK": "",
+        "SPEAK_TELEMETRY_DEBUG": "1",
         "HOME": home,
     }
 

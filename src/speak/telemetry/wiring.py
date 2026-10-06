@@ -11,14 +11,44 @@ from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 
+import httpx2
+
 from speak.config import Settings
 from speak.telemetry import consent, machine, store
 from speak.telemetry.session import TelemetrySession
+from speak.telemetry.ship import TransportResponse
 
 logger = logging.getLogger(__name__)
 
 DB_FILENAME = "telemetry.db"
 RECORDINGS_DIRNAME = "recordings"
+
+# Where telemetry goes unless `SPEAK_TELEMETRY_ENDPOINT` overrides it. The ping is
+# served from the same origin, so an override moves both.
+DEFAULT_TELEMETRY_ENDPOINT = "https://speak-telemetry.actionableintelligence.app/v1/ingest"
+
+
+def ingest_url(env: Mapping[str, str]) -> str:
+    return env.get("SPEAK_TELEMETRY_ENDPOINT") or DEFAULT_TELEMETRY_ENDPOINT
+
+
+def debug_requested(env: Mapping[str, str]) -> bool:
+    """`SPEAK_TELEMETRY_DEBUG`: log what would be sent instead of sending it."""
+    return (env.get("SPEAK_TELEMETRY_DEBUG") or "").strip() not in ("", "0")
+
+
+async def http_transport(url: str, body: bytes) -> TransportResponse:
+    """POST one JSON body. Callers treat any transport failure as retryable, so a
+    request error is raised as `OSError` rather than left as an httpx-specific type
+    they do not know to catch."""
+    try:
+        async with httpx2.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                url, content=body, headers={"content-type": "application/json"}
+            )
+    except httpx2.HTTPError as error:
+        raise OSError(str(error)) from error
+    return TransportResponse(status=response.status_code, body=response.content)
 
 
 # The contract's `harness` enum.

@@ -7,7 +7,6 @@ import signal
 import sys
 from typing import Protocol
 
-import httpx2
 from mcp.server.mcpserver import MCPServer
 
 from speak.config import Settings
@@ -27,6 +26,7 @@ from speak.server import VERSION as PLUGIN_VERSION
 from speak.server import Ears, create_server
 from speak.supervisor import NemoSupervisor, process_is_alive
 from speak.telemetry import consent as telemetry_consent
+from speak.telemetry import ping as telemetry_ping
 from speak.telemetry import ship as telemetry_ship
 from speak.telemetry import store as telemetry_store
 from speak.telemetry import wiring as telemetry_wiring
@@ -35,10 +35,6 @@ from speak.transcribe.service import build_scribe
 logger = logging.getLogger(__name__)
 
 _background: set[asyncio.Task[object]] = set()
-
-
-# Where telemetry goes unless `SPEAK_TELEMETRY_ENDPOINT` overrides it.
-DEFAULT_TELEMETRY_ENDPOINT = "https://speak-telemetry.actionableintelligence.app/v1/ingest"
 
 
 def build_ears(settings: Settings) -> Ears:
@@ -83,29 +79,11 @@ def build_supervisor(settings: Settings) -> NemoSupervisor | None:
     )
 
 
-async def _http_transport(url: str, body: bytes) -> telemetry_ship.TransportResponse:
-    """POST one chunk. `ship.py` treats any transport failure as retryable, so a
-    request error is raised as `OSError` rather than left as an httpx-specific type
-    the caller does not know to catch."""
-    try:
-        async with httpx2.AsyncClient(timeout=10.0) as client:
-            response = await client.post(
-                url, content=body, headers={"content-type": "application/json"}
-            )
-    except httpx2.HTTPError as error:
-        raise OSError(str(error)) from error
-    return telemetry_ship.TransportResponse(status=response.status_code, body=response.content)
-
-
-def _debug_requested(env: dict[str, str]) -> bool:
-    return (env.get("SPEAK_TELEMETRY_DEBUG") or "").strip() not in ("", "0")
-
-
 async def _ship_backlog() -> None:
     """Ship once, at session start, off the hot path - failures leave rows
     unshipped for the next session to retry (spec 7, 11)."""
     env = dict(os.environ)
-    debug = _debug_requested(env)
+    debug = telemetry_wiring.debug_requested(env)
     consented = telemetry_consent.load_consent(env, host_platform=sys.platform)
     if not consented.collects or not (consented.uploads or debug):
         return
@@ -118,12 +96,11 @@ async def _ship_backlog() -> None:
         logger.debug("telemetry: could not open the local store to ship: %s", error)
         return
     try:
-        url = env.get("SPEAK_TELEMETRY_ENDPOINT") or DEFAULT_TELEMETRY_ENDPOINT
         shipped = await telemetry_ship.ship(
             conn,
             install_id=consented.install_id,
-            url=url,
-            transport=_http_transport,
+            url=telemetry_wiring.ingest_url(env),
+            transport=telemetry_wiring.http_transport,
             debug=debug,
         )
         logger.debug("telemetry: shipped %d utterance row(s)", shipped)
@@ -131,6 +108,18 @@ async def _ship_backlog() -> None:
         logger.debug("telemetry: shipping failed", exc_info=True)
     finally:
         conn.close()
+
+
+async def _send_ping(ping: telemetry_ping.Ping) -> None:
+    """The install ping, in the background. A failure is due again next session."""
+    try:
+        await telemetry_ping.send(
+            ping,
+            transport=telemetry_wiring.http_transport,
+            debug=telemetry_wiring.debug_requested(os.environ),
+        )
+    except Exception:
+        logger.debug("telemetry: the install ping failed", exc_info=True)
 
 
 def build(settings: Settings) -> MCPServer:
@@ -147,6 +136,14 @@ def build(settings: Settings) -> MCPServer:
 
     engine = build_engine(settings, on_unavailable=start_speech_server)
 
+    # Decided before `telemetry_wiring.build`, which may create the consent file this
+    # reads to tell an install from an upgrade.
+    ping = telemetry_ping.due(
+        os.environ,
+        plugin_version=PLUGIN_VERSION,
+        host_platform=sys.platform,
+        ingest_url=telemetry_wiring.ingest_url(os.environ),
+    )
     telemetry = telemetry_wiring.build(os.environ, settings=settings, plugin_version=PLUGIN_VERSION)
 
     def on_finish(outcome: UtteranceOutcome) -> None:
@@ -155,14 +152,22 @@ def build(settings: Settings) -> MCPServer:
 
     queue = SpeechQueue(prepare=engine.prepare, on_finish=on_finish)
 
-    def schedule_ship() -> None:
+    def schedule_sends() -> None:
         """Deferred to the server's lifespan: `build()` runs before `server.run()`
-        starts an event loop, so `asyncio.create_task` cannot be called from here."""
-        if telemetry is None:
-            return
-        task = asyncio.create_task(_ship_backlog())
-        _background.add(task)
-        task.add_done_callback(_background.discard)
+        starts an event loop, so `asyncio.create_task` cannot be called from here.
+
+        The ping goes whatever the telemetry mode; the backlog only when telemetry
+        collects at all.
+        """
+        sends = []
+        if ping is not None:
+            sends.append(_send_ping(ping))
+        if telemetry is not None:
+            sends.append(_ship_backlog())
+        for send in sends:
+            task = asyncio.create_task(send)
+            _background.add(task)
+            task.add_done_callback(_background.discard)
 
     return create_server(
         settings=settings,
@@ -172,7 +177,7 @@ def build(settings: Settings) -> MCPServer:
         ears=build_ears(settings),
         telemetry=telemetry,
         scribe=build_scribe(settings),
-        on_session_start=schedule_ship,
+        on_session_start=schedule_sends,
     )
 
 

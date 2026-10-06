@@ -127,6 +127,12 @@ class ConsentStore:
             logger.debug("could not write telemetry config at %s: %s", self._path, error)
 
 
+def do_not_track(env: Mapping[str, str]) -> bool:
+    """`DO_NOT_TRACK` set to anything but empty or `0`: nothing is sent at all, not
+    even the install ping, which every other setting still sends."""
+    return (env.get("DO_NOT_TRACK") or "").strip() not in ("", "0")
+
+
 def _forced_off(env: Mapping[str, str]) -> bool:
     """`SPEAK_TELEMETRY=off` and `DO_NOT_TRACK=1` force collection off for this run.
 
@@ -136,7 +142,7 @@ def _forced_off(env: Mapping[str, str]) -> bool:
     """
     if (env.get("SPEAK_TELEMETRY") or "").strip().lower() == MODE_OFF:
         return True
-    return (env.get("DO_NOT_TRACK") or "").strip() not in ("", "0")
+    return do_not_track(env)
 
 
 def load_consent(env: Mapping[str, str], *, host_platform: str) -> Consent:

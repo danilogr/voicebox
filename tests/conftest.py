@@ -10,5 +10,11 @@ def _telemetry_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     a direct call into either one would otherwise touch this machine's actual
     `~/Library/Application Support/speak/`. A test that wants telemetry on sets its
     own environment explicitly, which overrides this default.
+
+    `off` still sends the install ping, so `DO_NOT_TRACK` is set as well: it is the
+    one setting under which neither entry point makes a request or writes a file.
+    A test that needs either one running clears it and sets `SPEAK_TELEMETRY_DEBUG`,
+    under which nothing is sent.
     """
     monkeypatch.setenv("SPEAK_TELEMETRY", "off")
+    monkeypatch.setenv("DO_NOT_TRACK", "1")
