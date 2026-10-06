@@ -955,7 +955,7 @@ dev = [
 requires-dist = [
     { name = "mcp", specifier = ">=2.1,<3" },
     { name = "sounddevice", specifier = ">=0.5.6" },
-    { name = "speak-core", editable = "../speak-core" },
+    { name = "speak-core", git = "https://github.com/danilogr/speak-core?rev=v0.1.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -971,21 +971,9 @@ dev = [
 [[package]]
 name = "speak-core"
 version = "0.1.0"
-source = { editable = "../speak-core" }
+source = { git = "https://github.com/danilogr/speak-core?rev=v0.1.0#6bd1ef22c3a67068733c7d9398600d8fa2d332f4" }
 dependencies = [
     { name = "httpx2" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "httpx2", specifier = ">=2.12" }]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy", specifier = ">=1.18" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-asyncio", specifier = ">=1" },
-    { name = "pytest-timeout", specifier = ">=2.3" },
-    { name = "ruff", specifier = ">=0.14" },
 ]
 
 [[package]]
