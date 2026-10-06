@@ -8,8 +8,8 @@ import json
 from pathlib import Path
 
 import jsonschema
+from speak_core.telemetry import ping, ship, store
 
-from speak.telemetry import ping, ship, store
 from speak.telemetry.contract import IDENTITY, SCHEMA
 
 CONTRACT_DIR = Path(__file__).parent / "v1"

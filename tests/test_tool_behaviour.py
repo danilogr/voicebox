@@ -1,8 +1,8 @@
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
+from speak_core.queue import QueueStats
 
 from fakes import FakeEngine, FakeQueue, FakeSupervisor
-from speak.queue import QueueStats
 from speak.server import create_server
 from speak.settings import Settings
 

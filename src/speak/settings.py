@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from speak.config import (
+from speak_core.config import (
     ServerSettings,
     VoiceSettings,
     env_flag,

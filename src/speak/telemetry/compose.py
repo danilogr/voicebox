@@ -6,8 +6,9 @@ import sys
 import uuid
 from collections.abc import Mapping
 
+from speak_core.telemetry import store, wiring
+
 from speak.settings import Settings
-from speak.telemetry import store, wiring
 from speak.telemetry.contract import IDENTITY, SCHEMA, db_path
 from speak.telemetry.session import TelemetrySession
 

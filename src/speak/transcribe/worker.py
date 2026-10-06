@@ -17,8 +17,9 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from speak.supervisor import process_is_alive
-from speak.telemetry import store as telemetry_store
+from speak_core.supervisor import process_is_alive
+from speak_core.telemetry import store as telemetry_store
+
 from speak.telemetry.contract import SCHEMA
 from speak.telemetry.session import TranscriptionOutcome, clamped, record_transcription
 from speak.transcribe.commands import Runner, ToolMissing, run_convert_command

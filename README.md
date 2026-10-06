@@ -177,11 +177,13 @@ Customize settings via environment variables or in `.mcp.json`:
 
 ```bash
 uv sync                  # Install dependencies
-uv run pytest            # Run the test suite (770+ offline tests)
+uv run pytest            # Run the test suite (offline tests)
 uv run ruff check .      # Lint checks
 uv run mypy              # Type checks
 scripts/install-local.sh # Sync changes into Claude Code's plugin cache
 ```
+
+The speech engine is the speak-core git dependency; see `harness/design-guidelines.md` to work on both.
 
 ---
 

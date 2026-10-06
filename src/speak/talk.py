@@ -13,18 +13,19 @@ import sys
 import time
 from typing import NoReturn
 
+from speak_core.engines.asr import Liveness, NemoTranscriber, Transcriber, TranscriptionFailed
+from speak_core.runtime import configure_logging, supervisor_for
+from speak_core.supervisor import NemoSupervisor, process_is_alive
+from speak_core.telemetry import ping as telemetry_ping
+from speak_core.telemetry import wiring as telemetry_wiring
+
 from speak.capture import Recorder, RecorderUnavailable, Recording, describe
 from speak.cue import Cue
-from speak.engines.asr import Liveness, NemoTranscriber, Transcriber, TranscriptionFailed
 from speak.listening import build_cue, build_recorder, capture_limits, transcription_timeout
 from speak.miclock import MicLock, MicrophoneBusy
-from speak.runtime import configure_logging, supervisor_for
 from speak.server import VERSION
 from speak.settings import PLUGIN, Settings
-from speak.supervisor import NemoSupervisor, process_is_alive
 from speak.telemetry import compose as telemetry_compose
-from speak.telemetry import ping as telemetry_ping
-from speak.telemetry import wiring as telemetry_wiring
 from speak.telemetry.contract import IDENTITY
 from speak.telemetry.session import TelemetrySession
 from speak.tools import (

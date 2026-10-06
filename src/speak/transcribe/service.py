@@ -13,9 +13,10 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from speak.exclusive import ExclusiveLock
+from speak_core.exclusive import ExclusiveLock
+from speak_core.supervisor import process_is_alive
+
 from speak.settings import Settings
-from speak.supervisor import process_is_alive
 from speak.telemetry.session import (
     TelemetrySession,
     TranscriptionOutcome,

@@ -2,9 +2,10 @@
 
 from pathlib import Path
 
+from speak_core.engines.asr import DEFAULT_TIMEOUT
+
 from speak.capture import SilenceTracker, State
 from speak.cue import END_SOUND, START_SOUND
-from speak.engines.asr import DEFAULT_TIMEOUT
 from speak.listening import build_cue, build_recorder, capture_limits, transcription_timeout
 from speak.settings import Settings
 

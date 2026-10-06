@@ -6,9 +6,9 @@ This file covers the tier this repo can only reach from inside a live request:
 
 import pytest
 from mcp.server.mcpserver import Context
+from speak_core.telemetry.wiring import normalize_harness
 
 from speak.server import client_info
-from speak.telemetry.wiring import normalize_harness
 
 
 class _FakeParams:

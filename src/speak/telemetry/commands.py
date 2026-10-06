@@ -7,7 +7,8 @@ call takes them as arguments.
 import os
 import sys
 
-from speak.telemetry import cli, report
+from speak_core.telemetry import cli, report
+
 from speak.telemetry.contract import IDENTITY, SCHEMA, db_path
 from speak.telemetry.stats import render
 

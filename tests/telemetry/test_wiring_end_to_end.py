@@ -15,8 +15,8 @@ from pathlib import Path
 import mcp_types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+from speak_core.telemetry import store
 
-from speak.telemetry import store
 from speak.telemetry.contract import SCHEMA
 
 

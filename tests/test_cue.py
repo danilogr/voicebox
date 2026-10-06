@@ -4,10 +4,10 @@ import logging
 from pathlib import Path
 
 import pytest
+from speak_core.player import Player
 
 from fakes import FakePlayer
 from speak.cue import EMPTY_SOUND, END_SOUND, START_SOUND, Cue
-from speak.player import Player
 
 START = Path("/sounds/cue-start.aiff")
 END = Path("/sounds/cue-end.aiff")

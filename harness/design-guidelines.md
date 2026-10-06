@@ -25,6 +25,8 @@ of errors that are not the ones being looked for.
 
 Python 3.12+, pytest, ruff for lint and format, mypy for types.
 
+speak-core is a git dependency pinned by tag. To change it, work in a checkout beside this one with `[tool.uv.sources] speak-core = { path = "../speak-core", editable = true }`; a step may commit that while in progress, and ends pinned to a pushed tag.
+
 Ruff selects `E,F,I,N,UP,B,SIM,RUF,ANN,PTH,LOG,G` with `RUF100` on, so an unnecessary
 `# noqa` is itself an error — a suppression has to be justified where it sits.
 `ANN401` is off everywhere, and `tests/` also drops `ANN201` and `ANN001`, so a test

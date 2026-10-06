@@ -8,24 +8,24 @@ import sys
 from typing import Protocol
 
 from mcp.server.mcpserver import MCPServer
+from speak_core.engines import build_engine
+from speak_core.engines.asr import NemoTranscriber
+from speak_core.queue import SpeechQueue, UtteranceOutcome
+from speak_core.runtime import configure_logging, supervisor_for
+from speak_core.speaker import SpeakerLock
+from speak_core.supervisor import NemoSupervisor, process_is_alive
+from speak_core.telemetry import consent as telemetry_consent
+from speak_core.telemetry import ping as telemetry_ping
+from speak_core.telemetry import ship as telemetry_ship
+from speak_core.telemetry import store as telemetry_store
+from speak_core.telemetry import wiring as telemetry_wiring
 
-from speak.engines import build_engine
-from speak.engines.asr import NemoTranscriber
 from speak.listening import build_cue, build_recorder, capture_limits, transcription_timeout
 from speak.miclock import MicLock
-from speak.queue import SpeechQueue, UtteranceOutcome
-from speak.runtime import configure_logging, supervisor_for
 from speak.server import VERSION as PLUGIN_VERSION
 from speak.server import Ears, create_server
 from speak.settings import PLUGIN, Settings
-from speak.speaker import SpeakerLock
-from speak.supervisor import NemoSupervisor, process_is_alive
 from speak.telemetry import compose as telemetry_compose
-from speak.telemetry import consent as telemetry_consent
-from speak.telemetry import ping as telemetry_ping
-from speak.telemetry import ship as telemetry_ship
-from speak.telemetry import store as telemetry_store
-from speak.telemetry import wiring as telemetry_wiring
 from speak.telemetry.contract import IDENTITY, SCHEMA, db_path
 from speak.transcribe.service import build_scribe
 

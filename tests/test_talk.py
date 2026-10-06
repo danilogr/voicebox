@@ -1,17 +1,17 @@
 from pathlib import Path
 
 import pytest
+from speak_core.config import ServerSettings
+from speak_core.engines.asr import TranscriptionFailed
+from speak_core.telemetry import store
 
 from fakes import FakeMicLock, FakePlayer, FakeRecorder, FakeSupervisor, FakeTranscriber
 from speak import talk as talk_module
 from speak.capture import Recording, State
-from speak.config import ServerSettings
 from speak.cue import Cue
-from speak.engines.asr import TranscriptionFailed
 from speak.miclock import MicrophoneBusy
 from speak.settings import Settings
 from speak.talk import capture, dictate, main
-from speak.telemetry import store
 from speak.telemetry.contract import SCHEMA
 from speak.telemetry.session import TelemetrySession
 from speak.tools import TALK_HEARD_NOTHING

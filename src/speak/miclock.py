@@ -8,7 +8,7 @@ atomic `mkdir` elects one holder, and a lock whose owner has died is reclaimed.
 from collections.abc import Callable
 from pathlib import Path
 
-from speak.exclusive import ExclusiveLock
+from speak_core.exclusive import ExclusiveLock
 
 
 class MicrophoneBusy(RuntimeError):  # noqa: N818 - reads as a state, not a failure mode

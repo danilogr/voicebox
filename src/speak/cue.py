@@ -13,8 +13,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from speak.player import Player, resolve_player
-from speak.queue import Spawn, spawn_detached
+from speak_core.player import Player, resolve_player
+from speak_core.queue import Spawn, spawn_detached
 
 logger = logging.getLogger(__name__)
 

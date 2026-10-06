@@ -13,12 +13,13 @@
 ├── scripts/                Shell launchers, cue sound synthesis, install helpers
 ├── src/speak/              Core Python implementation
 │   ├── assets/             Synthesized WAV cue sounds
-│   ├── engines/            Speech synthesis and ASR engine implementations
 │   ├── telemetry/          Local metrics storage and optional anonymous reporting
 │   └── transcribe/         Background audio/video file transcription subsystem
-├── tests/                  Test suite (770+ offline, mocked tests)
+├── tests/                  Test suite (460+ offline, mocked tests)
 └── voice-tuning/           Tools and dataset script for personalized ASR fine-tuning
 ```
+
+Engines, supervisor, queue, speaker lock and telemetry mechanism live in speak-core.
 
 ---
 
@@ -85,18 +86,8 @@ System specifications and engineering guidelines:
 | [`src/speak/__main__.py`](../src/speak/__main__.py) | Composition root: loads environment settings, initializes dependencies, and starts the MCP server over stdio. |
 | [`src/speak/server.py`](../src/speak/server.py) | Defines the tools (`speak`, `listen`, `transcribe`, etc.) and the `converse` prompt registered with the MCP client. |
 | [`src/speak/tools.py`](../src/speak/tools.py) | Tool metadata, parameter schemas, and the guidance prompt that tells Claude when to speak. |
-| [`src/speak/config.py`](../src/speak/config.py) | Settings every plugin reads the same way: shared `NEMO_*` server settings, a prefixed voice, the plugin and shared state directories. |
 | [`src/speak/settings.py`](../src/speak/settings.py) | This plugin's `Settings`: embeds the server and voice settings and adds the `SPEAK_LISTEN_*`, input device, transcription and state-directory settings. |
-| [`src/speak/runtime.py`](../src/speak/runtime.py) | Logging for the plugin's and the core's loggers, the speech server health probe, and the supervisor factory. |
 | [`src/speak/listening.py`](../src/speak/listening.py) | Capture limits, microphone, cue and transcription timeout, built the same way by `__main__` and `talk`. |
-
-### Audio Output & Playback
-
-| File | Responsibility |
-|---|---|
-| [`src/speak/queue.py`](../src/speak/queue.py) | Serial speech queue: plays sentences in order without overlapping, prepares the next sentence while one plays, and handles cancellations. |
-| [`src/speak/text.py`](../src/speak/text.py) | Text formatting: collapses multi-line text to a single line and caps sentences at word boundaries (default 400 characters). |
-| [`src/speak/player.py`](../src/speak/player.py) | Finds an installed audio player command for the current platform (`afplay` on macOS, PowerShell on Windows, `paplay`/`aplay`/`ffplay` on Linux). |
 
 ### Microphone Input & Process Coordination
 
@@ -105,27 +96,8 @@ System specifications and engineering guidelines:
 | [`src/speak/capture.py`](../src/speak/capture.py) | Microphone recording: captures audio from the microphone and stops automatically when silence is detected. |
 | [`src/speak/cue.py`](../src/speak/cue.py) | Plays chime sounds when recording starts, stops, or detects no speech. |
 | [`src/speak/miclock.py`](../src/speak/miclock.py) | Microphone lock: ensures only one terminal session records audio at a time. |
-| [`src/speak/exclusive.py`](../src/speak/exclusive.py) | Cross-process lock using filesystem directories, with automatic cleanup if a process exits unexpectedly. |
-| [`src/speak/speaker.py`](../src/speak/speaker.py) | Cross-process speaker lock: one utterance plays at a time across every process that speaks, with turns that alternate. |
-| [`src/speak/supervisor.py`](../src/speak/supervisor.py) | Speech server supervisor: starts, shares, and shuts down the local NeMo speech server across open terminal windows. |
-| [`src/speak/install-nemo.sh`](../src/speak/install-nemo.sh) | NeMo installer run by `speak-core-setup`: installs `nemo-speech` >= 0.2.0, pulls MagpieTTS and Nemotron 3.5, runs `doctor`. Idempotent. |
-| [`src/speak/setup.py`](../src/speak/setup.py) | The `speak-core-setup` console script. |
 | [`src/speak/talk.py`](../src/speak/talk.py) | CLI entry point for `/talk`: coordinates microphone recording, transcribes speech, and outputs the result. |
 | [`src/speak/assets/`](../src/speak/assets/) | Shipped WAV audio chimes: `cue-open.wav`, `cue-close.wav`, and `cue-empty.wav`. |
-
----
-
-## Speech Engines (`src/speak/engines/`)
-
-Pluggable synthesis and transcription backends:
-
-| File | Description |
-|---|---|
-| [`src/speak/engines/base.py`](../src/speak/engines/base.py) | Core engine protocol (`Engine`) and data structures (`Utterance`, `Voice`) defining the synthesis interface. |
-| [`src/speak/engines/say.py`](../src/speak/engines/say.py) | macOS native speech engine using the built-in `/usr/bin/say` executable. Supports voice listing and filtering by locale. |
-| [`src/speak/engines/nemo.py`](../src/speak/engines/nemo.py) | Client for local NeMo-Speech.cpp HTTP server: synthesizes speech via MagpieTTS and manages temporary WAV files for playback. |
-| [`src/speak/engines/command.py`](../src/speak/engines/command.py) | Custom command engine: invokes any arbitrary command line (e.g., Piper, espeak-ng) passing the text as an argument. |
-| [`src/speak/engines/asr.py`](../src/speak/engines/asr.py) | Speech-to-text client sending captured microphone audio to the shared NeMo server via OpenAI-compatible `/v1/audio/transcriptions`. |
 
 ---
 
@@ -153,21 +125,11 @@ Manages local metrics collection and optional anonymous telemetry reporting:
 | File | Responsibility |
 |---|---|
 | [`src/speak/telemetry/schema.sql`](../src/speak/telemetry/schema.sql) | SQLite schema for local database tracking sessions and performance. Columns marked `-- LOCAL` are never transmitted. |
-| [`src/speak/telemetry/schema.py`](../src/speak/telemetry/schema.py) | Schema types: `RowTable` and `TelemetrySchema`, what the table-agnostic store and shipper need to know of a plugin's tables. |
 | [`src/speak/telemetry/contract.py`](../src/speak/telemetry/contract.py) | This plugin's schema: the bundled `schema.sql` plus the column lists, checked against it by a test. |
-| [`src/speak/telemetry/store.py`](../src/speak/telemetry/store.py) | SQLite client: handles database migrations and records local session events. |
-| [`src/speak/telemetry/identity.py`](../src/speak/telemetry/identity.py) | `TelemetryIdentity`: the plugin's name, env prefix, endpoint and disclosure version; every variable and the config directory derive from it. |
-| [`src/speak/telemetry/wiring.py`](../src/speak/telemetry/wiring.py) | Shared composition: HTTP transport, harness and locale detection, and `start_install` (consent, machine probe, store, `installs` row). |
 | [`src/speak/telemetry/compose.py`](../src/speak/telemetry/compose.py) | This plugin's `build()`: `start_install`, its own `sessions` row, and the `TelemetrySession`. |
 | [`src/speak/telemetry/session.py`](../src/speak/telemetry/session.py) | Session tracker: records session start and end times. |
-| [`src/speak/telemetry/ship.py`](../src/speak/telemetry/ship.py) | Background uploader: sends unsent anonymous metrics (with all local-only fields stripped) to the server. |
-| [`src/speak/telemetry/ping.py`](../src/speak/telemetry/ping.py) | Anonymous install ping: sends version, OS, and event type on install or upgrade. |
-| [`src/speak/telemetry/consent.py`](../src/speak/telemetry/consent.py) | Consent state: the mode switches, the persisted install id, and where they are stored. |
-| [`src/speak/telemetry/cli.py`](../src/speak/telemetry/cli.py) | The consent command: `on`, `local`, `off`, `--id`, `record on|off`, and status. |
-| [`src/speak/telemetry/report.py`](../src/speak/telemetry/report.py) | Stats scaffolding: finds the store, renders it with the plugin's function, prints install id and mode. |
 | [`src/speak/telemetry/stats.py`](../src/speak/telemetry/stats.py) | This plugin's `speak-stats` rendering: plain SQL over its raw tables. |
 | [`src/speak/telemetry/commands.py`](../src/speak/telemetry/commands.py) | The `speak-telemetry` and `speak-stats` console scripts; the only telemetry module reading `os.environ` and `sys.argv`. |
-| [`src/speak/telemetry/machine.py`](../src/speak/telemetry/machine.py) | System probe: detects OS, CPU core counts, bucketed RAM (e.g. 16, 32 GB), and GPU acceleration. |
 
 ---
 
@@ -185,16 +147,12 @@ Personalized speech recognition fine-tuning toolkit:
 
 ## Test Suite (`tests/`)
 
-770+ automated tests executed with `uv run pytest`:
+460+ automated tests executed with `uv run pytest`:
 
 | Directory / File | What it tests |
 |---|---|
 | `tests/contract/` | Telemetry wire protocol compliance against JSON schemas and fixtures. |
-| `tests/telemetry/` | Telemetry storage, consent states, hardware probes, ping delivery, and batch upload mechanisms. |
-| `tests/test_engines_*.py` | Synthesis engines (`say`, `nemo`, `command`) under normal, degraded, and fallback conditions. |
-| `tests/test_speaker.py` | The speaker lock: waiting, immediate stop, dead-holder reclaim, alternating turns, and an unusable directory. |
-| `tests/test_queue.py` | FIFO playback order, depth-1 prefetch pipelining, and `stop_speaking` cancellation. |
+| `tests/telemetry/` | This plugin's telemetry: its contract, session, composition and stats. |
 | `tests/test_capture.py` | Microphone energy gating, calibration, silence timeouts, and device selection. |
-| `tests/test_supervisor.py` | NeMo server process management, election locks, PID tracking, and graceful shutdowns. |
 | `tests/test_transcribe_*.py` | Media probing, audio conversion, background worker lifecycle, and formatters. |
 | `tests/test_server.py` | MCP tool dispatch, parameter validation, and prompt handlers. |

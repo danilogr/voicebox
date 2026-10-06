@@ -3,8 +3,9 @@
 from pathlib import Path
 
 import pytest
+from speak_core.telemetry import store
 
-from speak.telemetry import commands, stats, store
+from speak.telemetry import commands, stats
 from speak.telemetry.contract import SCHEMA
 
 INSTALL = {

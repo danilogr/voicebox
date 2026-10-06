@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from pathlib import Path
 
-from speak.exclusive import ExclusiveLock
+from speak_core.exclusive import ExclusiveLock
 
 
 class TranscriptionBusy(RuntimeError):  # noqa: N818 - reads as a state, not a failure mode

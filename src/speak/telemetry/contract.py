@@ -9,8 +9,8 @@ import importlib.resources
 from collections.abc import Mapping
 from pathlib import Path
 
-from speak.telemetry.identity import TelemetryIdentity
-from speak.telemetry.schema import RowTable, TelemetrySchema
+from speak_core.telemetry.identity import TelemetryIdentity
+from speak_core.telemetry.schema import RowTable, TelemetrySchema
 
 UTTERANCES = RowTable(
     name="utterances",

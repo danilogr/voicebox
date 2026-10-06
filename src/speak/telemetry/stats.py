@@ -2,7 +2,7 @@
 
 import sqlite3
 
-from speak.telemetry import store
+from speak_core.telemetry import store
 
 
 def render(conn: sqlite3.Connection) -> str:

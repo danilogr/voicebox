@@ -4,11 +4,12 @@ import asyncio
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from speak_core.engines.asr import Liveness
+from speak_core.engines.base import Utterance
+from speak_core.queue import QueueStats
+
 from speak.capture import Recording, TrackerSettings
-from speak.engines.asr import Liveness
-from speak.engines.base import Utterance
 from speak.miclock import MicrophoneBusy
-from speak.queue import QueueStats
 
 
 class FakeEngine:

@@ -126,16 +126,17 @@ rewriting those, import them:
 
 | Module | What it gives you |
 |---|---|
-| `speak.player` | `resolve_player(...)` picks a working playback command per platform from what is installed (`afplay`, `ffplay`, …) |
+| `speak_core.player` | `resolve_player(...)` picks a working playback command per platform from what is installed (`afplay`, `ffplay`, …) |
 | `speak.capture` | `MicrophoneRecorder.record(TrackerSettings)` records one utterance and returns a `Recording` carrying the audio, why it stopped, and whether anyone actually spoke. `SilenceTracker` is a pure state machine — it calibrates against ambient noise instead of a fixed threshold, so a quiet mic and a noisy room both work |
-| `speak.queue` | `SpeechQueue` plays one utterance at a time, in order, never overlapping |
-| `speak.miclock` / `speak.exclusive` | One microphone holder at a time across processes, elected by an atomic `mkdir` |
+| `speak_core.queue` | `SpeechQueue` plays one utterance at a time, in order, never overlapping |
+| `speak.miclock` / `speak_core.exclusive` | One microphone holder at a time across processes, elected by an atomic `mkdir` |
 
 Defaults worth knowing: capture is **16 kHz mono**, and an utterance ends after
 **3 s** of silence.
 
-The package is not published — depend on it by path, or copy the two files you
-need. They are plain `asyncio` with no MCP in them.
+speak-core is not published to PyPI — depend on it by git tag
+(`speak-core @ git+https://github.com/danilogr/speak-core@v0.1.0`, a private
+repository), or copy the files you need. They are plain `asyncio` with no MCP in them.
 
 ## The MCP server
 
@@ -180,10 +181,10 @@ ping, and `DO_NOT_TRACK=1` disables both.
 
 | Path | Responsibility |
 |---|---|
-| [`src/speak/engines/asr.py`](../src/speak/engines/asr.py) | How this plugin calls `/v1/audio/transcriptions`, including liveness handling |
-| [`src/speak/engines/`](../src/speak/engines/) | The speech engines, including the HTTP one |
-| [`src/speak/supervisor.py`](../src/speak/supervisor.py) | Starting, sharing and stopping one server across processes |
+| [`speak_core/engines/asr.py`](https://github.com/danilogr/speak-core/blob/main/src/speak_core/engines/asr.py) | How this plugin calls `/v1/audio/transcriptions`, including liveness handling |
+| [`speak_core/engines/`](https://github.com/danilogr/speak-core/blob/main/src/speak_core/engines/) | The speech engines, including the HTTP one |
+| [`speak_core/supervisor.py`](https://github.com/danilogr/speak-core/blob/main/src/speak_core/supervisor.py) | Starting, sharing and stopping one server across processes |
 | [`src/speak/transcribe/`](../src/speak/transcribe/) | The file-transcription feature: probe, convert, job records, the detached worker |
-| [`src/speak/capture.py`](../src/speak/capture.py), [`player.py`](../src/speak/player.py), [`queue.py`](../src/speak/queue.py) | The reusable local-audio parts |
+| [`src/speak/capture.py`](../src/speak/capture.py), [`speak_core/player.py`](https://github.com/danilogr/speak-core/blob/main/src/speak_core/player.py), [`speak_core/queue.py`](https://github.com/danilogr/speak-core/blob/main/src/speak_core/queue.py) | The reusable local-audio parts |
 | [`harness/layout.md`](layout.md) | Exhaustive directory and file layout of the entire codebase |
 | [`harness/performance.md`](performance.md) | Every measured number and the hardware behind it |

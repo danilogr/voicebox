@@ -4,7 +4,8 @@ schema says: a column missing from `local_columns` would be uploaded."""
 import re
 from pathlib import Path
 
-from speak.telemetry import store
+from speak_core.telemetry import store
+
 from speak.telemetry.contract import IDENTITY, SCHEMA
 
 VENDORED = Path(__file__).parent.parent / "contract" / "v1" / "schema.sql"

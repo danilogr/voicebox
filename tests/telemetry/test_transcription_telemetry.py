@@ -2,8 +2,9 @@
 
 from pathlib import Path
 
-from speak.queue import UtteranceOutcome
-from speak.telemetry import store
+from speak_core.queue import UtteranceOutcome
+from speak_core.telemetry import store
+
 from speak.telemetry.contract import SCHEMA
 from speak.telemetry.session import TelemetrySession, TranscriptionOutcome, record_transcription
 

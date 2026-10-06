@@ -18,9 +18,10 @@ import wave
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from speak.engines import nemo, say
-from speak.queue import UtteranceOutcome
-from speak.telemetry import store
+from speak_core.engines import nemo, say
+from speak_core.queue import UtteranceOutcome
+from speak_core.telemetry import store
+
 from speak.telemetry.contract import SCHEMA
 
 logger = logging.getLogger(__name__)

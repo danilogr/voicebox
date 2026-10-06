@@ -14,19 +14,19 @@ from typing import Annotated, Protocol
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
+from speak_core.engines.asr import Liveness, Transcriber, TranscriptionFailed
+from speak_core.engines.base import Engine
+from speak_core.queue import QueueStats
+from speak_core.queue import describe as describe_queue
+from speak_core.telemetry.wiring import normalize_harness
+from speak_core.text import normalize
 
 from speak import tools
 from speak.capture import Recorder, RecorderUnavailable, Recording, TrackerSettings, describe
 from speak.cue import Cue
-from speak.engines.asr import Liveness, Transcriber, TranscriptionFailed
-from speak.engines.base import Engine
 from speak.miclock import MicLock, MicrophoneBusy
-from speak.queue import QueueStats
-from speak.queue import describe as describe_queue
 from speak.settings import Settings
 from speak.telemetry.session import TelemetrySession
-from speak.telemetry.wiring import normalize_harness
-from speak.text import normalize
 from speak.transcribe import service as transcription
 
 logger = logging.getLogger(__name__)

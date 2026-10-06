@@ -1,9 +1,11 @@
 """This plugin's telemetry session: the install, then its own `sessions` row - what
 both `__main__` and `talk` hand their `TelemetrySession` from."""
 
-from speak.config import ServerSettings, VoiceSettings
+from speak_core.config import ServerSettings, VoiceSettings
+from speak_core.telemetry import store
+
 from speak.settings import Settings
-from speak.telemetry import compose, store
+from speak.telemetry import compose
 
 
 def env(tmp_path, **extra: str) -> dict[str, str]:

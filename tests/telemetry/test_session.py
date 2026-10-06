@@ -6,9 +6,9 @@ import wave
 from pathlib import Path
 
 import pytest
+from speak_core.queue import UtteranceOutcome
+from speak_core.telemetry import store
 
-from speak.queue import UtteranceOutcome
-from speak.telemetry import store
 from speak.telemetry.contract import SCHEMA
 from speak.telemetry.session import (
     HARNESS_VERSION_MAX_LENGTH,
