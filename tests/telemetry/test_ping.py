@@ -4,18 +4,13 @@ success. Every transport is injected - no test here opens a socket."""
 import json
 from pathlib import Path
 
-import jsonschema
 import pytest
+from telemetry_fixtures import IDENTITY
 
 from speak.telemetry import consent, ping
 from speak.telemetry.ship import TransportResponse
 
 INGEST = "https://telemetry.example/v1/ingest"
-SCHEMA = json.loads(
-    (
-        Path(__file__).parents[1] / "contract" / "v1" / "schema" / "ping-request.schema.json"
-    ).read_text()
-)
 
 
 def env(tmp_path: Path, **extra: str) -> dict[str, str]:
@@ -23,12 +18,16 @@ def env(tmp_path: Path, **extra: str) -> dict[str, str]:
 
 
 def config_dir(tmp_path: Path) -> Path:
-    return consent.config_dir(env(tmp_path), host_platform="linux")
+    return IDENTITY.config_dir(env(tmp_path), host_platform="linux")
 
 
 def due(tmp_path: Path, version: str = "1.7.0", **extra: str) -> ping.Ping | None:
     return ping.due(
-        env(tmp_path, **extra), plugin_version=version, host_platform="linux", ingest_url=INGEST
+        env(tmp_path, **extra),
+        IDENTITY,
+        plugin_version=version,
+        host_platform="linux",
+        ingest_url=INGEST,
     )
 
 
@@ -68,7 +67,6 @@ def test_the_ping_carries_exactly_the_contracts_three_fields(tmp_path):
     pending = due(tmp_path)
     assert pending is not None
     assert set(pending.payload) == {"plugin_version", "os", "event"}
-    jsonschema.validate(pending.payload, SCHEMA)
 
 
 def test_an_install_that_predates_the_ping_reports_an_upgrade(tmp_path):
@@ -97,16 +95,18 @@ def test_an_unreadable_marker_is_treated_as_no_marker(tmp_path):
 @pytest.mark.parametrize("mode", consent.MODES)
 def test_the_ping_is_due_whatever_the_telemetry_mode(tmp_path, mode):
     """`off` and `local` still count the install; only DO_NOT_TRACK does not."""
-    consent.ConsentStore(config_dir(tmp_path) / consent.CONFIG_FILENAME).save(
-        consent.Consent(install_id="x", mode=mode)
+    consent.ConsentStore(config_dir(tmp_path) / consent.CONFIG_FILENAME, disclosure_version=2).save(
+        consent.Consent(install_id="x", disclosure_ver=2, mode=mode)
     )
     assert due(tmp_path) is not None
 
 
 async def test_forcing_telemetry_off_creates_no_consent_file_and_still_pings(tmp_path):
     forced = env(tmp_path, SPEAK_TELEMETRY="off")
-    pending = ping.due(forced, plugin_version="1.7.0", host_platform="linux", ingest_url=INGEST)
-    consent.load_consent(forced, host_platform="linux")
+    pending = ping.due(
+        forced, IDENTITY, plugin_version="1.7.0", host_platform="linux", ingest_url=INGEST
+    )
+    consent.load_consent(forced, IDENTITY, host_platform="linux")
     assert pending is not None
     await ping.send(pending, transport=Transport(NO_CONTENT))
 
@@ -152,7 +152,13 @@ async def test_a_ping_that_is_not_counted_is_due_again(tmp_path, response):
 
 def test_an_os_the_contract_does_not_name_is_never_pinged(tmp_path):
     assert (
-        ping.due(env(tmp_path), plugin_version="1.7.0", host_platform="freebsd", ingest_url=INGEST)
+        ping.due(
+            env(tmp_path),
+            IDENTITY,
+            plugin_version="1.7.0",
+            host_platform="freebsd",
+            ingest_url=INGEST,
+        )
         is None
     )
 

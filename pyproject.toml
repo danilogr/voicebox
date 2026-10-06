@@ -12,7 +12,8 @@ dependencies = [
 [project.scripts]
 speak-mcp = "speak.__main__:main"
 speak-talk = "speak.talk:main"
-speak-stats = "speak.telemetry.report:main"
+speak-telemetry = "speak.telemetry.commands:telemetry_main"
+speak-stats = "speak.telemetry.commands:stats_main"
 
 [build-system]
 requires = ["hatchling"]

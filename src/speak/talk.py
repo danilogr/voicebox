@@ -22,8 +22,10 @@ from speak.runtime import configure_logging, supervisor_for
 from speak.server import VERSION
 from speak.settings import PLUGIN, Settings
 from speak.supervisor import NemoSupervisor, process_is_alive
+from speak.telemetry import compose as telemetry_compose
 from speak.telemetry import ping as telemetry_ping
 from speak.telemetry import wiring as telemetry_wiring
+from speak.telemetry.contract import IDENTITY
 from speak.telemetry.session import TelemetrySession
 from speak.tools import (
     NO_ASR,
@@ -217,21 +219,22 @@ async def _run(settings: Settings) -> str:
     is abandoned, not awaited, if it has not finished when the transcript is ready;
     an abandoned ping is due again next time.
     """
-    # Decided before `telemetry_wiring.build`, which may create the consent file this
+    # Decided before `telemetry_compose.build`, which may create the consent file this
     # reads to tell an install from an upgrade.
     ping = telemetry_ping.due(
         os.environ,
+        IDENTITY,
         plugin_version=VERSION,
         host_platform=sys.platform,
-        ingest_url=telemetry_wiring.ingest_url(os.environ),
+        ingest_url=IDENTITY.ingest_url(os.environ),
     )
-    telemetry = telemetry_wiring.build(os.environ, settings=settings, plugin_version=VERSION)
+    telemetry = telemetry_compose.build(os.environ, settings=settings, plugin_version=VERSION)
     pinging = (
         asyncio.create_task(
             telemetry_ping.send(
                 ping,
                 transport=telemetry_wiring.http_transport,
-                debug=telemetry_wiring.debug_requested(os.environ),
+                debug=IDENTITY.debug_requested(os.environ),
             )
         )
         if ping is not None

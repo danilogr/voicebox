@@ -20,12 +20,13 @@ from speak.server import Ears, create_server
 from speak.settings import PLUGIN, Settings
 from speak.speaker import SpeakerLock
 from speak.supervisor import NemoSupervisor, process_is_alive
+from speak.telemetry import compose as telemetry_compose
 from speak.telemetry import consent as telemetry_consent
 from speak.telemetry import ping as telemetry_ping
 from speak.telemetry import ship as telemetry_ship
 from speak.telemetry import store as telemetry_store
 from speak.telemetry import wiring as telemetry_wiring
-from speak.telemetry.contract import SCHEMA
+from speak.telemetry.contract import IDENTITY, SCHEMA, db_path
 from speak.transcribe.service import build_scribe
 
 logger = logging.getLogger(__name__)
@@ -71,16 +72,12 @@ async def _ship_backlog() -> None:
     """Ship once, at session start, off the hot path - failures leave rows
     unshipped for the next session to retry (spec 7, 11)."""
     env = dict(os.environ)
-    debug = telemetry_wiring.debug_requested(env)
-    consented = telemetry_consent.load_consent(env, host_platform=sys.platform)
+    debug = IDENTITY.debug_requested(env)
+    consented = telemetry_consent.load_consent(env, IDENTITY, host_platform=sys.platform)
     if not consented.collects or not (consented.uploads or debug):
         return
     try:
-        conn = telemetry_store.connect(
-            telemetry_consent.config_dir(env, host_platform=sys.platform)
-            / telemetry_wiring.DB_FILENAME,
-            SCHEMA,
-        )
+        conn = telemetry_store.connect(db_path(env, host_platform=sys.platform), SCHEMA)
     except OSError as error:
         logger.debug("telemetry: could not open the local store to ship: %s", error)
         return
@@ -89,7 +86,7 @@ async def _ship_backlog() -> None:
             conn,
             schema=SCHEMA,
             install_id=consented.install_id,
-            url=telemetry_wiring.ingest_url(env),
+            url=IDENTITY.ingest_url(env),
             transport=telemetry_wiring.http_transport,
             debug=debug,
         )
@@ -106,7 +103,7 @@ async def _send_ping(ping: telemetry_ping.Ping) -> None:
         await telemetry_ping.send(
             ping,
             transport=telemetry_wiring.http_transport,
-            debug=telemetry_wiring.debug_requested(os.environ),
+            debug=IDENTITY.debug_requested(os.environ),
         )
     except Exception:
         logger.debug("telemetry: the install ping failed", exc_info=True)
@@ -126,15 +123,18 @@ def build(settings: Settings) -> MCPServer:
 
     engine = build_engine(settings.speech, settings.server, on_unavailable=start_speech_server)
 
-    # Decided before `telemetry_wiring.build`, which may create the consent file this
+    # Decided before `telemetry_compose.build`, which may create the consent file this
     # reads to tell an install from an upgrade.
     ping = telemetry_ping.due(
         os.environ,
+        IDENTITY,
         plugin_version=PLUGIN_VERSION,
         host_platform=sys.platform,
-        ingest_url=telemetry_wiring.ingest_url(os.environ),
+        ingest_url=IDENTITY.ingest_url(os.environ),
     )
-    telemetry = telemetry_wiring.build(os.environ, settings=settings, plugin_version=PLUGIN_VERSION)
+    telemetry = telemetry_compose.build(
+        os.environ, settings=settings, plugin_version=PLUGIN_VERSION
+    )
 
     def on_finish(outcome: UtteranceOutcome) -> None:
         if telemetry is not None:

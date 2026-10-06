@@ -1,104 +1,45 @@
-"""`speak-stats`: plain SQL over the raw tables, rendered as text."""
+"""The stats scaffolding every plugin's `<plugin>-stats` uses: find the store, render
+it with the plugin's own function, and say which install and mode it belongs to."""
 
+import io
+import sqlite3
 from pathlib import Path
 
-from speak.telemetry import report, store
-from speak.telemetry.contract import SCHEMA
+from telemetry_fixtures import IDENTITY, UTTERANCES
 
-INSTALL = {
-    "install_id": "install-1",
-    "first_seen_at": "2026-09-13T10:00:00Z",
-    "last_seen_at": "2026-09-13T10:00:00Z",
-    "plugin_version": "1.1.0",
-    "os": "darwin",
-    "arch": "arm64",
-    "accel": "metal",
-}
-
-SESSION = {
-    "session_id": "session-1",
-    "install_id": "install-1",
-    "started_at": "2026-09-13T10:00:00Z",
-    "plugin_version": "1.1.0",
-    "listen_enabled": False,
-    "harness": "claude-code",
-}
+from speak.telemetry import consent, report, store
 
 
-def utterance(**overrides: object) -> dict[str, object]:
-    row: dict[str, object] = {
-        "utterance_id": "utterance-1",
-        "session_id": "session-1",
-        "install_id": "install-1",
-        "seq": 1,
-        "direction": "out",
-        "source": "speak",
-        "occurred_at": "2026-09-13T10:00:01Z",
-        "status": "ok",
-        "intent": "task_done",
-        "engine": "nemo",
-        "synth_ms": 200,
-    }
-    row.update(overrides)
-    return row
+def render(conn: sqlite3.Connection) -> str:
+    (sessions,) = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()
+    return f"{sessions} sessions"
 
 
-def test_render_on_an_empty_store_says_so() -> None:
-    conn = store.connect(Path(":memory:"), SCHEMA)
-    assert report.render(conn) == "No utterances recorded yet."
-
-
-def test_render_reports_totals_and_the_interruption_rate() -> None:
-    conn = store.connect(Path(":memory:"), SCHEMA)
-    store.upsert_install(conn, INSTALL)
-    store.insert_session(conn, SCHEMA, SESSION)
-    store.insert_row(conn, SCHEMA.rows, utterance(utterance_id="u1", status="ok"))
-    store.insert_row(
-        conn,
-        SCHEMA.rows,
-        utterance(utterance_id="u2", seq=2, status="interrupted", intent="progress"),
+def run(tmp_path: Path, db_path: Path) -> tuple[int, str]:
+    out = io.StringIO()
+    code = report.run(
+        IDENTITY,
+        {"HOME": str(tmp_path)},
+        host_platform="linux",
+        schema=UTTERANCES,
+        db_path=db_path,
+        render=render,
+        out=out,
     )
-    store.insert_row(
-        conn, SCHEMA.rows, utterance(utterance_id="u3", seq=3, status="discarded", intent="recap")
-    )
-
-    text = report.render(conn)
-    assert "3 utterances" in text
-    assert "progress" in text
-    assert "1/1 (100%)" in text  # progress: 1 interrupted of 1
-    assert "0/1 (0%)" in text  # recap: dropped before it played is not an interruption
+    return code, out.getvalue()
 
 
-def test_render_reports_voice_input_when_there_is_any() -> None:
-    conn = store.connect(Path(":memory:"), SCHEMA)
-    store.upsert_install(conn, INSTALL)
-    store.insert_session(conn, SCHEMA, SESSION)
-    store.insert_row(
-        conn,
-        SCHEMA.rows,
-        utterance(
-            utterance_id="u1", direction="in", source="listen", status="heard_nothing", intent=None
-        ),
-    )
-    text = report.render(conn)
-    assert "Voice input: 1 recordings, 1 heard nothing." in text
+def test_no_store_prints_a_plain_message(tmp_path):
+    code, out = run(tmp_path, tmp_path / "missing.db")
+    assert code == 0
+    assert out == "No telemetry recorded yet.\n"
 
 
-def test_main_with_no_store_prints_a_plain_message(tmp_path, monkeypatch, capsys) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    report.main()
-    assert "No telemetry recorded yet." in capsys.readouterr().out
-
-
-def test_render_counts_rejected_rows_apart_from_the_backlog() -> None:
-    conn = store.connect(Path(":memory:"), SCHEMA)
-    store.upsert_install(conn, INSTALL)
-    store.insert_session(conn, SCHEMA, SESSION)
-    store.insert_row(conn, SCHEMA.rows, utterance(utterance_id="u1"))
-    store.insert_row(conn, SCHEMA.rows, utterance(utterance_id="u2"))
-    store.mark_rejected(conn, SCHEMA.rows, ["u2"], "t")
-
-    assert "2 utterances across 1 sessions; 1 unshipped, 1 rejected by the server." in (
-        report.render(conn)
-    )
+def test_the_plugins_render_is_printed_with_the_install_and_mode(tmp_path):
+    db = tmp_path / "telemetry.db"
+    store.connect(db, UTTERANCES).close()
+    env = {"HOME": str(tmp_path)}
+    consented = consent.load_consent(env, IDENTITY, host_platform="linux")
+    code, out = run(tmp_path, db)
+    assert code == 0
+    assert out == f"0 sessions\n\ninstall id: {consented.install_id}\nmode: on\n"

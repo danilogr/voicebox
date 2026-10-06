@@ -4,7 +4,15 @@ without knowing either."""
 
 from pathlib import Path
 
+from speak.telemetry.identity import TelemetryIdentity
 from speak.telemetry.schema import RowTable, TelemetrySchema
+
+IDENTITY = TelemetryIdentity(
+    plugin="speak",
+    env_prefix="SPEAK",
+    default_endpoint="https://telemetry.example/v1/ingest",
+    disclosure_version=2,
+)
 
 UTTERANCES = TelemetrySchema(
     sql=Path(__file__).with_name("utterances_schema.sql").read_text(),

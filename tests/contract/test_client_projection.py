@@ -9,12 +9,13 @@ from pathlib import Path
 
 import jsonschema
 
-from speak.telemetry import ship, store
-from speak.telemetry.contract import SCHEMA
+from speak.telemetry import ping, ship, store
+from speak.telemetry.contract import IDENTITY, SCHEMA
 
 CONTRACT_DIR = Path(__file__).parent / "v1"
 REQUEST_SCHEMA = json.loads((CONTRACT_DIR / "schema" / "ingest-request.schema.json").read_text())
 VALIDATOR = jsonschema.Draft202012Validator(REQUEST_SCHEMA)
+PING_SCHEMA = json.loads((CONTRACT_DIR / "schema" / "ping-request.schema.json").read_text())
 
 INSTALL = {
     "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -291,3 +292,16 @@ async def test_every_request_ship_sends_validates_including_a_session_alone() ->
     for payload in sent:
         errors = list(VALIDATOR.iter_errors(payload))
         assert errors == [], [e.message for e in errors]
+
+
+def test_the_install_ping_validates_against_the_contract(tmp_path) -> None:
+    pending = ping.due(
+        {"HOME": str(tmp_path)},
+        IDENTITY,
+        plugin_version="1.7.0",
+        host_platform="linux",
+        ingest_url=IDENTITY.ingest_url({}),
+    )
+    assert pending is not None
+    jsonschema.validate(pending.payload, PING_SCHEMA)
+    assert pending.url == "https://speak-telemetry.actionableintelligence.app/v1/ping"

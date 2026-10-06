@@ -195,10 +195,15 @@ utterance that leaves it) and a `TelemetrySession` handed to `create_server` and
 does with what it is given, matching the existing rule that the queue must not know
 which engine produced an utterance.
 
+- **`identity.py`** — `TelemetryIdentity`: the plugin's name, prefix, endpoint and
+  disclosure version. Every variable is derived from the prefix, so one plugin's
+  switches never reach another's.
 - **`consent.py`** — the switches and the persisted install id, read from a config
-  file under the OS's per-user config directory, never `SPEAK_STATE_DIR`. A cache
+  file under the OS's per-user config directory, never a cache directory. A cache
   directory the OS may clear must not be the thing that silently re-enables
   telemetry someone switched off.
+- **`cli.py`** — the consent command, `speak-telemetry`: `on|local|off`, `--id`,
+  `record on|off`, status with no argument.
 - **`machine.py`** — the one-time hardware probe (CPU, RAM, acceleration backend),
   cached in the config file and re-probed only when the plugin or OS version
   changes. Every source is cheap (`platform`, `sysctl`, `/proc`); a probe that fails
@@ -223,9 +228,11 @@ which engine produced an utterance.
 - **`session.py`** — turns queue outcomes and listen/talk attempts into stored rows.
   Every public method catches its own failures: a dead telemetry backend has to be
   indistinguishable from a healthy one.
-- **`wiring.py`** — composition shared by `__main__` and `talk`, the same role
-  `listening.py` plays for capture and cues: consent, the machine probe, and the
-  `installs`/`sessions` rows a `TelemetrySession` is built from.
+- **`wiring.py`** — composition every plugin shares: the HTTP transport, harness and
+  locale detection, and `start_install`, which loads consent, refreshes the machine
+  probe, opens the store and upserts the `installs` row.
+- **`compose.py`** — this plugin's `build()`: `start_install`, then its own `sessions`
+  row, then the `TelemetrySession`. Shared by `__main__` and `talk`.
 - **`ship.py`** — projects the current install's backlog of the schema's row table to
   the wire format (dropping every local column) and POSTs it in chunks, off the hot path: chunks of rows
   first, each carrying the sessions its rows belong to, then any changed session no
@@ -236,9 +243,13 @@ which engine produced an utterance.
   hold back every row behind it. Rows are set aside with `rejected_at`; sessions
   refused on their own are marked sent.
 - **`ping.py`** — the anonymous install ping (see the decision below). Whether one is
-  due is a file read, made before `wiring.build` can create the consent file it
+  due is a file read, made before `compose.build` can create the consent file it
   consults; the request itself is a background task.
-- **`report.py`** — `speak-stats`, plain SQL over the raw local tables.
+- **`report.py`** and **`stats.py`** — `speak-stats`: the shared scaffolding finds the
+  store and prints the install id and mode; `stats.render` is this plugin's plain SQL
+  over its tables.
+- **`commands.py`** — the two console scripts; the only telemetry module that reads
+  `os.environ` and `sys.argv`.
 
 Shipping and the ping run once per session, scheduled from `create_server`'s lifespan
 rather than from `__main__.build()` itself: `build()` runs before the event loop
@@ -293,6 +304,13 @@ would wait for it until the host closed the pipe.
   no request and no file. Rejected: an install id on the ping, which would make it a tracking beacon for
   people who said no; and keying install-versus-upgrade on anything but files already
   in the config directory, which would need a second identity to persist.
+
+- **The wire carries no plugin name.** Contract v1 fixes the ping at three fields
+  (`plugin_version`, `os`, `event`) and the transport sends no user agent, so a backend
+  cannot tell one plugin's ping from another's. Each plugin has its own telemetry
+  Worker, so nothing needs splitting by product. A plugin's identity
+  (`TelemetryIdentity`) steers only the client: its variables, config directory,
+  endpoint and disclosure version.
 
 - **Sessions ship on their own, and a refused chunk is set aside.** A session row is
   written when the session starts and changes when it ends or learns its harness, long

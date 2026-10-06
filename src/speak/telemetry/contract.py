@@ -6,7 +6,10 @@ including that every `-- LOCAL` column is in `local_columns` and so never upload
 """
 
 import importlib.resources
+from collections.abc import Mapping
+from pathlib import Path
 
+from speak.telemetry.identity import TelemetryIdentity
 from speak.telemetry.schema import RowTable, TelemetrySchema
 
 UTTERANCES = RowTable(
@@ -87,3 +90,18 @@ SCHEMA = TelemetrySchema(
     session_boolean_columns=("listen_enabled",),
     rows=UTTERANCES,
 )
+
+# Disclosure 2 is the first TELEMETRY.md that includes the install ping.
+IDENTITY = TelemetryIdentity(
+    plugin="speak",
+    env_prefix="SPEAK",
+    default_endpoint="https://speak-telemetry.actionableintelligence.app/v1/ingest",
+    disclosure_version=2,
+)
+
+DB_FILENAME = "telemetry.db"
+
+
+def db_path(env: Mapping[str, str], *, host_platform: str) -> Path:
+    """The local store: in the config directory, beside consent."""
+    return IDENTITY.config_dir(env, host_platform=host_platform) / DB_FILENAME

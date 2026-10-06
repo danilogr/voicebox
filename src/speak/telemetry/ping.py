@@ -23,6 +23,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from speak.telemetry import consent
+from speak.telemetry.identity import TelemetryIdentity
 from speak.telemetry.ship import CONTRACT_OS, Transport
 
 logger = logging.getLogger(__name__)
@@ -56,7 +57,12 @@ def _last_pinged(marker: Path) -> str | None:
 
 
 def due(
-    env: Mapping[str, str], *, plugin_version: str, host_platform: str, ingest_url: str
+    env: Mapping[str, str],
+    identity: TelemetryIdentity,
+    *,
+    plugin_version: str,
+    host_platform: str,
+    ingest_url: str,
 ) -> Ping | None:
     """The ping this process owes, or `None`.
 
@@ -69,7 +75,7 @@ def due(
     if host_platform not in CONTRACT_OS:
         # The contract has no value for any other OS, so the server would refuse it.
         return None
-    directory = consent.config_dir(env, host_platform=host_platform)
+    directory = identity.config_dir(env, host_platform=host_platform)
     marker = directory / MARKER_FILENAME
     last = _last_pinged(marker)
     if last == plugin_version:
@@ -88,12 +94,12 @@ def due(
 async def send(ping: Ping, *, transport: Transport, debug: bool = False) -> bool:
     """Send one ping and record it as sent on a `2xx`. True when it was sent.
 
-    `debug` logs the payload instead and writes nothing (`SPEAK_TELEMETRY_DEBUG=1`).
+    `debug` logs the payload instead and writes nothing.
     Never raises: a ping that cannot be sent is due again next session.
     """
     body = json.dumps(ping.payload)
     if debug:
-        logger.info("SPEAK_TELEMETRY_DEBUG ping: %s", body)
+        logger.info("telemetry debug, ping not sent: %s", body)
         return False
     try:
         response = await transport(ping.url, body.encode("utf-8"))

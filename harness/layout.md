@@ -155,12 +155,17 @@ Manages local metrics collection and optional anonymous telemetry reporting:
 | [`src/speak/telemetry/schema.py`](../src/speak/telemetry/schema.py) | Schema types: `RowTable` and `TelemetrySchema`, what the table-agnostic store and shipper need to know of a plugin's tables. |
 | [`src/speak/telemetry/contract.py`](../src/speak/telemetry/contract.py) | This plugin's schema: the bundled `schema.sql` plus the column lists, checked against it by a test. |
 | [`src/speak/telemetry/store.py`](../src/speak/telemetry/store.py) | SQLite client: handles database migrations and records local session events. |
-| [`src/speak/telemetry/wiring.py`](../src/speak/telemetry/wiring.py) | Instrumentation: connects server and queue lifecycle events to metrics recording. |
+| [`src/speak/telemetry/identity.py`](../src/speak/telemetry/identity.py) | `TelemetryIdentity`: the plugin's name, env prefix, endpoint and disclosure version; every variable and the config directory derive from it. |
+| [`src/speak/telemetry/wiring.py`](../src/speak/telemetry/wiring.py) | Shared composition: HTTP transport, harness and locale detection, and `start_install` (consent, machine probe, store, `installs` row). |
+| [`src/speak/telemetry/compose.py`](../src/speak/telemetry/compose.py) | This plugin's `build()`: `start_install`, its own `sessions` row, and the `TelemetrySession`. |
 | [`src/speak/telemetry/session.py`](../src/speak/telemetry/session.py) | Session tracker: records session start and end times. |
 | [`src/speak/telemetry/ship.py`](../src/speak/telemetry/ship.py) | Background uploader: sends unsent anonymous metrics (with all local-only fields stripped) to the server. |
 | [`src/speak/telemetry/ping.py`](../src/speak/telemetry/ping.py) | Anonymous install ping: sends version, OS, and event type on install or upgrade. |
-| [`src/speak/telemetry/consent.py`](../src/speak/telemetry/consent.py) | Consent manager: implements the `speak-telemetry` CLI to switch between `on`, `local`, and `off`. |
-| [`src/speak/telemetry/report.py`](../src/speak/telemetry/report.py) | CLI viewer: implements `speak-stats` to display summary tables of local metrics. |
+| [`src/speak/telemetry/consent.py`](../src/speak/telemetry/consent.py) | Consent state: the mode switches, the persisted install id, and where they are stored. |
+| [`src/speak/telemetry/cli.py`](../src/speak/telemetry/cli.py) | The consent command: `on`, `local`, `off`, `--id`, `record on|off`, and status. |
+| [`src/speak/telemetry/report.py`](../src/speak/telemetry/report.py) | Stats scaffolding: finds the store, renders it with the plugin's function, prints install id and mode. |
+| [`src/speak/telemetry/stats.py`](../src/speak/telemetry/stats.py) | This plugin's `speak-stats` rendering: plain SQL over its raw tables. |
+| [`src/speak/telemetry/commands.py`](../src/speak/telemetry/commands.py) | The `speak-telemetry` and `speak-stats` console scripts; the only telemetry module reading `os.environ` and `sys.argv`. |
 | [`src/speak/telemetry/machine.py`](../src/speak/telemetry/machine.py) | System probe: detects OS, CPU core counts, bucketed RAM (e.g. 16, 32 GB), and GPU acceleration. |
 
 ---

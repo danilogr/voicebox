@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from speak.telemetry import store
-from speak.telemetry.contract import SCHEMA
+from speak.telemetry.contract import IDENTITY, SCHEMA
 
 VENDORED = Path(__file__).parent.parent / "contract" / "v1" / "schema.sql"
 
@@ -44,3 +44,11 @@ def test_every_column_the_contract_tags_local_stays_local() -> None:
 
 def test_no_uploaded_session_column_is_local() -> None:
     assert not local_columns("sessions") & set(SCHEMA.session_columns)
+
+
+def test_the_endpoint_and_disclosure_version_are_the_contracts() -> None:
+    assert IDENTITY.default_endpoint == (
+        "https://speak-telemetry.actionableintelligence.app/v1/ingest"
+    )
+    assert IDENTITY.disclosure_version == 2
+    assert IDENTITY.mode_env == "SPEAK_TELEMETRY"
