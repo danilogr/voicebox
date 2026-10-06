@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speak-telemetry/contract/v1/schema/ping-request.schema.json",
+  "title": "POST /v1/ping request",
+  "description": "The anonymous install ping: sent once per install and once per upgrade in every telemetry mode, never under DO_NOT_TRACK. It carries no identifier, so two pings cannot be linked to each other or to an install. See CONTRACT.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plugin_version", "os", "event"],
+  "properties": {
+    "plugin_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$",
+      "maxLength": 32
+    },
+    "os": { "type": "string", "enum": ["darwin", "linux", "win32"] },
+    "event": { "type": "string", "enum": ["install", "upgrade"] }
+  }
+}
