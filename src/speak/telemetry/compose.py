@@ -1,6 +1,6 @@
 """This plugin's telemetry session for one process: the install brought up to date
 by `wiring.start_install`, then this plugin's own `sessions` row. Shared by
-`__main__` and `talk`, the only two modules that read the real environment."""
+`__main__` and `talk`, which read the real environment and pass it in."""
 
 import sys
 import uuid

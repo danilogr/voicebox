@@ -88,10 +88,9 @@ def normalize_harness(name: str) -> str:
     return "other"
 
 
-# The shapes and lengths the contract accepts for these install fields and session
-# columns (`tests/contract/v1/schema/ingest-request.schema.json`). The install and
-# its sessions travel with every chunk, so one value outside them would have every
-# chunk refused; a value that does not fit is dropped or cut here instead.
+# The shapes and lengths the telemetry contract accepts for these install fields. The
+# install travels with every chunk, so one value outside them would have every chunk
+# refused; a value that does not fit is dropped or cut here instead.
 LANGUAGE_PATTERN = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
 LANGUAGE_MAX_LENGTH = 35
 TIMEZONE_PATTERN = re.compile(r"^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+){1,2}$")
