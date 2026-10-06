@@ -15,7 +15,7 @@ import re
 import sqlite3
 import uuid
 import wave
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from speak.queue import UtteranceOutcome
@@ -182,7 +182,6 @@ def record_transcription(
                 "utterance_id": str(uuid.uuid4()),
                 "session_id": session_id,
                 "install_id": install_id,
-                "seq": store.next_seq(conn, session_id),
                 "direction": "in",
                 "source": "transcribe",
                 "occurred_at": store.now_iso(),
@@ -223,12 +222,6 @@ class TelemetrySession:
     record_audio: bool = False
     recordings_dir: Path | None = None
     db_path: Path | None = None
-    _seq: int = field(default=1, repr=False)
-
-    def _next_seq(self) -> int:
-        seq = self._seq
-        self._seq += 1
-        return seq
 
     def utterance_finished(self, outcome: UtteranceOutcome) -> None:
         """Record one utterance `speak` produced - the queue's `on_finish` hook."""
@@ -281,7 +274,6 @@ class TelemetrySession:
             "utterance_id": str(uuid.uuid4()),
             "session_id": self.session_id,
             "install_id": self.install_id,
-            "seq": self._next_seq(),
             "direction": "out",
             "source": "speak",
             "occurred_at": store.now_iso(),
@@ -316,7 +308,6 @@ class TelemetrySession:
             "utterance_id": str(uuid.uuid4()),
             "session_id": self.session_id,
             "install_id": self.install_id,
-            "seq": self._next_seq(),
             "direction": "in",
             "source": source,
             "occurred_at": store.now_iso(),
