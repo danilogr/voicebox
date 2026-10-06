@@ -5,111 +5,83 @@
       .shadow { fill: #D6D7DC; }
       .outline { fill: #181A20; }
       .body-dark { fill: #2A2F3D; }
-      .body-mid { fill: #383E50; }
       .body-light { fill: #484F65; }
       .faceplate { fill: #E8E6DF; }
-      .faceplate-dark { fill: #D5D3CA; }
+      .screen-bg { fill: #111318; }
       .orange-dark { fill: #D44211; }
       .orange-mid { fill: #FF5722; }
       .orange-light { fill: #FF8A50; }
       .amber { fill: #FFA726; }
       .green-led { fill: #00E676; }
-      .text-line { fill: #2A2F3D; }
+      .text-line { fill: #E8E6DF; }
     </style>
   </defs>
 
-  <!-- Canvas Squircle Badge -->
+  <!-- Clean Squircle Canvas Badge -->
   <rect x="0" y="0" width="32" height="32" rx="6" class="bg" shape-rendering="auto" />
 
   <!-- Drop Shadow -->
-  <rect x="6" y="28" width="20" height="1" class="shadow" />
-  <rect x="8" y="29" width="16" height="1" class="shadow" />
+  <rect x="7" y="28" width="18" height="1" class="shadow" />
+  <rect x="9" y="29" width="14" height="1" class="shadow" />
 
-  <!-- === TOP HARDWARE ACCENTS & BROADCAST WAVES === -->
-  <!-- Left Antenna / Mic Input Tip -->
-  <rect x="6" y="5" width="2" height="4" class="outline" />
-  <rect x="6" y="5" width="2" height="1" class="orange-mid" />
-  <rect x="7" y="6" width="1" height="2" class="body-light" />
-  <rect x="6" y="6" width="1" height="2" class="body-mid" />
+  <!-- === VOICEBOX HARDWARE CHASSIS === -->
+  <!-- Outer Outline with Stepped Corners -->
+  <rect x="6" y="6" width="20" height="21" class="outline" />
+  <rect x="5" y="7" width="22" height="19" class="outline" />
 
-  <!-- Radiating Speech Waves (Top Right) -->
-  <!-- Inner Wave (Light Orange) -->
-  <rect x="25" y="4" width="2" height="1" class="orange-light" />
-  <rect x="26" y="5" width="1" height="2" class="orange-light" />
-  <!-- Middle Wave (Amber) -->
-  <rect x="27" y="2" width="2" height="1" class="amber" />
-  <rect x="28" y="3" width="1" height="3" class="amber" />
-  <rect x="29" y="5" width="1" height="2" class="amber" />
-  <!-- Outer Wave (Signal Orange) -->
-  <rect x="29" y="0" width="2" height="1" class="orange-mid" />
-  <rect x="30" y="1" width="1" height="3" class="orange-mid" />
-  <rect x="31" y="4" width="1" height="2" class="orange-mid" />
+  <!-- Chassis Fill (Charcoal/Dark Slate) -->
+  <rect x="6" y="7" width="20" height="19" class="body-dark" />
+  <!-- Top & Left Bevel Highlight -->
+  <rect x="7" y="7" width="18" height="1" class="body-light" />
+  <rect x="6" y="8" width="1" height="17" class="body-light" />
 
-  <!-- Top Right Rotary Dial / Knob -->
-  <rect x="21" y="6" width="3" height="3" class="outline" />
-  <rect x="22" y="7" width="1" height="1" class="amber" />
+  <!-- Status LED (Top Left: Local / Active) -->
+  <rect x="7" y="9" width="2" height="1" class="green-led" />
 
-  <!-- === MAIN VOICEBOX CHASSIS === -->
-  <!-- Outline -->
-  <rect x="5" y="8" width="22" height="19" class="outline" />
-  <rect x="4" y="9" width="24" height="17" class="outline" />
+  <!-- Top Volume Knob (Orange Accent) -->
+  <rect x="22" y="4" width="3" height="3" class="outline" />
+  <rect x="23" y="5" width="1" height="1" class="orange-mid" />
 
-  <!-- Chassis Body Fill (Dark Slate) -->
-  <rect x="5" y="9" width="22" height="17" class="body-dark" />
-  <!-- Top Highlight -->
-  <rect x="6" y="9" width="20" height="1" class="body-light" />
-  <!-- Left Highlight -->
-  <rect x="5" y="10" width="1" height="15" class="body-light" />
+  <!-- === FACEPLATE INSERT (Bone/Cream) === -->
+  <rect x="8" y="10" width="16" height="15" class="outline" />
+  <rect x="9" y="11" width="14" height="13" class="faceplate" />
 
-  <!-- === FACEPLATE INSERT (Cream) === -->
-  <!-- Faceplate Outline -->
-  <rect x="6" y="10" width="20" height="15" class="outline" />
-  <!-- Faceplate Fill -->
-  <rect x="7" y="11" width="18" height="13" class="faceplate" />
-  <rect x="7" y="11" width="18" height="1" class="faceplate-dark" />
+  <!-- === LEFT: TRANSCRIBE SCREEN (Audio Waveform -> Text) === -->
+  <!-- Dark CRT Screen Bezel -->
+  <rect x="10" y="12" width="6" height="7" class="outline" />
+  <rect x="11" y="13" width="4" height="5" class="screen-bg" />
 
-  <!-- Status Green LED (On-Device Local AI Indicator) -->
-  <rect x="8" y="12" width="2" height="1" class="green-led" />
+  <!-- Glowing Sound Waveform (Speech in) -->
+  <rect x="11" y="14" width="1" height="2" class="amber" />
+  <rect x="12" y="13" width="1" height="3" class="green-led" />
+  <rect x="13" y="14" width="1" height="2" class="amber" />
 
-  <!-- === MODULE 1: TRANSCRIBE (Tape Reels -> Text Lines) === -->
-  <!-- Tape Deck Window Outline -->
-  <rect x="8" y="14" width="7" height="4" class="outline" />
-  <rect x="9" y="15" width="5" height="2" class="body-dark" />
-  <!-- Left Tape Reel (Signal Orange) -->
-  <rect x="9" y="15" width="2" height="2" class="orange-mid" />
-  <rect x="10" y="15" width="1" height="1" class="faceplate" />
-  <!-- Right Tape Reel (Amber) -->
-  <rect x="12" y="15" width="2" height="2" class="amber" />
-  <rect x="12" y="16" width="1" height="1" class="faceplate" />
+  <!-- Transcribed Text Line + Blinking Cursor (Text out) -->
+  <rect x="11" y="16" width="2" height="1" class="text-line" />
+  <rect x="13" y="16" width="1" height="1" class="orange-mid" />
 
-  <!-- Transcript Lines (Speech turned to text) -->
-  <rect x="8" y="19" width="6" height="1" class="text-line" />
-  <rect x="8" y="21" width="4" height="1" class="text-line" />
-  <rect x="13" y="21" width="1" height="1" class="orange-mid" />
+  <!-- === RIGHT: NARRATE SPEAKER (Acoustic Cone Aloud) === -->
+  <!-- Speaker Housing Outline -->
+  <rect x="18" y="12" width="4" height="7" class="outline" />
+  <rect x="17" y="13" width="6" height="5" class="outline" />
 
-  <!-- === CENTER BRIDGE: WAVEFORM / NEURAL CONVERTER === -->
-  <!-- Vertical Waveform Soundbars -->
-  <rect x="16" y="13" width="1" height="2" class="amber" />
-  <rect x="16" y="16" width="1" height="4" class="orange-mid" />
-  <rect x="16" y="21" width="1" height="2" class="amber" />
-
-  <!-- === MODULE 2: NARRATE (Text -> Speaker Cone Aloud) === -->
-  <!-- Speaker Cone Outline -->
-  <rect x="18" y="13" width="6" height="5" class="outline" />
-  <rect x="19" y="13" width="4" height="5" class="outline" />
   <!-- Speaker Cone Interior -->
-  <rect x="19" y="14" width="4" height="3" class="body-dark" />
-  <rect x="19" y="14" width="3" height="3" class="orange-dark" />
-  <rect x="20" y="14" width="2" height="2" class="orange-mid" />
-  <rect x="20" y="15" width="1" height="1" class="amber" />
+  <rect x="18" y="13" width="4" height="5" class="body-dark" />
+  <rect x="19" y="14" width="2" height="3" class="orange-mid" />
+  <rect x="19" y="15" width="2" height="1" class="amber" />
 
-  <!-- Play / Push Button (Tactile Orange PTT) -->
-  <rect x="18" y="19" width="3" height="3" class="outline" />
-  <rect x="19" y="20" width="1" height="1" class="orange-light" />
-  <rect x="19" y="20" width="2" height="2" class="orange-mid" />
+  <!-- Radiating Stepped Sound Wave (Projecting Right) -->
+  <rect x="24" y="13" width="1" height="1" class="orange-light" />
+  <rect x="25" y="14" width="1" height="3" class="orange-mid" />
+  <rect x="24" y="17" width="1" height="1" class="orange-light" />
 
-  <!-- Rotary Volume / Pitch Knob -->
-  <rect x="22" y="19" width="3" height="3" class="outline" />
-  <rect x="23" y="20" width="1" height="1" class="amber" />
-  <rect x="24" y="20" width="1" height="1" class="orange-dark" />
+  <rect x="26" y="12" width="1" height="1" class="amber" />
+  <rect x="27" y="13" width="1" height="5" class="amber" />
+  <rect x="26" y="18" width="1" height="1" class="amber" />
+
+  <!-- === BOTTOM CONTROL: PUSH-TO-TALK BUTTON === -->
+  <rect x="12" y="20" width="8" height="3" class="outline" />
+  <rect x="13" y="21" width="6" height="1" class="orange-mid" />
+  <rect x="13" y="21" width="6" height="1" class="orange-light" />
+  <rect x="13" y="22" width="6" height="1" class="orange-dark" />
 </svg>

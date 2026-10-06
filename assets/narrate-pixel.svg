@@ -18,65 +18,55 @@
     </style>
   </defs>
 
-  <!-- Canvas Squircle Badge -->
+  <!-- Clean Canvas Squircle Badge -->
   <rect x="0" y="0" width="32" height="32" rx="6" class="bg" shape-rendering="auto" />
 
   <!-- Drop Shadow -->
-  <rect x="6" y="28" width="20" height="1" class="shadow" />
-  <rect x="8" y="29" width="16" height="1" class="shadow" />
+  <rect x="6" y="27" width="20" height="1" class="shadow" />
+  <rect x="8" y="28" width="16" height="1" class="shadow" />
 
-  <!-- === OPEN DOCUMENT / BOOK (TEXT SOURCE) === -->
+  <!-- === OPEN DOCUMENT / BOOK (LEFT HALF: TEXT SOURCE) === -->
   <!-- Left Page Outline -->
-  <rect x="4" y="10" width="11" height="17" class="outline" />
+  <rect x="4" y="8" width="11" height="18" class="outline" />
   <!-- Left Page Fill (Cream) -->
-  <rect x="5" y="11" width="9" height="15" class="cream" />
-  <rect x="5" y="11" width="9" height="1" class="cream-dark" />
+  <rect x="5" y="9" width="9" height="16" class="cream" />
+  <rect x="5" y="9" width="9" height="1" class="cream-dark" />
 
-  <!-- Text lines on page -->
-  <rect x="6" y="13" width="7" height="1" class="text-line" />
+  <!-- 3 Bold, Clean Text Lines (High readability, no micro-clutter) -->
+  <rect x="6" y="12" width="7" height="1" class="text-line" />
   <rect x="6" y="15" width="6" height="1" class="text-line" />
-  <rect x="6" y="17" width="7" height="1" class="text-line" />
-  <rect x="6" y="19" width="5" height="1" class="text-line" />
-  <rect x="6" y="21" width="6" height="1" class="text-line" />
-  <rect x="6" y="23" width="4" height="1" class="text-line" />
+  <rect x="6" y="18" width="7" height="1" class="text-line" />
+  <rect x="6" y="21" width="4" height="1" class="orange-mid" />
 
   <!-- Book Spine / Center Divider -->
-  <rect x="14" y="9" width="2" height="18" class="outline" />
-  <rect x="14" y="10" width="1" height="16" class="body-dark" />
+  <rect x="14" y="8" width="2" height="18" class="outline" />
+  <rect x="14" y="9" width="1" height="16" class="body-dark" />
 
-  <!-- Offline Status Indicator -->
-  <rect x="6" y="8" width="2" height="1" class="green-led" />
+  <!-- Status LED (Top Left) -->
+  <rect x="5" y="6" width="2" height="1" class="green-led" />
 
-  <!-- === RETRO SPEAKER CONE / MEGAPHONE (AUDIO OUTPUT) === -->
-  <!-- Speaker Base / Magnet -->
-  <rect x="16" y="14" width="3" height="10" class="outline" />
-  <rect x="17" y="15" width="1" height="8" class="body-mid" />
+  <!-- === SPEAKER CONE HORN (RIGHT HALF: AUDIO OUTPUT) === -->
+  <!-- Speaker Base -->
+  <rect x="16" y="13" width="2" height="8" class="outline" />
+  <rect x="16" y="14" width="1" height="6" class="body-mid" />
 
-  <!-- Speaker Cone Body (Expanding to the right) -->
-  <!-- Step 1 -->
-  <rect x="19" y="13" width="2" height="12" class="outline" />
-  <rect x="19" y="14" width="2" height="10" class="body-dark" />
-  <!-- Step 2 -->
-  <rect x="21" y="12" width="2" height="14" class="outline" />
-  <rect x="21" y="13" width="2" height="12" class="orange-dark" />
-  <!-- Horn Mouth -->
-  <rect x="23" y="11" width="2" height="16" class="outline" />
-  <rect x="23" y="12" width="1" height="14" class="orange-mid" />
-  <rect x="24" y="13" width="1" height="12" class="orange-light" />
+  <!-- Expanding Horn Body -->
+  <rect x="18" y="12" width="2" height="10" class="outline" />
+  <rect x="18" y="13" width="2" height="8" class="body-dark" />
 
-  <!-- === RADIATING SOUND WAVES (SPEECH BROADCAST) === -->
-  <!-- Inner Wave Arc (Orange Light) -->
-  <rect x="26" y="14" width="1" height="2" class="orange-light" />
-  <rect x="27" y="16" width="1" height="6" class="orange-light" />
-  <rect x="26" y="22" width="1" height="2" class="orange-light" />
+  <!-- Horn Bell -->
+  <rect x="20" y="11" width="3" height="12" class="outline" />
+  <rect x="20" y="12" width="2" height="10" class="orange-dark" />
+  <rect x="22" y="13" width="1" height="8" class="orange-mid" />
 
-  <!-- Middle Wave Arc (Amber / Orange Mid) -->
-  <rect x="28" y="12" width="1" height="2" class="amber" />
-  <rect x="29" y="14" width="1" height="10" class="amber" />
-  <rect x="28" y="24" width="1" height="2" class="amber" />
+  <!-- === CLEAN RADIATING SOUND WAVES (2 ARCS) === -->
+  <!-- Inner Wave Arc (Amber) -->
+  <rect x="24" y="13" width="1" height="2" class="amber" />
+  <rect x="25" y="14" width="1" height="4" class="amber" />
+  <rect x="24" y="17" width="1" height="2" class="amber" />
 
   <!-- Outer Wave Arc (Signal Orange) -->
-  <rect x="30" y="10" width="1" height="3" class="orange-mid" />
-  <rect x="31" y="13" width="1" height="12" class="orange-mid" />
-  <rect x="30" y="25" width="1" height="3" class="orange-mid" />
+  <rect x="27" y="11" width="1" height="2" class="orange-mid" />
+  <rect x="28" y="13" width="1" height="6" class="orange-mid" />
+  <rect x="27" y="19" width="1" height="2" class="orange-mid" />
 </svg>
