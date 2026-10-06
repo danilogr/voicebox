@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 # defaults for a session that lasts hours.
 NATURAL_VOICES = ("Samantha", "Karen", "Moira", "Tessa", "Daniel", "Rishi", "Aman", "Tara")
 
+# Voice names telemetry may record as they are; any other voice is recorded as
+# `custom`, because `say` also speaks third-party voices whose names are free text.
+KNOWN_VOICES = NATURAL_VOICES
+
 
 def default_language() -> str:
     return os.environ.get("LANG", "en_US")[:2]
@@ -72,7 +76,7 @@ class SayEngine:
         if rate:
             args += ["-r", f"{rate:g}"]
         args.append(text)
-        return Utterance(command="say", args=args)
+        return Utterance(command="say", args=args, engine=self.name, voice=voice or None)
 
     async def list_voices(self) -> list[str]:
         try:

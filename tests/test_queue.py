@@ -1140,3 +1140,17 @@ async def test_queue_wait_ends_when_synthesis_starts_not_when_playback_ends(runn
     waits = {o.text: o.queue_wait_ms for o in outcomes}
     assert waits == {"first": 0, "second": 1000}
     assert all(o.synth_ms == 1000 for o in outcomes)
+
+
+async def test_on_finish_passes_through_the_engine_and_voice_the_utterance_reported(running):
+    from speak.queue import UtteranceOutcome
+
+    async def prepare(text, *, voice, rate) -> Utterance:
+        return Utterance(command="say", args=[text], engine="say", voice=None)
+
+    outcomes: list[UtteranceOutcome] = []
+    queue, _ = running(prepare=prepare, on_finish=outcomes.append)
+    queue.enqueue("hi", voice="Sofia", rate=None)
+    await settle()
+
+    assert (outcomes[0].engine, outcomes[0].voice) == ("say", None)

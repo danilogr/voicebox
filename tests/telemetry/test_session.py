@@ -5,6 +5,8 @@ import io
 import wave
 from pathlib import Path
 
+import pytest
+
 from speak.queue import UtteranceOutcome
 from speak.telemetry import store
 from speak.telemetry.session import (
@@ -297,3 +299,53 @@ def test_close_sets_ended_at() -> None:
     session.close()
     rows = store.sessions_by_id(session.conn, ["session-1"])
     assert rows[0]["ended_at"] is not None
+
+
+def spoken(**overrides: object) -> UtteranceOutcome:
+    fields: dict[str, object] = {
+        "text": "hello",
+        "voice": None,
+        "intent": None,
+        "status": "ok",
+        "queue_wait_ms": 0,
+        "synth_ms": None,
+        "play_ms": None,
+        "audio_ms": None,
+    }
+    fields.update(overrides)
+    return UtteranceOutcome(**fields)
+
+
+def test_a_fallback_row_names_the_engine_that_spoke_and_no_model() -> None:
+    """A nemo session whose server was down spoke through `say`. Recording it as
+    nemo/magpie would credit the neural voice with sentences it never produced."""
+    session = build_session(tts_engine="nemo", tts_model="magpie")
+    session.utterance_finished(spoken(engine="say", voice=None))
+    row = one_row(session)
+    assert (row["engine"], row["model"], row["voice"]) == ("say", None, None)
+
+
+def test_a_row_the_configured_engine_produced_keeps_its_model() -> None:
+    session = build_session(tts_engine="nemo", tts_model="magpie")
+    session.utterance_finished(spoken(engine="nemo", voice="John"))
+    row = one_row(session)
+    assert (row["engine"], row["model"], row["voice"]) == ("nemo", "magpie", "John")
+
+
+VOICE_CASES = [
+    # (engine, voice given, voice recorded)
+    ("nemo", "Sofia", "Sofia"),
+    ("nemo", "sofia", "Sofia"),
+    ("nemo", "my-cloned-voice", "custom"),
+    ("say", "Samantha", "Samantha"),
+    ("say", "John", "custom"),  # a nemo speaker is not a known `say` voice
+    ("command", "en-us+f3", "custom"),
+    ("nemo", None, None),
+]
+
+
+@pytest.mark.parametrize(("engine", "voice", "recorded"), VOICE_CASES)
+def test_only_a_known_voice_name_is_recorded_as_itself(engine, voice, recorded) -> None:
+    session = build_session(tts_engine=engine)
+    session.utterance_finished(spoken(engine=engine, voice=voice))
+    assert one_row(session)["voice"] == recorded

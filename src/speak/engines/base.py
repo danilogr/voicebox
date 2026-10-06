@@ -16,6 +16,11 @@ class Utterance:
     # does, from the WAV it already holds in memory. `None` when an engine speaks
     # without ever producing a file, which is every other engine.
     audio_ms: int | None = None
+    # The engine that actually produced this and the voice it spoke in, when that
+    # engine says so: a fallback reports itself, not the engine that was asked. A
+    # `None` engine means the configured engine, speaking the voice it was asked for.
+    engine: str | None = None
+    voice: str | None = None
 
 
 @runtime_checkable

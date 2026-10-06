@@ -174,3 +174,23 @@ async def test_trailing_slash_in_the_base_url_does_not_double_up():
     utterance = await engine.prepare("hello", voice=None, rate=None)
     await utterance.cleanup()
     assert seen == ["http://127.0.0.1:8082/v1/audio/speech"]
+
+
+async def test_an_utterance_reports_the_engine_and_the_voice_that_spoke_it():
+    utterance = await engine_over(speech_ok, default_voice="John").prepare(
+        "hello", voice=None, rate=None
+    )
+    await utterance.cleanup()
+    assert (utterance.engine, utterance.voice) == ("nemo", "John")
+
+
+async def test_a_fallback_utterance_reports_say_and_no_voice():
+    """The fallback drops the neural voice, so the row it becomes must name `say`
+    with its default voice, not the nemo speaker that was asked for."""
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        raise httpx2.ConnectError("connection refused")
+
+    engine = engine_over(handler, fallback=SayEngine(), default_voice="John")
+    utterance = await engine.prepare("hello", voice="Sofia", rate=None)
+    assert (utterance.engine, utterance.voice) == ("say", None)

@@ -18,6 +18,7 @@ import wave
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from speak.engines import nemo, say
 from speak.queue import UtteranceOutcome
 from speak.telemetry import store
 
@@ -48,6 +49,28 @@ def classify_device(name: str | None) -> str:
     if any(hint in lowered for hint in _BUILTIN_HINTS):
         return "builtin"
     return "unknown"
+
+
+# Lower-cased name -> the engine's own spelling, for every voice that may be
+# recorded as itself. Keyed by engine because a name is only known for the engine
+# that ships it; `command` has none, so every voice it is given is `custom`.
+_KNOWN_VOICES: dict[str, dict[str, str]] = {
+    engine: {name.lower(): name for name in names}
+    for engine, names in (("say", say.KNOWN_VOICES), ("nemo", nemo.KNOWN_VOICES))
+}
+CUSTOM_VOICE = "custom"
+
+
+def recorded_voice(engine: str, voice: str | None) -> str | None:
+    """The voice as an `out` row may carry it: a known name in the engine's own
+    spelling, `custom` for any other name, `None` when the engine's default ran.
+
+    A voice name is free text - `SPEAK_VOICE`, a `speak(voice=...)` argument, a
+    third-party voice installed for `say` - and free text never ships.
+    """
+    if not voice:
+        return None
+    return _KNOWN_VOICES.get(engine, {}).get(voice.lower(), CUSTOM_VOICE)
 
 
 def _sha256_text(text: str) -> str:
@@ -270,6 +293,10 @@ class TelemetrySession:
     # -- internals, unguarded: callers above catch everything -----------------
 
     def _write_utterance(self, outcome: UtteranceOutcome) -> None:
+        # A fallback reports the engine that actually spoke; the configured model
+        # belongs to the configured engine and says nothing about any other.
+        engine = outcome.engine or self.tts_engine
+        model = self.tts_model if engine == self.tts_engine else None
         row = {
             "utterance_id": str(uuid.uuid4()),
             "session_id": self.session_id,
@@ -277,9 +304,9 @@ class TelemetrySession:
             "direction": "out",
             "source": "speak",
             "occurred_at": store.now_iso(),
-            "engine": self.tts_engine,
-            "model": self.tts_model,
-            "voice": outcome.voice,
+            "engine": engine,
+            "model": model,
+            "voice": recorded_voice(engine, outcome.voice),
             "intent": outcome.intent or "unspecified",
             "words": _within(len(outcome.text.split()), ROW_MAX_WORDS),
             "chars": _within(len(outcome.text), ROW_MAX_CHARS),

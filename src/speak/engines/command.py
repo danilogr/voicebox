@@ -17,7 +17,8 @@ class CommandEngine:
         self.default_voice = default_voice
 
     async def prepare(self, text: str, *, voice: str | None, rate: float | None) -> Utterance:
-        return Utterance(command=self._binary, args=[*self._prefix, text])
+        # The command is never told the voice, so none is reported.
+        return Utterance(command=self._binary, args=[*self._prefix, text], engine=self.name)
 
     async def list_voices(self) -> list[str]:
         return []

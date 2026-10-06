@@ -19,6 +19,12 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 15.0
 
+# The speakers of the MagpieTTS model the plugin installs. Telemetry records these
+# names as they are and any other voice - another model's, or another
+# OpenAI-compatible server's - as `custom`, so a speaker added by a new model shows
+# up as `custom` until it is listed here.
+KNOWN_VOICES = ("John", "Sofia", "Aria", "Jason", "Leo")
+
 
 def _wav_duration_ms(wav: bytes) -> int | None:
     """The audio's own length, read from the WAV header already in memory.
@@ -92,7 +98,12 @@ class NemoEngine:
 
         command, args = self._player.command_for(str(path))
         return Utterance(
-            command=command, args=args, cleanup=cleanup, audio_ms=_wav_duration_ms(audio)
+            command=command,
+            args=args,
+            cleanup=cleanup,
+            audio_ms=_wav_duration_ms(audio),
+            engine=self.name,
+            voice=voice or self.default_voice,
         )
 
     async def _synthesize(self, text: str, voice: str | None) -> bytes:

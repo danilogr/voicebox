@@ -37,8 +37,10 @@ class UtteranceOutcome:
 
     Handed to `on_finish` exactly once, at the same point `_finished` is
     incremented, so a telemetry consumer sees every utterance that left the queue
-    and none that did not. Not a place to add engine or model: the queue does not
-    know which engine produced an utterance, by design, and must not start now.
+    and none that did not. The queue does not know which engine produced an
+    utterance and does not decide it: `engine` and `voice` are what the prepared
+    `Utterance` reported about itself, passed through, and fall back to `None` and
+    the requested voice when it reported nothing or was never prepared.
     """
 
     text: str
@@ -56,6 +58,7 @@ class UtteranceOutcome:
     synth_ms: int | None
     play_ms: int | None
     audio_ms: int | None
+    engine: str | None = None
 
 
 OnFinish = Callable[[UtteranceOutcome], None]
@@ -193,16 +196,20 @@ class SpeechQueue:
 
     def _outcome(self, prepared: _Prepared, status: str, play_ms: int | None) -> UtteranceOutcome:
         pending = prepared.pending
-        audio_ms = prepared.utterance.audio_ms if prepared.utterance is not None else None
+        utterance = prepared.utterance
+        engine, voice = None, pending.voice
+        if utterance is not None and utterance.engine is not None:
+            engine, voice = utterance.engine, utterance.voice
         return UtteranceOutcome(
             text=pending.text,
-            voice=pending.voice,
+            voice=voice,
+            engine=engine,
             intent=pending.intent,
             status=status,
             queue_wait_ms=prepared.queue_wait_ms,
             synth_ms=prepared.synth_ms,
             play_ms=play_ms,
-            audio_ms=audio_ms,
+            audio_ms=utterance.audio_ms if utterance is not None else None,
         )
 
     @property
