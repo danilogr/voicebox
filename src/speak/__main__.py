@@ -3,7 +3,9 @@
 import asyncio
 import logging
 import os
+import signal
 import sys
+from typing import Protocol
 
 import httpx2
 from mcp.server.mcpserver import MCPServer
@@ -174,6 +176,56 @@ def build(settings: Settings) -> MCPServer:
     )
 
 
+class StdioServer(Protocol):
+    async def run_stdio_async(self) -> None: ...
+
+
+# What a host sends to end an MCP server it launched, and what a closing terminal
+# sends. Left at their defaults either one ends the process on the spot.
+STOP_SIGNALS = tuple(
+    getattr(signal, name) for name in ("SIGTERM", "SIGHUP") if hasattr(signal, name)
+)
+
+
+async def serve_stdio(server: StdioServer) -> None:
+    """Serve on stdio until the client closes it or the process is told to stop.
+
+    A stop signal's default action kills the process without unwinding it, which
+    skips the lifespan's shutdown: the speaker keeps talking, the shared speech
+    server is never released, and the session row never gets its `ended_at`. Each
+    one is turned into a cancellation of this task instead, which unwinds through
+    the lifespan the way Ctrl-C does. Only the first signal counts, so a second one
+    cannot cut that shutdown short.
+
+    The shutdown runs at once, but the process exits only when stdin closes: the MCP
+    transport reads it on a worker thread that no signal interrupts, and the
+    interpreter waits for that thread before it exits.
+    """
+    loop = asyncio.get_running_loop()
+    task = asyncio.current_task()
+    received: list[int] = []
+
+    def stop(signum: int) -> None:
+        if not received and task is not None:
+            received.append(signum)
+            task.cancel()
+
+    for signum in STOP_SIGNALS:
+        try:
+            loop.add_signal_handler(signum, stop, signum)
+        except (NotImplementedError, RuntimeError):  # no loop signal support here
+            logger.debug("cannot handle signal %s; it will end the process", signum)
+    try:
+        await server.run_stdio_async()
+    except asyncio.CancelledError:
+        if not received:
+            raise
+        logger.debug("stopped by signal %d", received[0])
+    finally:
+        for signum in STOP_SIGNALS:
+            loop.remove_signal_handler(signum)
+
+
 def main() -> None:
     configure_logging()
     settings = Settings.from_env(os.environ)
@@ -182,7 +234,7 @@ def main() -> None:
     except ValueError as error:
         logger.error("%s", error)
         raise SystemExit(2) from error
-    server.run(transport="stdio")
+    asyncio.run(serve_stdio(server))
 
 
 if __name__ == "__main__":
