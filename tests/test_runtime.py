@@ -3,9 +3,9 @@
 from pathlib import Path
 
 from speak.capture import SilenceTracker, State
-from speak.config import Settings
 from speak.cue import END_SOUND, START_SOUND
 from speak.runtime import build_cue, build_recorder, capture_limits, transcription_timeout
+from speak.settings import Settings
 
 
 def test_capture_limits_turns_the_configured_seconds_into_milliseconds():

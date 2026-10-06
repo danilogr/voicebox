@@ -16,7 +16,7 @@ from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from speak.__main__ import build_supervisor
-from speak.config import Settings
+from speak.settings import Settings
 
 RECORDER = """#!{python}
 import json, sys, pathlib
@@ -41,7 +41,7 @@ def server_env(command: str, state_dir: str, extra_env: dict[str, str] | None = 
 
     The developer's shell is inherited, so everything that decides whether a session
     manages the shared speech server is pinned here. Voice input is unconditional, so
-    every session now wants one and `SPEAK_NEMO_AUTOSTART=0` is the whole guard: without
+    every session now wants one and `NEMO_AUTOSTART=0` is the whole guard: without
     it each of these subprocesses would register in the real state directory and, on
     teardown, SIGTERM the pid in the real `server.json`, stopping the speech server the
     developer's other Claude Code windows are using.
@@ -50,8 +50,9 @@ def server_env(command: str, state_dir: str, extra_env: dict[str, str] | None = 
         **os.environ,
         "SPEAK_ENGINE": "command",
         "SPEAK_COMMAND": command,
-        "SPEAK_NEMO_AUTOSTART": "0",
+        "NEMO_AUTOSTART": "0",
         "SPEAK_STATE_DIR": state_dir,
+        "SPEAK_CORE_STATE_DIR": state_dir,
         # Telemetry reads its own config directory, never SPEAK_STATE_DIR; without
         # this, every subprocess below would write to the real machine's config dir.
         "SPEAK_TELEMETRY": "off",
@@ -75,12 +76,13 @@ async def connected(command: str, extra_env: dict[str, str] | None = None):
 
 def test_the_suite_cannot_reach_the_machine_wide_speech_server(monkeypatch, tmp_path):
     """Every subprocess this file starts is hermetic, whatever the shell exports."""
-    monkeypatch.delenv("SPEAK_NEMO_AUTOSTART", raising=False)
+    monkeypatch.delenv("NEMO_AUTOSTART", raising=False)
 
     settings = Settings.from_env(server_env("true", str(tmp_path)))
 
     assert build_supervisor(settings) is None
     assert settings.state_dir == tmp_path
+    assert settings.server.shared_dir == tmp_path
 
 
 async def text_of(session, name, **arguments: object) -> str:

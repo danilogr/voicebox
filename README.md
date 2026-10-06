@@ -140,6 +140,10 @@ Customize settings via environment variables or in `.mcp.json`:
 | Setting | Default | Description |
 |---|---|---|
 | `SPEAK_TRANSCRIBE_DIR` | input file dir | Destination folder for generated transcript files. |
+| `NEMO_HTTP_URL` | `http://127.0.0.1:8082` | Where the local speech server listens. Server settings have no plugin prefix because the server is shared. |
+| `NEMO_BIN` | `nemo-speech` | The speech server binary, when it is not on `PATH`. |
+| `NEMO_AUTOSTART` | `1` | Set to `0` to run the speech server yourself. |
+| `NEMO_TTS_SEED` | unset | Pins the neural voice's timbre across server restarts. |
 | `SPEAK_ENGINE` | `say` | Speech output engine: `say` (macOS native), `nemo` (neural local server), or `command`. |
 | `SPEAK_VOICE` | system voice | Active voice name (or `random` for a new voice each session). |
 | `SPEAK_VOICE_POOL` | default pool | Comma-separated pool of voices used when `SPEAK_VOICE=random`. |

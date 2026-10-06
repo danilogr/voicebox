@@ -1,7 +1,6 @@
 import httpx2
 import pytest
 
-from speak.config import Settings
 from speak.engines.asr import (
     DEFAULT_TIMEOUT,
     PROBE_TIMEOUT,
@@ -9,6 +8,7 @@ from speak.engines.asr import (
     NemoTranscriber,
     TranscriptionFailed,
 )
+from speak.settings import Settings
 
 MODELS_WITH_ASR = {
     "data": [

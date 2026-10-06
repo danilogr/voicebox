@@ -14,7 +14,6 @@ import time
 from typing import NoReturn
 
 from speak.capture import Recorder, RecorderUnavailable, Recording, describe
-from speak.config import Settings
 from speak.cue import Cue
 from speak.engines.asr import Liveness, NemoTranscriber, Transcriber, TranscriptionFailed
 from speak.miclock import MicLock, MicrophoneBusy
@@ -23,10 +22,11 @@ from speak.runtime import (
     build_recorder,
     capture_limits,
     configure_logging,
-    health_probe,
+    supervisor_for,
     transcription_timeout,
 )
 from speak.server import VERSION
+from speak.settings import Settings
 from speak.supervisor import NemoSupervisor, process_is_alive
 from speak.telemetry import ping as telemetry_ping
 from speak.telemetry import wiring as telemetry_wiring
@@ -193,7 +193,7 @@ async def _ensure_server(
     """
     if await transcriber.reachable():
         return
-    if not settings.nemo_autostart:
+    if not settings.server.autostart:
         # `__main__.build_supervisor` builds no supervisor under this setting; a user
         # who said they would run the server must not get one spawned behind their
         # back here either.
@@ -246,20 +246,12 @@ async def _run(settings: Settings) -> str:
     try:
         return await dictate(
             settings,
-            supervisor=NemoSupervisor(
-                state_dir=settings.state_dir,
-                port=settings.nemo_port,
-                binary=settings.nemo_binary,
-                model=settings.nemo_model,
-                asr_model=settings.nemo_asr_model,
-                seed=settings.seed,
-                probe=health_probe(settings.nemo_url),
-            ),
+            supervisor=supervisor_for(settings.server),
             recorder=build_recorder(settings),
             transcriber=NemoTranscriber(
-                base_url=settings.nemo_url,
-                api_key=settings.nemo_api_key,
-                model=settings.nemo_asr_model,
+                base_url=settings.server.url,
+                api_key=settings.server.api_key,
+                model=settings.server.asr_model,
                 timeout=transcription_timeout(settings),
             ),
             lock=MicLock(state_dir=settings.state_dir, is_alive=process_is_alive),

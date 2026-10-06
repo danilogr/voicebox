@@ -98,7 +98,7 @@ Either the model was never downloaded - run /speak:setup to pull it - or this sh
 server was started by a session that had voice input switched off. It stops only when
 the last session using it exits, so restarting one session does not help while others
 are still attached: close the other Claude Code sessions using speak, or stop the
-server process recorded in server.json in the speak state directory. The next listen
+server process recorded in server.json in the shared speak-core state directory. The next listen
 then starts one with transcription."""
 
 STILL_SPEAKING = (
@@ -117,12 +117,12 @@ SERVER_UNREACHABLE = (
     "the speech server is not answering, so there is nothing to transcribe with. Run "
     "/speak:setup if nemo-speech is not installed yet, check NEMO_HTTP_URL if it serves "
     "somewhere other than the default port, and start it yourself if you set "
-    "SPEAK_NEMO_AUTOSTART=0."
+    "NEMO_AUTOSTART=0."
 )
 
 NO_SERVER = (
     "could not start the speech server. Run /speak:setup to install nemo-speech and pull "
-    "the models, or set SPEAK_NEMO_BIN to it if it is installed somewhere else."
+    "the models, or set NEMO_BIN to it if it is installed somewhere else."
 )
 
 ALREADY_LISTENING = (

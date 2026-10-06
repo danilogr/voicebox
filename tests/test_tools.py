@@ -2,8 +2,8 @@ import asyncio
 
 from fakes import FakeEngine, FakeQueue
 from speak import tools
-from speak.config import Settings
 from speak.server import create_server
+from speak.settings import Settings
 from speak.transcribe.jobs import JobStore
 from speak.transcribe.lock import transcription_lock
 from speak.transcribe.probe import Probe

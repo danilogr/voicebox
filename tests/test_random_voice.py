@@ -3,8 +3,8 @@
 import random
 
 from fakes import FakeEngine, FakeQueue
-from speak.config import Settings
 from speak.server import choose_pool, create_server
+from speak.settings import Settings
 
 SAY_LIKE = ["Samantha", "Karen", "Zarvox", "Bubbles", "Albert"]
 CURATED = ("Samantha", "Karen", "Moira")

@@ -30,10 +30,15 @@ against the same shared speech server the supervisor already manages.
   itself — both call `runtime.configure_logging`. One other module touches the
   environment at all: `engines.say` reads `LANG` to filter `say -v '?'` by locale,
   which is the platform's setting rather than the plugin's configuration.
-- **`config.Settings`** — a frozen dataclass built from a mapping. Parses and validates
-  the whole environment at that one boundary; unparsable values fall back to defaults
-  with a warning rather than raising. It must not read the environment itself, so every
-  configuration case is testable without patching globals.
+- **`config`** — the settings every plugin reads the same way, each a frozen dataclass
+  built from a mapping: `ServerSettings` (the shared speech server, from unprefixed
+  `NEMO_*` variables, plus the shared state directory) and `VoiceSettings` (engine,
+  voice, pool, rate, cap and command, read under the prefix the plugin names).
+  Unparsable values fall back to defaults with a warning. It must not read the
+  environment itself.
+- **`settings.Settings`** — this plugin's settings: a `ServerSettings`, a `VoiceSettings`
+  read under `SPEAK_`, and the listening and transcription settings, under the same
+  rules.
 - **`text.normalize`** — collapses whitespace, enforces the length cap at a word
   boundary, rejects empty input. Pure; no I/O.
 - **`engines`** — a `Protocol` and three implementations (`say`, `nemo`, `command`).
@@ -151,15 +156,18 @@ Almost nothing is persistent.
   last three are references rather than counts — see above. Two counters go with
   them: how many utterances have finished, and a generation that `stop` bumps to
   invalidate work already in flight.
-- **Shared server state** (on disk, per machine), under `SPEAK_STATE_DIR`:
+- **Shared server state** (on disk, per machine), under the shared state directory
+  (`<cache>/speak-core`, or `SPEAK_CORE_STATE_DIR`):
   - `clients/<pid>` — one empty file per live session. Source of truth for whether the
     speech server is still needed.
   - `server.json` — the running server's pid, port, and start time. Source of truth for
     what to stop.
   - `starting/` — a lock directory. Its existence means a session is mid-start; its
     mtime dates the attempt so an abandoned lock can be taken over.
+- **Plugin state** (on disk, per machine), under `SPEAK_STATE_DIR` (`<cache>/speak`):
   - `mic/owner` — the pid of the session currently recording. Its directory is the
     lock; the file says who holds it, so a lock left by a dead session is reclaimed.
+  - `transcribe/`, `transcriptions/` — background transcription jobs and their output.
 
 Voice input is not persistent by default. A recording lives in memory as WAV bytes for
 the length of one transcription and is discarded. It is written to disk only when the user
@@ -675,3 +683,15 @@ would wait for it until the host closed the pipe.
   log. Not playing the cue without awaiting it, which is exactly the
   calibration bug above; and a cue on only one end, which leaves the more useful half
   of the question — am I still being recorded? — unanswered.
+
+- **Speech server settings are unprefixed and its state lives in a shared directory.**
+  Whichever plugin starts the server decides its arguments for every plugin using it,
+  so the settings that decide them (`NEMO_HTTP_URL`, `NEMO_API_KEY`, `NEMO_TTS_MODEL`,
+  `NEMO_ASR_MODEL`, `NEMO_BIN`, `NEMO_AUTOSTART`, `NEMO_TTS_SEED`) cannot belong to one
+  plugin, and `runtime.supervisor_for` builds the supervisor from them alone. Its start
+  lock, pid record and client registry live in `<cache>/speak-core`, which every plugin
+  resolves the same way, so the existing client registry is what lets one server serve
+  several plugins. Those files' formats are a contract between speak-core versions: a
+  change to one changes the directory's name. Rejected: a server per plugin, which
+  doubles a gigabyte of resident memory; and prefixed server settings, which let two
+  plugins disagree about a server only one of them starts.

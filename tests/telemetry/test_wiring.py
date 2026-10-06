@@ -4,7 +4,8 @@ built from them - what both `__main__` and `talk` hand their `TelemetrySession` 
 
 import pytest
 
-from speak.config import Settings
+from speak.config import ServerSettings, VoiceSettings
+from speak.settings import Settings
 from speak.telemetry import consent, store, wiring
 
 
@@ -37,7 +38,7 @@ def test_build_returns_none_when_telemetry_is_off(tmp_path) -> None:
 def test_build_writes_an_install_row(tmp_path) -> None:
     session = wiring.build(
         env(tmp_path),
-        settings=Settings(engine="say"),
+        settings=Settings(speech=VoiceSettings(prefix="SPEAK", engine="say")),
         plugin_version="1.1.0",
         host_platform="linux",
     )
@@ -51,7 +52,10 @@ def test_build_writes_an_install_row(tmp_path) -> None:
 def test_build_writes_a_session_row_naming_the_engines(tmp_path) -> None:
     session = wiring.build(
         env(tmp_path, CLAUDE_PLUGIN_ROOT="/plugin"),
-        settings=Settings(engine="nemo", nemo_model="magpie", nemo_asr_model="parakeet"),
+        settings=Settings(
+            speech=VoiceSettings(prefix="SPEAK", engine="nemo"),
+            server=ServerSettings(tts_model="magpie", asr_model="parakeet"),
+        ),
         plugin_version="1.2.0",
         host_platform="linux",
     )
@@ -160,7 +164,7 @@ def test_timezone_is_an_iana_name_the_contract_accepts_or_nothing(raw, expected)
 def test_an_overlong_engine_name_is_cut_to_the_contract_length(tmp_path) -> None:
     session = wiring.build(
         env(tmp_path),
-        settings=Settings(engine="x" * 80),
+        settings=Settings(speech=VoiceSettings(prefix="SPEAK", engine="x" * 80)),
         plugin_version="1.1.0",
         host_platform="linux",
     )

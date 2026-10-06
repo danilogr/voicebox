@@ -12,7 +12,7 @@ class CommandEngine:
     def __init__(self, command: str | None, *, default_voice: str | None = None) -> None:
         parts = (command or "").split()
         if not parts:
-            raise ValueError("SPEAK_COMMAND must be set when SPEAK_ENGINE=command")
+            raise ValueError("the command engine needs a command line to run")
         self._binary, *self._prefix = parts
         self.default_voice = default_voice
 

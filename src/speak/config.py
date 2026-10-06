@@ -1,4 +1,13 @@
-"""Configuration, read once from the environment and validated at that boundary."""
+"""Settings every plugin reads the same way, validated where they enter.
+
+Two kinds. The speech server's settings are shared and unprefixed, because whichever
+plugin starts the server decides its arguments for every plugin that uses it. A voice
+belongs to one plugin and is read under the prefix that plugin names, so one plugin
+can speak through `say` while another reads aloud in a neural voice.
+
+Nothing here reads `os.environ`: every function takes the mapping its caller read.
+Values that do not parse fall back to their default with a warning, never an error.
+"""
 
 import logging
 import math
@@ -16,14 +25,24 @@ DEFAULT_NEMO_URL = "http://127.0.0.1:8082"
 DEFAULT_NEMO_PORT = 8082
 RANDOM_VOICE = "random"
 
+# Where everything the plugins must agree on lives: the speech server's start lock,
+# its pid record, and its client registry. These files' formats are
+# a contract between speak-core versions; a release that changes one must change this
+# name, so an older and a newer plugin never misread each other.
+SHARED_STATE_DIRNAME = "speak-core"
+SHARED_STATE_OVERRIDE = "SPEAK_CORE_STATE_DIR"
 
-def _text(env: Mapping[str, str], key: str) -> str | None:
+TRUTHY = frozenset({"1", "true", "yes", "on"})
+FALSY = frozenset({"0", "false", "no", "off"})
+
+
+def env_text(env: Mapping[str, str], key: str) -> str | None:
     value = env.get(key, "").strip()
     return value or None
 
 
-def _number(env: Mapping[str, str], key: str, default: float | None) -> float | None:
-    raw = _text(env, key)
+def env_number(env: Mapping[str, str], key: str, default: float | None) -> float | None:
+    raw = env_text(env, key)
     if raw is None:
         return default
     try:
@@ -39,13 +58,9 @@ def _number(env: Mapping[str, str], key: str, default: float | None) -> float | 
     return value
 
 
-TRUTHY = frozenset({"1", "true", "yes", "on"})
-FALSY = frozenset({"0", "false", "no", "off"})
-
-
-def _flag(env: Mapping[str, str], key: str, *, default: bool = False) -> bool:
+def env_flag(env: Mapping[str, str], key: str, *, default: bool = False) -> bool:
     """A yes/no setting. Anything unrecognised, the empty string included, is the default."""
-    raw = (_text(env, key) or "").lower()
+    raw = (env_text(env, key) or "").lower()
     if raw in TRUTHY:
         return True
     if raw in FALSY:
@@ -53,21 +68,84 @@ def _flag(env: Mapping[str, str], key: str, *, default: bool = False) -> bool:
     return default
 
 
-def _path(env: Mapping[str, str], key: str) -> Path | None:
-    raw = _text(env, key)
+def env_path(env: Mapping[str, str], key: str) -> Path | None:
+    raw = env_text(env, key)
     return None if raw is None else Path(raw)
 
 
-def _positive(env: Mapping[str, str], key: str, default: float) -> float:
-    value = _number(env, key, default)
+def env_positive(env: Mapping[str, str], key: str, default: float) -> float:
+    value = env_number(env, key, default)
     if value is None or value <= 0:
         logger.warning("ignoring %s: must be a positive number", key)
         return default
     return value
 
 
+def env_list(env: Mapping[str, str], key: str) -> tuple[str, ...]:
+    """A comma-separated list, with spacing and empty entries dropped."""
+    raw = env_text(env, key) or ""
+    return tuple(name.strip() for name in raw.split(",") if name.strip())
+
+
+def cache_root(env: Mapping[str, str], *, platform: str) -> Path:
+    """The per-user cache directory every state directory lives under."""
+    home = Path(env.get("HOME", "~")).expanduser()
+    if platform == "darwin":
+        return home / "Library" / "Caches"
+    return Path(env.get("XDG_CACHE_HOME") or home / ".cache")
+
+
+def plugin_state_dir(env: Mapping[str, str], *, name: str, override: str, platform: str) -> Path:
+    """One plugin's own state directory: `<cache>/<name>`, unless `override` names one."""
+    raw = env_text(env, override)
+    return Path(raw) if raw else cache_root(env, platform=platform) / name
+
+
+def shared_state_dir(env: Mapping[str, str], *, platform: str) -> Path:
+    """The directory every plugin shares: `<cache>/speak-core`, or `SPEAK_CORE_STATE_DIR`."""
+    raw = env_text(env, SHARED_STATE_OVERRIDE)
+    return Path(raw) if raw else cache_root(env, platform=platform) / SHARED_STATE_DIRNAME
+
+
 @dataclass(frozen=True, slots=True)
-class Settings:
+class ServerSettings:
+    """The one speech server every plugin shares, and where they coordinate over it."""
+
+    url: str = DEFAULT_NEMO_URL
+    api_key: str | None = None
+    tts_model: str = "magpie"
+    asr_model: str = "nemotron-3.5"
+    binary: str = "nemo-speech"
+    autostart: bool = True
+    seed: int | None = None
+    shared_dir: Path = Path()
+
+    @property
+    def port(self) -> int:
+        return urlparse(self.url).port or DEFAULT_NEMO_PORT
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str], *, platform: str | None = None) -> "ServerSettings":
+        seed = env_number(env, "NEMO_TTS_SEED", None)
+        return cls(
+            url=env_text(env, "NEMO_HTTP_URL") or DEFAULT_NEMO_URL,
+            api_key=env_text(env, "NEMO_API_KEY"),
+            tts_model=env_text(env, "NEMO_TTS_MODEL") or "magpie",
+            asr_model=env_text(env, "NEMO_ASR_MODEL") or "nemotron-3.5",
+            binary=env_text(env, "NEMO_BIN") or "nemo-speech",
+            autostart=env_flag(env, "NEMO_AUTOSTART", default=True),
+            seed=None if seed is None else int(seed),
+            shared_dir=shared_state_dir(
+                env, platform=platform if platform is not None else sys.platform
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class VoiceSettings:
+    """How one plugin speaks, read under that plugin's prefix (`<PREFIX>_ENGINE`, ...)."""
+
+    prefix: str
     engine: str = "say"
     voice: str | None = None
     randomize_voice: bool = False
@@ -75,86 +153,31 @@ class Settings:
     rate: float | None = None
     max_chars: int = DEFAULT_MAX_CHARS
     command: str | None = None
-    nemo_url: str = DEFAULT_NEMO_URL
-    nemo_api_key: str | None = None
-    nemo_model: str = "magpie"
-    nemo_asr_model: str = "nemotron-3.5"
-    listen_silence_ms: float = 3000.0
-    listen_max_seconds: float = 240.0
-    listen_timeout: float = 10.0
-    listen_language: str | None = None
-    listen_cue: bool = True
-    # None means the sound `cue` picks for itself; only an override lands here.
-    listen_cue_start: Path | None = None
-    listen_cue_end: Path | None = None
-    listen_cue_empty: Path | None = None
-    # A named input is never fallen back off; unset means search from the OS default.
-    input_device: str | None = None
-    nemo_binary: str = "nemo-speech"
-    nemo_autostart: bool = True
-    seed: int | None = None
-    transcribe_dir: Path | None = None
-    transcribe_timeout: float | None = None
-    state_dir: Path = Path()
 
-    @property
-    def nemo_port(self) -> int:
-        return urlparse(self.nemo_url).port or DEFAULT_NEMO_PORT
+    def key(self, name: str) -> str:
+        """The variable this plugin reads `name` from, for messages that name it."""
+        return f"{self.prefix}_{name}"
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str], *, platform: str | None = None) -> "Settings":
-        cap = _number(env, "SPEAK_MAX_CHARS", DEFAULT_MAX_CHARS)
+    def from_env(cls, env: Mapping[str, str], *, prefix: str) -> "VoiceSettings":
+        def key(name: str) -> str:
+            return f"{prefix}_{name}"
+
+        cap = env_number(env, key("MAX_CHARS"), DEFAULT_MAX_CHARS)
         if cap is None or cap < 1:
             if cap is not None:
-                logger.warning("ignoring SPEAK_MAX_CHARS=%s: must be positive", cap)
+                logger.warning("ignoring %s=%s: must be positive", key("MAX_CHARS"), cap)
             cap = DEFAULT_MAX_CHARS
 
-        seed = _number(env, "SPEAK_SEED", None)
-
-        wanted_voice = _text(env, "SPEAK_VOICE")
-        randomize = (wanted_voice or "").lower() == RANDOM_VOICE
-
+        wanted = env_text(env, key("VOICE"))
+        randomize = (wanted or "").lower() == RANDOM_VOICE
         return cls(
-            engine=(_text(env, "SPEAK_ENGINE") or "say").lower(),
-            voice=None if randomize else wanted_voice,
+            prefix=prefix,
+            engine=(env_text(env, key("ENGINE")) or "say").lower(),
+            voice=None if randomize else wanted,
             randomize_voice=randomize,
-            voice_pool=_pool(env, "SPEAK_VOICE_POOL"),
-            rate=_number(env, "SPEAK_RATE", None),
+            voice_pool=env_list(env, key("VOICE_POOL")),
+            rate=env_number(env, key("RATE"), None),
             max_chars=int(cap),
-            command=_text(env, "SPEAK_COMMAND"),
-            nemo_url=_text(env, "NEMO_HTTP_URL") or DEFAULT_NEMO_URL,
-            nemo_api_key=_text(env, "NEMO_API_KEY"),
-            nemo_model=_text(env, "NEMO_TTS_MODEL") or "magpie",
-            nemo_asr_model=_text(env, "NEMO_ASR_MODEL") or "nemotron-3.5",
-            listen_silence_ms=_positive(env, "SPEAK_LISTEN_SILENCE_MS", 3000.0),
-            listen_max_seconds=_positive(env, "SPEAK_LISTEN_MAX_SECONDS", 240.0),
-            listen_timeout=_positive(env, "SPEAK_LISTEN_TIMEOUT", 10.0),
-            listen_language=_text(env, "SPEAK_LISTEN_LANGUAGE"),
-            listen_cue=_flag(env, "SPEAK_LISTEN_CUE", default=True),
-            listen_cue_start=_path(env, "SPEAK_LISTEN_CUE_START"),
-            listen_cue_end=_path(env, "SPEAK_LISTEN_CUE_END"),
-            listen_cue_empty=_path(env, "SPEAK_LISTEN_CUE_EMPTY"),
-            input_device=_text(env, "SPEAK_INPUT_DEVICE"),
-            nemo_binary=_text(env, "SPEAK_NEMO_BIN") or "nemo-speech",
-            nemo_autostart=_flag(env, "SPEAK_NEMO_AUTOSTART", default=True),
-            seed=None if seed is None else int(seed),
-            transcribe_dir=_path(env, "SPEAK_TRANSCRIBE_DIR"),
-            transcribe_timeout=_number(env, "SPEAK_TRANSCRIBE_TIMEOUT", None),
-            state_dir=_state_dir(env, platform if platform is not None else sys.platform),
+            command=env_text(env, key("COMMAND")),
         )
-
-
-def _pool(env: Mapping[str, str], key: str) -> tuple[str, ...]:
-    raw = _text(env, key) or ""
-    return tuple(name.strip() for name in raw.split(",") if name.strip())
-
-
-def _state_dir(env: Mapping[str, str], platform: str) -> Path:
-    override = _text(env, "SPEAK_STATE_DIR")
-    if override:
-        return Path(override)
-
-    home = Path(env.get("HOME", "~")).expanduser()
-    if platform == "darwin":
-        return home / "Library" / "Caches" / "speak"
-    return Path(env.get("XDG_CACHE_HOME") or home / ".cache") / "speak"

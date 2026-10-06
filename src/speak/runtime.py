@@ -2,14 +2,17 @@
 
 import asyncio
 import logging
+import os
 import sys
+from collections.abc import Callable
 
 import httpx2
 
 from speak.capture import MicrophoneRecorder, TrackerSettings
-from speak.config import Settings
+from speak.config import ServerSettings
 from speak.cue import Cue
-from speak.supervisor import Probe
+from speak.settings import Settings
+from speak.supervisor import NemoSupervisor, Probe, Spawn, process_is_alive, spawn_server
 
 HEALTH_TIMEOUT = 30.0
 HEALTH_INTERVAL = 0.5
@@ -83,3 +86,33 @@ def build_cue(settings: Settings) -> Cue:
 def build_recorder(settings: Settings) -> MicrophoneRecorder:
     """The microphone, built the same way by both entry points."""
     return MicrophoneRecorder(device=settings.input_device)
+
+
+def supervisor_for(
+    server: ServerSettings,
+    *,
+    spawn: Spawn = spawn_server,
+    probe: Probe | None = None,
+    pid: int | None = None,
+    is_alive: Callable[[int], bool] = process_is_alive,
+    kill: Callable[[int, int], None] = os.kill,
+) -> NemoSupervisor:
+    """The supervisor for the one shared speech server, built from the shared settings.
+
+    Only `ServerSettings` goes in, so the server a plugin would start is the same
+    whichever plugin starts it: it requests both models, the shared port and seed, and its lock,
+    pid record and client registry in the shared state directory.
+    """
+    return NemoSupervisor(
+        state_dir=server.shared_dir,
+        spawn=spawn,
+        probe=probe if probe is not None else health_probe(server.url),
+        port=server.port,
+        binary=server.binary,
+        model=server.tts_model,
+        asr_model=server.asr_model,
+        seed=server.seed,
+        pid=pid,
+        is_alive=is_alive,
+        kill=kill,
+    )

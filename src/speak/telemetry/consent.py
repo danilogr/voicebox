@@ -4,7 +4,7 @@ Consent lives in the OS's per-user config directory, never `SPEAK_STATE_DIR` - t
 is a cache directory the OS may clear, which would silently re-enable telemetry
 someone had switched off.
 
-Like `config.Settings`, this module takes the environment as a plain mapping rather
+Like `settings.Settings`, this module takes the environment as a plain mapping rather
 than reading `os.environ` itself, so it stays testable without patching globals; the
 real read happens once, in `__main__` or `talk`.
 """

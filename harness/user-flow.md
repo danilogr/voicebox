@@ -179,7 +179,7 @@ session ships it.
 
 ## The shared speech server
 
-One per machine, reference-counted on disk under the state directory.
+One per machine, reference-counted on disk under the shared state directory (`<cache>/speak-core`).
 
 | Situation | What happens |
 |---|---|

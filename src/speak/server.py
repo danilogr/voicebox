@@ -17,13 +17,13 @@ from pydantic import Field
 
 from speak import tools
 from speak.capture import Recorder, RecorderUnavailable, Recording, TrackerSettings, describe
-from speak.config import Settings
 from speak.cue import Cue
 from speak.engines.asr import Liveness, Transcriber, TranscriptionFailed
 from speak.engines.base import Engine
 from speak.miclock import MicLock, MicrophoneBusy
 from speak.queue import QueueStats
 from speak.queue import describe as describe_queue
+from speak.settings import Settings
 from speak.telemetry.session import TelemetrySession
 from speak.telemetry.wiring import normalize_harness
 from speak.text import normalize
@@ -246,7 +246,9 @@ def create_server(
     on_session_start: Callable[[], None] | None = None,
 ) -> MCPServer:
     session = SessionState(
-        voice=settings.voice, rate=settings.rate, randomize=settings.randomize_voice
+        voice=settings.speech.voice,
+        rate=settings.speech.rate,
+        randomize=settings.speech.randomize_voice,
     )
     roll = rng or random.Random()
 
@@ -320,7 +322,9 @@ def create_server(
         """
         if session.voice is not None or not session.randomize:
             return session.voice
-        pool = choose_pool(settings.voice_pool, engine.random_pool, await engine.list_voices())
+        pool = choose_pool(
+            settings.speech.voice_pool, engine.random_pool, await engine.list_voices()
+        )
         if not pool:
             return None
         session.voice = roll.choice(pool)
@@ -338,7 +342,7 @@ def create_server(
     ) -> str:
         note_harness(ctx)
         try:
-            spoken = normalize(text, max_chars=settings.max_chars)
+            spoken = normalize(text, max_chars=settings.speech.max_chars)
         except ValueError as error:
             raise ToolError(str(error)) from error
 

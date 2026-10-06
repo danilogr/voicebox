@@ -13,7 +13,7 @@ from pathlib import Path
 
 import httpx2
 
-from speak.config import Settings
+from speak.settings import Settings
 from speak.telemetry import consent, machine, store
 from speak.telemetry.session import TelemetrySession
 from speak.telemetry.ship import TransportResponse
@@ -215,7 +215,7 @@ def build(
         },
     )
 
-    tts_engine = settings.engine[:TTS_ENGINE_MAX_LENGTH]
+    tts_engine = settings.speech.engine[:TTS_ENGINE_MAX_LENGTH]
     session_id = str(uuid.uuid4())
     store.insert_session(
         conn,
@@ -240,9 +240,9 @@ def build(
         install_id=consented.install_id,
         session_id=session_id,
         tts_engine=tts_engine,
-        tts_model=settings.nemo_model if settings.engine == "nemo" else None,
+        tts_model=settings.server.tts_model if settings.speech.engine == "nemo" else None,
         asr_engine="nemo",
-        asr_model=settings.nemo_asr_model,
+        asr_model=settings.server.asr_model,
         record_audio=consented.record,
         recordings_dir=config_dir / RECORDINGS_DIRNAME,
         db_path=config_dir / DB_FILENAME,

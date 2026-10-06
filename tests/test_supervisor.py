@@ -1,10 +1,13 @@
 import json
 import os
+import signal
 import time
 
 import pytest
 
 from speak import supervisor as supervisor_module
+from speak.config import ServerSettings
+from speak.runtime import supervisor_for
 from speak.supervisor import NemoSupervisor
 
 
@@ -430,3 +433,89 @@ async def test_a_failed_attempt_that_will_not_die_does_not_hang_the_session(tmp_
     supervisor._recorded_server_is_alive = lambda: False  # type: ignore[method-assign]
 
     assert await supervisor.ensure_running() is True
+
+
+async def test_two_plugins_elect_one_server_through_the_shared_directory(tmp_path):
+    """walkie and voicebox build their supervisors from their own environments; the
+    shared directory is the same for both, so the second finds the first's server."""
+    home = tmp_path / "home"
+    walkie_env = {"HOME": str(home), "WALKIE_ENGINE": "say", "WALKIE_VOICE": "Samantha"}
+    voicebox_env = {"HOME": str(home), "VOICEBOX_ENGINE": "nemo", "VOICEBOX_VOICE": "Sofia"}
+    spawns = Spawns(pid=4242)
+    kills: list[tuple[int, int]] = []
+    alive = {1001, 1002, 4242}
+
+    def build_for(env: dict[str, str], pid: int) -> NemoSupervisor:
+        return supervisor_for(
+            ServerSettings.from_env(env, platform="darwin"),
+            spawn=spawns,
+            probe=probe_ok,
+            pid=pid,
+            is_alive=alive.__contains__,
+            kill=lambda target, sig: kills.append((target, sig)),
+        )
+
+    walkie, voicebox = build_for(walkie_env, 1001), build_for(voicebox_env, 1002)
+    await walkie.register()
+    await voicebox.register()
+
+    started = [await walkie.ensure_running(), await voicebox.ensure_running()]
+
+    assert started == [True, False]
+    assert len(spawns.calls) == 1
+    shared = home / "Library" / "Caches" / "speak-core"
+    assert json.loads((shared / "server.json").read_text())["pid"] == 4242
+    assert {entry.name for entry in (shared / "clients").iterdir()} == {"1001", "1002"}
+    assert await walkie.release() is False
+    assert await voicebox.release() is True
+    assert kills == [(4242, signal.SIGTERM)]
+
+
+@pytest.mark.parametrize(
+    "plugin_env",
+    [
+        {},
+        {"WALKIE_ENGINE": "say", "WALKIE_VOICE": "Samantha", "SPEAK_SEED": "1"},
+        {"VOICEBOX_ENGINE": "nemo", "VOICEBOX_VOICE": "Sofia", "VOICEBOX_STATE_DIR": "/elsewhere"},
+    ],
+)
+async def test_server_arguments_depend_only_on_the_shared_settings(tmp_path, plugin_env):
+    """A plugin's own variables, including a stale SPEAK_SEED, never reach the server."""
+    shared = {
+        "HOME": str(tmp_path),
+        "NEMO_HTTP_URL": "http://127.0.0.1:8090",
+        "NEMO_TTS_MODEL": "magpie",
+        "NEMO_ASR_MODEL": "nemotron-3.5",
+        "NEMO_TTS_SEED": "7",
+        "NEMO_BIN": "/opt/nemo",
+    }
+    spawns = Spawns()
+    supervisor = supervisor_for(
+        ServerSettings.from_env({**shared, **plugin_env}, platform="linux"),
+        spawn=spawns,
+        probe=probe_ok,
+        pid=1,
+        is_alive=lambda pid: False,
+    )
+
+    await supervisor.ensure_running()
+
+    assert spawns.calls == [
+        (
+            "/opt/nemo",
+            [
+                "serve",
+                "--tts-model",
+                "magpie",
+                "--port",
+                "8090",
+                "--device",
+                "auto",
+                "--no-ui",
+                "--asr-model",
+                "nemotron-3.5",
+                "--tts.seed",
+                "7",
+            ],
+        )
+    ]

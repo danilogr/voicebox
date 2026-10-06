@@ -5,10 +5,11 @@ import pytest
 from fakes import FakeMicLock, FakePlayer, FakeRecorder, FakeSupervisor, FakeTranscriber
 from speak import talk as talk_module
 from speak.capture import Recording, State
-from speak.config import Settings
+from speak.config import ServerSettings
 from speak.cue import Cue
 from speak.engines.asr import TranscriptionFailed
 from speak.miclock import MicrophoneBusy
+from speak.settings import Settings
 from speak.talk import capture, dictate, main
 from speak.telemetry import store
 from speak.telemetry.session import TelemetrySession
@@ -258,7 +259,7 @@ async def test_autostart_off_leaves_the_speech_server_to_the_user():
         await _dictate(
             supervisor,
             FakeTranscriber(reachable=False),
-            settings=Settings(nemo_autostart=False),
+            settings=Settings(server=ServerSettings(autostart=False)),
         )
 
     assert supervisor.starts == 0
@@ -424,7 +425,7 @@ def _one_second_wav() -> bytes:
             FakeSupervisor(),
             FakeTranscriber(reachable=False),
             FakeMicLock(),
-            Settings(nemo_autostart=False),
+            Settings(server=ServerSettings(autostart=False)),
             TranscriptionFailed,
         ),
         # the server will not start

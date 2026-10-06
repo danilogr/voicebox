@@ -9,11 +9,11 @@ from mcp.server.mcpserver.exceptions import ToolError
 from fakes import FakeEngine, FakeMicLock, FakePlayer, FakeQueue, FakeRecorder, FakeTranscriber
 from speak import server as server_module
 from speak.capture import Recorder, RecorderUnavailable, Recording, State, TrackerSettings
-from speak.config import Settings
 from speak.cue import Cue
 from speak.engines.asr import TranscriptionFailed
 from speak.queue import QueueStats
 from speak.server import Ears, create_server
+from speak.settings import Settings
 
 # Named for their stems, which is what the fake player logs when a cue finishes.
 CUE_START = Path("/sounds/cue-start.aiff")

@@ -3,8 +3,8 @@
 # Idempotent: safe to run again. Downloads about 1.4 GB the first time.
 set -euo pipefail
 
-BIN="${SPEAK_NEMO_BIN:-nemo-speech}"
-INSTALLER="${SPEAK_NEMO_INSTALLER:-https://github.com/NVIDIA/NeMo-Speech.cpp/raw/main/scripts/install.sh}"
+BIN="${NEMO_BIN:-nemo-speech}"
+INSTALLER="${NEMO_INSTALLER:-https://github.com/NVIDIA/NeMo-Speech.cpp/raw/main/scripts/install.sh}"
 # The supervisor runs the server on --device auto. Below 0.2.0, MagpieTTS on Metal
 # returns DC saturation instead of speech on M5-class Macs, so older builds are upgraded.
 MIN_VERSION=0.2.0
@@ -32,7 +32,7 @@ else
 fi
 
 # The upstream installer writes to its own prefix, so an older copy earlier on PATH
-# (or an absolute SPEAK_NEMO_BIN) survives an upgrade and is what the plugin would run.
+# (or an absolute NEMO_BIN) survives an upgrade and is what the plugin would run.
 have="$(installed_version || true)"
 if ! at_least_min "$have"; then
   echo "nemo-speech at $(command -v "$BIN" || echo "$BIN") is ${have:-of unknown version}," \

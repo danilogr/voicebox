@@ -13,8 +13,8 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from speak.config import Settings
 from speak.exclusive import ExclusiveLock
+from speak.settings import Settings
 from speak.supervisor import process_is_alive
 from speak.telemetry.session import (
     TelemetrySession,
@@ -152,8 +152,8 @@ async def start(
         size_bytes=found.size_bytes,
         codec=found.codec,
         convert=needs_conversion(found),
-        asr_model=settings.nemo_asr_model,
-        nemo_binary=settings.nemo_binary,
+        asr_model=settings.server.asr_model,
+        nemo_binary=settings.server.binary,
         claimed_by=scribe.pid,
         created_at=scribe.clock(),
         telemetry=_telemetry_ref(telemetry),
@@ -352,7 +352,7 @@ def _refused(
         session_id=telemetry.session_id,
         install_id=telemetry.install_id,
         engine="nemo",
-        model=settings.nemo_asr_model,
+        model=settings.server.asr_model,
         # Clamped for the same reason the worker's outcome is: the file that was
         # refused may be the very one whose size is over the contract's ceiling.
         outcome=clamped(

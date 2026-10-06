@@ -9,7 +9,6 @@ from typing import Protocol
 
 from mcp.server.mcpserver import MCPServer
 
-from speak.config import Settings
 from speak.engines import build_engine
 from speak.engines.asr import NemoTranscriber
 from speak.miclock import MicLock
@@ -19,11 +18,12 @@ from speak.runtime import (
     build_recorder,
     capture_limits,
     configure_logging,
-    health_probe,
+    supervisor_for,
     transcription_timeout,
 )
 from speak.server import VERSION as PLUGIN_VERSION
 from speak.server import Ears, create_server
+from speak.settings import Settings
 from speak.supervisor import NemoSupervisor, process_is_alive
 from speak.telemetry import consent as telemetry_consent
 from speak.telemetry import ping as telemetry_ping
@@ -47,9 +47,9 @@ def build_ears(settings: Settings) -> Ears:
     return Ears(
         recorder=build_recorder(settings),
         transcriber=NemoTranscriber(
-            base_url=settings.nemo_url,
-            api_key=settings.nemo_api_key,
-            model=settings.nemo_asr_model,
+            base_url=settings.server.url,
+            api_key=settings.server.api_key,
+            model=settings.server.asr_model,
             timeout=transcription_timeout(settings),
         ),
         mic_lock=MicLock(state_dir=settings.state_dir, is_alive=process_is_alive),
@@ -66,17 +66,9 @@ def build_supervisor(settings: Settings) -> NemoSupervisor | None:
     The transcription model is always requested; a model that will not load is
     handled when the server starts, not by withholding it here.
     """
-    if not settings.nemo_autostart:
+    if not settings.server.autostart:
         return None
-    return NemoSupervisor(
-        state_dir=settings.state_dir,
-        port=settings.nemo_port,
-        binary=settings.nemo_binary,
-        model=settings.nemo_model,
-        asr_model=settings.nemo_asr_model,
-        seed=settings.seed,
-        probe=health_probe(settings.nemo_url),
-    )
+    return supervisor_for(settings.server)
 
 
 async def _ship_backlog() -> None:
@@ -134,7 +126,7 @@ def build(settings: Settings) -> MCPServer:
         _background.add(task)
         task.add_done_callback(_background.discard)
 
-    engine = build_engine(settings, on_unavailable=start_speech_server)
+    engine = build_engine(settings.speech, settings.server, on_unavailable=start_speech_server)
 
     # Decided before `telemetry_wiring.build`, which may create the consent file this
     # reads to tell an install from an upgrade.

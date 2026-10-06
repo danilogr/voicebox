@@ -3,26 +3,37 @@
 from pathlib import Path
 
 from speak.__main__ import build_ears, build_supervisor
-from speak.config import Settings
+from speak.config import ServerSettings, VoiceSettings
 from speak.cue import END_SOUND
 from speak.runtime import transcription_timeout
+from speak.settings import Settings
 
 
 def test_every_session_gets_a_speech_server_because_listening_always_needs_one():
     """Even a `say` session: the microphone transcribes against the shared server."""
     assert build_supervisor(Settings()) is not None
-    assert build_supervisor(Settings(engine="nemo")) is not None
+    assert (
+        build_supervisor(Settings(speech=VoiceSettings(prefix="SPEAK", engine="nemo"))) is not None
+    )
 
 
 def test_autostart_off_leaves_the_speech_server_to_the_user():
-    assert build_supervisor(Settings(nemo_autostart=False)) is None
-    assert build_supervisor(Settings(engine="nemo", nemo_autostart=False)) is None
+    assert build_supervisor(Settings(server=ServerSettings(autostart=False))) is None
+    assert (
+        build_supervisor(
+            Settings(
+                speech=VoiceSettings(prefix="SPEAK", engine="nemo"),
+                server=ServerSettings(autostart=False),
+            )
+        )
+        is None
+    )
 
 
 def test_every_session_is_served_the_configured_asr_model():
     """Voice input is unconditional, so the transcription model is always requested.
     A model that will not load is handled at startup, not by withholding it here."""
-    supervisor = build_supervisor(Settings(nemo_asr_model="parakeet-tdt"))
+    supervisor = build_supervisor(Settings(server=ServerSettings(asr_model="parakeet-tdt")))
     assert supervisor is not None
     args = supervisor._server_args()
     assert args[args.index("--asr-model") + 1] == "parakeet-tdt"
@@ -66,7 +77,7 @@ async def test_talk_builds_its_collaborators_the_way_the_server_does(monkeypatch
     """`/talk` wires up its own objects, and nothing else exercises that.
 
     The transcriber block is character-identical to the one in `__main__`, which is the
-    risk: `nemo_model` and `nemo_asr_model` are both `str`, so handing the speech model
+    risk: `tts_model` and `asr_model` are both `str`, so handing the speech model
     to the transcriber would transcribe against a voice and is caught by neither mypy
     nor any other test. Two call sites, so the answer is to pin it rather than extract
     a shared builder.
@@ -85,9 +96,9 @@ async def test_talk_builds_its_collaborators_the_way_the_server_does(monkeypatch
 
     monkeypatch.setattr(talk, "dictate", capture_arguments)
     settings = Settings(
-        nemo_url="http://127.0.0.1:9999",
-        nemo_model="magpie",
-        nemo_asr_model="parakeet-tdt",
+        server=ServerSettings(
+            url="http://127.0.0.1:9999", tts_model="magpie", asr_model="parakeet-tdt"
+        ),
         listen_max_seconds=30.0,
         state_dir=Path("/tmp/speak-test"),
     )

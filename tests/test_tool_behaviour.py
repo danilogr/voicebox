@@ -2,9 +2,9 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
 from fakes import FakeEngine, FakeQueue, FakeSupervisor
-from speak.config import Settings
 from speak.queue import QueueStats
 from speak.server import create_server
+from speak.settings import Settings
 
 
 def build(engine=None, queue=None, supervisor=None, env=None):

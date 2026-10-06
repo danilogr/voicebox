@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Never
 
-from speak.config import Settings
+from speak.settings import Settings
 from speak.telemetry.session import MAX_AUDIO_MS, MAX_SOURCE_BYTES
 from speak.transcribe.jobs import CRASHED, DONE, EMPTY, FAILED, RUNNING, JobStore
 from speak.transcribe.lock import transcription_lock

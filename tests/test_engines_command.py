@@ -17,5 +17,5 @@ async def test_reports_no_voices():
 
 @pytest.mark.parametrize("command", ["", "   "])
 def test_rejects_an_empty_command_at_construction(command):
-    with pytest.raises(ValueError, match="SPEAK_COMMAND"):
+    with pytest.raises(ValueError, match="needs a command line"):
         CommandEngine(command)
