@@ -367,14 +367,21 @@ class _Sender:
         )
         now = store.now_iso()
         if delivery is Delivery.REJECTED:
-            # Its sessions are not marked: they were not stored, so a later chunk of
-            # the same session carries them again, and they stay in the backlog.
             logger.debug(
-                "telemetry: the server refused %d row(s) and %d session(s); setting the rows aside",
+                "telemetry: the server refused %d row(s) and %d session(s); setting them aside",
                 len(rows),
                 len(sessions),
             )
-            store.mark_rejected(self._conn, [row["utterance_id"] for row in rows], now)
+            if rows:
+                # Its sessions stay in the backlog: they were not stored, and the fault
+                # may be in the rows alone, so they go out again by themselves.
+                store.mark_rejected(self._conn, [row["utterance_id"] for row in rows], now)
+            else:
+                # Sessions refused on their own are the fault. Marked as sent, they
+                # leave the backlog instead of being refused again every session; an
+                # utterance of theirs still carries them, since utterance chunks
+                # carry every session they reference.
+                store.mark_sessions_shipped(self._conn, sessions, now)
             return True
         if delivery is Delivery.FAILED:
             return False

@@ -189,6 +189,21 @@ async def test_a_400_is_not_retried_and_sets_the_chunk_aside() -> None:
     assert row["rejected_at"] is not None
 
 
+async def test_a_400_for_sessions_alone_sets_them_aside() -> None:
+    """A session refused on its own would otherwise be refused again every session."""
+    conn = seeded_conn([])
+    transport = FakeTransport([ship.TransportResponse(status=400)])
+
+    await ship.ship(conn, install_id="install-1", url=URL, transport=transport, sleep=no_sleep)
+
+    assert [len(payload["sessions"]) for _, payload in transport.calls] == [1]
+    assert store.unshipped_sessions(conn, "install-1") == []
+
+    again = FakeTransport([])
+    await ship.ship(conn, install_id="install-1", url=URL, transport=again, sleep=no_sleep)
+    assert again.calls == []
+
+
 async def test_a_413_is_not_retried() -> None:
     conn = seeded_conn([utterance()])
     transport = FakeTransport([ship.TransportResponse(status=413)])
