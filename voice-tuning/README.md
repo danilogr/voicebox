@@ -25,13 +25,13 @@ If you pinned one for the plugin with `SPEAK_INPUT_DEVICE`, the recorder uses it
 skip ahead. Otherwise the plugin picks a microphone itself, and `/talk` names the one it used
 on its first line:
 
-```
+```text
 [speak] capture: MacBook Pro Microphone: done (gate 0.0225, peak 0.0360)
 ```
 
 List what this Mac has:
 
-```
+```bash
 uv run voice-tuning/record.py --list-devices
 ```
 
@@ -42,7 +42,7 @@ carry meeting audio, not your voice.
 
 ## 2. Record
 
-```
+```bash
 uv run voice-tuning/record.py --device "MacBook Pro Microphone"
 ```
 
@@ -65,7 +65,7 @@ actually changes. That is what the extra takes are for.
 
 Everything goes into one folder, `~/speak-voice-dataset/` unless you pass `--out`:
 
-```
+```text
 speak-voice-dataset/
   audio/001-1.wav        sentence 1, take 1 — 16 kHz, mono, 16-bit
   audio/001-2.wav

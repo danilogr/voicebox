@@ -1,7 +1,7 @@
 # Design guidelines
 
 > Conventions this repo follows: environment, naming, layering, errors, logging,
-> comments and tests. `CLAUDE.md` holds the operating rules and wins on any conflict.
+> comments and tests. `AGENTS.md` holds the operating rules and wins on any conflict.
 
 ## Environment: uv only
 

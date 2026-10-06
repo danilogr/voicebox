@@ -3,11 +3,11 @@
 `speak` reports anonymous usage data so its author can tell where to spend effort next.
 It is on by default. Turning it off takes one command and no account.
 
-```
-speak-telemetry off      collect nothing, send nothing but the install ping
-speak-telemetry local    collect on this machine, send nothing but the install ping
-speak-telemetry on       the default
-speak-stats              see everything this machine has collected
+```bash
+speak-telemetry off      # collect nothing, send nothing but the install ping
+speak-telemetry local    # collect on this machine, send nothing but the install ping
+speak-telemetry on       # the default
+speak-stats              # see everything this machine has collected
 ```
 
 `SPEAK_TELEMETRY=off` in your environment does what `off` does, for this tool alone.
@@ -109,7 +109,7 @@ included, instead of sending it.
 
 Separate, and off by default:
 
-```
+```bash
 speak-telemetry record on
 ```
 

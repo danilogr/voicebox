@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 Operating rules for this Python backend. Keep this file stable and short.
 If a rule here conflicts with a harness/ doc, this file wins.
@@ -24,8 +24,9 @@ If a rule here conflicts with a harness/ doc, this file wins.
   - harness/design-guidelines.md — environment, naming, layering, errors, logging,
     comments, tests. Includes the uv commands and the code standards.
   - harness/performance.md — measured latency, memory, disk, and audio levels.
+  - harness/layout.md — codebase layout and file responsibilities.
 - Update the matching doc AFTER an agreed change (e.g. approved architectural
-  decision -> architecture.md). Never record such changes in CLAUDE.md.
+  decision -> architecture.md). Never record such changes in AGENTS.md.
 
 ## Document the present, never the past
 - Comments and docs describe what the code does now, a constraint it must keep, or a

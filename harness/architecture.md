@@ -345,7 +345,7 @@ would wait for it until the host closed the pipe.
   same reason plus one more: a `Stop` hook receives a shell command and no view of the
   turn, so it can play a fixed sound but cannot say what changed. The hook types that
   could summarise — `prompt` and `agent` — are restricted to tool events. Only the model
-  can write the recap. Nor per-user memory or `CLAUDE.md`, which would make
+  can write the recap. Nor per-user memory or `AGENTS.md`, which would make
   the plugin's own behaviour depend on machine-local state that does not travel with it.
 
 - **The queue is serial and non-blocking.** `speak` returns immediately

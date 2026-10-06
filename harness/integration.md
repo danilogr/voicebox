@@ -32,8 +32,10 @@ stops it when the last Claude Code session using it exits — your agent would l
 its voice when an unrelated editor window closed. Start a second one on another
 port:
 
-    nemo-speech serve --port 8083 --device auto --no-ui \
-      --asr-model nemotron-3.5 --tts-model magpie --tts.seed 6285
+```bash
+nemo-speech serve --port 8083 --device auto --no-ui \
+  --asr-model nemotron-3.5 --tts-model magpie --tts.seed 6285
+```
 
 - `--device` takes `auto`, `cpu`, `cuda[:N]`, `metal`, or `vulkan[:N]`. The plugin
   runs `auto` (Metal on Apple silicon) and needs NeMo-Speech.cpp 0.2.0 or later. On
@@ -48,7 +50,9 @@ port:
 
 ### What is loaded
 
-    curl -sS http://127.0.0.1:8083/v1/models
+```bash
+curl -sS http://127.0.0.1:8083/v1/models
+```
 
 Returns one entry per capability: a `transcription` model (id like
 `.nemotron-3.5-asr-streaming-0.6b.q8_0.gguf`) and a `speech` model (`magpietts`),
@@ -57,18 +61,22 @@ languages: `en-US`, `es-ES`, `de-DE`, `fr-FR`, `it-IT`, `vi-VN`, `hi-IN`.
 
 ### Speech
 
-    curl -X POST http://127.0.0.1:8083/v1/audio/speech \
-      -H 'Content-Type: application/json' \
-      -d '{"model":"magpietts","voice":"Sofia","input":"your text"}' \
-      -o out.wav
+```bash
+curl -X POST http://127.0.0.1:8083/v1/audio/speech \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"magpietts","voice":"Sofia","input":"your text"}' \
+  -o out.wav
+```
 
 Returns a WAV. A 49-character sentence produced 2.6 seconds of audio in one
 request.
 
 ### Transcription
 
-    curl -X POST http://127.0.0.1:8083/v1/audio/transcriptions \
-      -F "file=@clip.wav"
+```bash
+curl -X POST http://127.0.0.1:8083/v1/audio/transcriptions \
+  -F "file=@clip.wav"
+```
 
 Returns `{"text": "..."}`. The `model` field is optional; the loaded transcription
 model is used either way, and both its full id and the short `nemotron-3.5` are
@@ -82,11 +90,13 @@ transcript before trusting it.
 
 ### Both routes are OpenAI-compatible
 
-    from openai import OpenAI
-    client = OpenAI(base_url="http://127.0.0.1:8083/v1", api_key="unused")
+```python
+from openai import OpenAI
+client = OpenAI(base_url="http://127.0.0.1:8083/v1", api_key="unused")
 
-    client.audio.speech.create(model="magpietts", voice="Sofia", input=text)
-    client.audio.transcriptions.create(model="nemotron-3.5", file=open(path, "rb"))
+client.audio.speech.create(model="magpietts", voice="Sofia", input=text)
+client.audio.transcriptions.create(model="nemotron-3.5", file=open(path, "rb"))
+```
 
 ### Streaming
 
@@ -99,8 +109,10 @@ never used it, so treat the shape as unverified and read the server's own docs.
 For a recording rather than an utterance, skip the HTTP API and run the CLI, which
 is what this plugin's `transcribe` tool does:
 
-    nemo-speech --quiet transcribe in.wav --model nemotron-3.5 \
-      -f srt -o out.srt --force --diarize
+```bash
+nemo-speech --quiet transcribe in.wav --model nemotron-3.5 \
+  -f srt -o out.srt --force --diarize
+```
 
 `-f` takes `text`, `json` (word timings and speakers), `srt`, `vtt`. Measured
 throughput on an M5, CPU, including model load: **9.5x realtime**, **6.9x with
@@ -129,7 +141,9 @@ need. They are plain `asyncio` with no MCP in them.
 
 If your harness is an MCP client, the plugin is a stdio server:
 
-    uv run --directory /path/to/speak python -m speak
+```bash
+uv run --directory /path/to/speak python -m speak
+```
 
 Tools: `speak`, `listen`, `transcribe`, `transcription_status`, `list_voices`,
 `set_voice`, `stop_speaking`, `speech_status`. Configuration is environment
@@ -164,11 +178,12 @@ ping, and `DO_NOT_TRACK=1` disables both.
 
 ## Where things are
 
-| | |
+| Path | Responsibility |
 |---|---|
-| `src/speak/engines/asr.py` | how this plugin calls `/v1/audio/transcriptions`, including liveness handling |
-| `src/speak/engines/` | the speech engines, including the HTTP one |
-| `src/speak/supervisor.py` | starting, sharing and stopping one server across processes |
-| `src/speak/transcribe/` | the file-transcription feature: probe, convert, job records, the detached worker |
-| `src/speak/capture.py`, `player.py`, `queue.py` | the reusable local-audio parts |
-| `harness/performance.md` | every measured number and the hardware behind it |
+| [`src/speak/engines/asr.py`](../src/speak/engines/asr.py) | How this plugin calls `/v1/audio/transcriptions`, including liveness handling |
+| [`src/speak/engines/`](../src/speak/engines/) | The speech engines, including the HTTP one |
+| [`src/speak/supervisor.py`](../src/speak/supervisor.py) | Starting, sharing and stopping one server across processes |
+| [`src/speak/transcribe/`](../src/speak/transcribe/) | The file-transcription feature: probe, convert, job records, the detached worker |
+| [`src/speak/capture.py`](../src/speak/capture.py), [`player.py`](../src/speak/player.py), [`queue.py`](../src/speak/queue.py) | The reusable local-audio parts |
+| [`harness/layout.md`](layout.md) | Exhaustive directory and file layout of the entire codebase |
+| [`harness/performance.md`](performance.md) | Every measured number and the hardware behind it |
