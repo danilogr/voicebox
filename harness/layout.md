@@ -43,7 +43,6 @@
 | [`.mcp.json`](../.mcp.json) | Stdio MCP server registration file declaring how Claude Code launches the `speak` server using `scripts/speak-mcp`. |
 | [`scripts/speak-mcp`](../scripts/speak-mcp) | Main launcher executable: discovers `uv` on the host, syncs the virtual environment, and executes the `speak-mcp` entry point. |
 | [`scripts/speak-talk`](../scripts/speak-talk) | One-shot executable for prompt dictation: runs `speak-talk` to capture microphone audio and print the transcript to stdout. |
-| [`scripts/install-nemo.sh`](../scripts/install-nemo.sh) | Idempotent setup script invoked by `/speak:setup`: downloads `nemo-speech` binary (>= 0.2.0), fetches MagpieTTS and Nemotron-3.5 models (~1.4 GB), and verifies the environment. |
 | [`scripts/install-local.sh`](../scripts/install-local.sh) | Developer utility to sync the current git checkout directly into `~/.claude/plugins/cache/` for immediate testing in Claude Code. |
 | [`scripts/make-cues.py`](../scripts/make-cues.py) | Self-contained script using Python's standard `wave` and `math` libraries to synthesize the three shipped 16-bit PCM WAV cue sounds. |
 
@@ -55,7 +54,7 @@ Markdown instruction files loaded by Claude Code when a user runs slash commands
 
 | File | Command | Description |
 |---|---|---|
-| [`commands/setup.md`](../commands/setup.md) | `/speak:setup` | Guides Claude to bootstrap the neural speech engine, run `install-nemo.sh`, check hardware, and configure `SPEAK_ENGINE=nemo`. |
+| [`commands/setup.md`](../commands/setup.md) | `/speak:setup` | Guides Claude to bootstrap the neural speech engine, run `speak-core-setup`, check hardware, and configure `SPEAK_ENGINE=nemo`. |
 | [`commands/converse.md`](../commands/converse.md) | `/speak:converse` | Puts the session into spoken conversation mode: Claude speaks answers aloud via `speak` and listens for user replies via `listen`. |
 | [`commands/narrate.md`](../commands/narrate.md) | `/speak:narrate` | Instructs Claude to read long texts, files, or URLs aloud in controlled 10-sentence rounds without overwhelming the speech queue. |
 | [`commands/talk.md`](../commands/talk.md) | `/talk` | Captures user speech via `scripts/speak-talk`, injects the transcript into the prompt, and warns Claude to verify destructive actions. |
@@ -109,6 +108,8 @@ System specifications and engineering guidelines:
 | [`src/speak/exclusive.py`](../src/speak/exclusive.py) | Cross-process lock using filesystem directories, with automatic cleanup if a process exits unexpectedly. |
 | [`src/speak/speaker.py`](../src/speak/speaker.py) | Cross-process speaker lock: one utterance plays at a time across every process that speaks, with turns that alternate. |
 | [`src/speak/supervisor.py`](../src/speak/supervisor.py) | Speech server supervisor: starts, shares, and shuts down the local NeMo speech server across open terminal windows. |
+| [`src/speak/install-nemo.sh`](../src/speak/install-nemo.sh) | NeMo installer run by `speak-core-setup`: installs `nemo-speech` >= 0.2.0, pulls MagpieTTS and Nemotron 3.5, runs `doctor`. Idempotent. |
+| [`src/speak/setup.py`](../src/speak/setup.py) | The `speak-core-setup` console script. |
 | [`src/speak/talk.py`](../src/speak/talk.py) | CLI entry point for `/talk`: coordinates microphone recording, transcribes speech, and outputs the result. |
 | [`src/speak/assets/`](../src/speak/assets/) | Shipped WAV audio chimes: `cue-open.wav`, `cue-close.wav`, and `cue-empty.wav`. |
 

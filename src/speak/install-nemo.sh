@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install NeMo-Speech.cpp and the models the speak plugin uses.
+# Install NeMo-Speech.cpp and the models every speak-core plugin uses.
 # Idempotent: safe to run again. Downloads about 1.4 GB the first time.
 set -euo pipefail
 
@@ -50,5 +50,5 @@ echo "pulling the transcription model (710 MB, skipped if present)"
 echo
 "$BIN" doctor
 echo
-echo "Done. Set SPEAK_ENGINE=nemo and the plugin will start the server on first use."
-echo "Speaking and listening are both on from then; nothing else to switch."
+echo "Done. NeMo-Speech.cpp and both models are installed; the plugins start and stop"
+echo "the speech server on their own."

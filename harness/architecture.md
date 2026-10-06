@@ -286,8 +286,9 @@ would wait for it until the host closed the pipe.
 - **The cue sounds** — synthesised by `scripts/make-cues.py` and committed under
   `src/speak/assets`. Not taken from the host operating system: the paths differ per
   platform, and shipping another vendor's audio is not ours to do.
-- **NeMo-Speech.cpp** (optional) — a local neural speech server, installed by
-  `scripts/install-nemo.sh` and managed by the supervisor. Not vendored: it is a
+- **NVIDIA NeMo-Speech.cpp** (https://github.com/NVIDIA/NeMo-Speech.cpp, optional) — the
+  local neural speech server: MagpieTTS for speech, Nemotron 3.5 for recognition.
+  Installed by `speak-core-setup` and managed by the supervisor. Not vendored: it is a
   per-platform binary plus both models, which is over a gigabyte of download. Sizes
   are in `performance.md`.
 

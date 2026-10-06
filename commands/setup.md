@@ -4,15 +4,17 @@ description: Install NeMo-Speech.cpp and the models the speak plugin needs for a
 
 # Set up neural speech for the speak plugin
 
-Install the local speech server this plugin can talk to. Explain the cost before
+Install the local speech server this plugin talks to, NVIDIA NeMo-Speech.cpp. Explain the cost before
 you start: about 1.4 GB of models on disk, and while the server runs, roughly 830 MB
 of resident memory for the voice alone or 1.75 GB with the transcription model beside
 it.
 
-1. Run `${CLAUDE_PLUGIN_ROOT}/scripts/install-nemo.sh` and show the output. It
-   installs `nemo-speech` if it is missing or older than 0.2.0, pulls the MagpieTTS voice and the
-   nemotron-3.5 transcription model, and runs `nemo-speech doctor`. It is
-   idempotent. It pulls both models, because the plugin both speaks and listens.
+1. Run `uv run --directory "${CLAUDE_PLUGIN_ROOT}" --quiet speak-core-setup` and show
+   the output. It installs NVIDIA NeMo-Speech.cpp (https://github.com/NVIDIA/NeMo-Speech.cpp)
+   as `nemo-speech` if it is missing or older than 0.2.0, pulls the MagpieTTS voice and
+   the nemotron-3.5 transcription model, and runs `nemo-speech doctor`. It is
+   idempotent. It pulls both models, because the plugin both speaks and listens. If
+   `uv` is not on PATH, use `~/.local/bin/uv`.
 2. If the script fails, report the failure verbatim rather than working around
    it. A partial install is worse than none.
 3. On success, tell the user to set `SPEAK_ENGINE=nemo` in their environment,

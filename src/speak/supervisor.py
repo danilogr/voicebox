@@ -204,7 +204,7 @@ class NemoSupervisor:
 
         Both readers need the same guards. `release` runs in a `finally` whose caller
         catches a fixed set of exceptions, so anything else raised there escapes, and on
-        the `/talk` path an escaped exception prints a traceback where the user's own
+        a one-shot caller an escaped exception prints a traceback where the user's own
         words are read from. The file is on disk, so its shape is not this code's to
         assume: that it parsed is not the same as that it is a record we wrote.
         """
