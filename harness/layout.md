@@ -11,9 +11,9 @@
 ├── commands/               Claude Code slash commands (/speak:setup, /talk, etc.)
 ├── harness/                Developer specs: architecture, flows, performance, guidelines
 ├── scripts/                Shell launchers, cue sound synthesis, install helpers
-├── src/speak/              Core Python implementation
+├── src/speak/              The speak plugin: MCP server, voice input, file transcription
 │   ├── assets/             Synthesized WAV cue sounds
-│   ├── telemetry/          Local metrics storage and optional anonymous reporting
+│   ├── telemetry/          The plugin's telemetry wiring: contract, event composition, stats and consent commands (storage and reporting live in speak-core)
 │   └── transcribe/         Background audio/video file transcription subsystem
 ├── tests/                  Test suite (460+ offline, mocked tests)
 └── voice-tuning/           Tools and dataset script for personalized ASR fine-tuning

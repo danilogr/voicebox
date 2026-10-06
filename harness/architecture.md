@@ -170,7 +170,7 @@ would wait for it until the host closed the pipe.
   machine-wide voice file, which would leak one window's choice into every other.
 
 - **Dependencies are injected, and the server is built by a factory.**
-  `create_server` closes over its engine, queue, and `NemoSupervisor`; the queue takes its
+  `create_server` closes over its engine, queue, and `speak_core.supervisor.NemoSupervisor`; the queue takes its
   process launcher, and `NemoSupervisor` its spawn, liveness, and kill callables. This is
   what lets the suite cover the real code paths with no audio, no sockets, and no
   speech server. Not module-level singletons, which would force monkeypatching.
@@ -240,7 +240,7 @@ would wait for it until the host closed the pipe.
 
 - **The microphone is arbitrated by a lock, and contention fails fast.**
   There is one microphone and any number of sessions; two recordings at once produce
-  garbage in both. The election is `NemoSupervisor`'s, reused: an atomic `mkdir` on
+  garbage in both. The election is `speak_core.supervisor.NemoSupervisor`'s, reused: an atomic `mkdir` on
   `mic/`, an owner pid in the file inside it, and a lock left by a dead session
   reclaimed by the next caller. Not queueing on the lock, which is worse than
   refusing — you would start talking and a window you are not looking at would take

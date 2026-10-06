@@ -181,7 +181,7 @@ ping, and `DO_NOT_TRACK=1` disables both.
 
 | Path | Responsibility |
 |---|---|
-| [`speak_core/engines/asr.py`](https://github.com/danilogr/speak-core/blob/main/src/speak_core/engines/asr.py) | How this plugin calls `/v1/audio/transcriptions`, including liveness handling |
+| [`speak_core/engines/asr.py`](https://github.com/danilogr/speak-core/blob/main/src/speak_core/engines/asr.py) | speak_core's ASR client: how it calls `/v1/audio/transcriptions`, including liveness handling |
 | [`speak_core/engines/`](https://github.com/danilogr/speak-core/blob/main/src/speak_core/engines/) | The speech engines, including the HTTP one |
 | [`speak_core/supervisor.py`](https://github.com/danilogr/speak-core/blob/main/src/speak_core/supervisor.py) | Starting, sharing and stopping one server across processes |
 | [`src/speak/transcribe/`](../src/speak/transcribe/) | The file-transcription feature: probe, convert, job records, the detached worker |
