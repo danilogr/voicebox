@@ -74,7 +74,7 @@ async def run(tmp_path, run_cli, recorded, **kw: object):
         is_alive=alive,
         clock=lambda: float(next(ticks)),
         pid=WORKER,
-        record=recorded.append,
+        record=lambda job, outcome: recorded.append(job),
         **kw,
     )
 
@@ -134,6 +134,29 @@ async def test_a_worker_refused_the_lock_records_the_failure_rather_than_dying_q
     assert transcription_lock(tmp_path, is_alive=alive).owner() == OTHER
 
 
+async def test_a_worker_refused_the_lock_is_recorded_as_refused_not_failed(tmp_path):
+    """Losing the lock race is the same event as a `transcribe` call refused in the
+    session; recording it as `failed` would count it as a broken transcription."""
+    start(tmp_path)
+    transcription_lock(tmp_path, is_alive=alive, pid=OTHER).take_over(CLAIMER)
+    run_cli, _ = cli_writing("words")
+    outcomes = []
+
+    with pytest.raises(TranscriptionBusy):
+        await run_job(
+            tmp_path,
+            "j1",
+            run_cli=run_cli,
+            is_alive=alive,
+            clock=lambda: 1000.0,
+            pid=WORKER,
+            record=lambda job, outcome: outcomes.append(outcome),
+        )
+
+    assert [o.status for o in outcomes] == ["refused"]
+    assert transcription_lock(tmp_path, is_alive=alive).owner() == OTHER
+
+
 async def test_conversion_runs_first_and_its_wav_is_deleted(tmp_path):
     store, _ = start(tmp_path, convert=True, codec="flac")
     seen = []
@@ -163,7 +186,7 @@ async def test_a_failed_conversion_fails_the_job_without_running_the_model(tmp_p
 
 
 async def test_a_missing_record_is_nothing_to_do(tmp_path):
-    assert await run_job(tmp_path, "nope", pid=WORKER, record=lambda job: None) is None
+    assert await run_job(tmp_path, "nope", pid=WORKER, record=lambda job, outcome: None) is None
 
 
 async def test_the_outcome_is_recorded_before_the_lock_is_freed(tmp_path):
@@ -171,7 +194,7 @@ async def test_the_outcome_is_recorded_before_the_lock_is_freed(tmp_path):
     run_cli, _ = cli_writing("words")
     seen = []
 
-    def record(job) -> None:
+    def record(job, outcome) -> None:
         seen.append(
             (
                 transcription_lock(tmp_path, is_alive=alive).owner(),
@@ -215,7 +238,7 @@ def test_an_unopenable_telemetry_store_does_not_raise(tmp_path):
         created_at=1000.0,
         telemetry={"db_path": str(blocker / "t.db"), "session_id": "s", "install_id": "i"},
     )
-    write_telemetry(job)  # must not raise
+    write_telemetry(job, outcome_for(job))  # must not raise
 
 
 def test_a_file_past_the_contracts_ceilings_is_recorded_at_them(tmp_path):

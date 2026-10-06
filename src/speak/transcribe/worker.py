@@ -29,6 +29,7 @@ from speak.transcribe.prepare import ConversionFailed, convert
 logger = logging.getLogger(__name__)
 
 CliRunner = Callable[[Sequence[str], Path], Awaitable[int]]
+Record = Callable[[Job, TranscriptionOutcome], None]
 
 NEMO_REMEDY = "run /speak:setup to install it"
 
@@ -67,13 +68,16 @@ def cli_argv(job: Job, audio: Path) -> list[str]:
     return argv
 
 
-def outcome_for(job: Job) -> TranscriptionOutcome:
+def outcome_for(job: Job, *, status: str | None = None) -> TranscriptionOutcome:
     """What one job looked like, clamped to what the contract will accept.
 
     Nothing upstream bounds a file: a three-hour 4K video is a real thing to ask for
-    a transcript of, and the row describing it has to stay shippable.
+    a transcript of, and the row describing it has to stay shippable. `status`
+    overrides the one the job's state implies, for an outcome the state cannot
+    express.
     """
-    status = {DONE: "ok", EMPTY: "heard_nothing"}.get(job.state, "failed")
+    if status is None:
+        status = {DONE: "ok", EMPTY: "heard_nothing"}.get(job.state, "failed")
     return clamped(
         TranscriptionOutcome(
             status=status,
@@ -90,7 +94,7 @@ def outcome_for(job: Job) -> TranscriptionOutcome:
     )
 
 
-def write_telemetry(job: Job) -> None:
+def write_telemetry(job: Job, outcome: TranscriptionOutcome) -> None:
     """Record the job for the session that asked, if that session records at all."""
     if job.telemetry is None:
         return
@@ -106,7 +110,7 @@ def write_telemetry(job: Job) -> None:
             install_id=job.telemetry["install_id"],
             engine="nemo",
             model=job.asr_model,
-            outcome=outcome_for(job),
+            outcome=outcome,
         )
     finally:
         conn.close()
@@ -121,7 +125,7 @@ async def run_job(
     is_alive: Callable[[int], bool] = process_is_alive,
     clock: Callable[[], float] = time.time,
     pid: int | None = None,
-    record: Callable[[Job], None] = write_telemetry,
+    record: Record = write_telemetry,
 ) -> Job | None:
     jobs = JobStore(state_dir)
     job = jobs.read(job_id)
@@ -135,9 +139,11 @@ async def run_job(
         # Refused the lock, so this job never runs. Saying so is the whole of the
         # worker's answer here: without a record it would look like a worker that
         # vanished, and the session would wait out an estimate for work nobody is doing.
+        # The job itself failed, but to telemetry it was refused, the same as a
+        # `transcribe` call that loses the race in the session.
         refused = replace(job, state=FAILED, finished_at=clock(), error=str(error))
         jobs.write(refused)
-        record(refused)
+        record(refused, outcome_for(refused, status="refused"))
         raise
     job = replace(job, worker_pid=me)
     jobs.write(job)
@@ -146,11 +152,11 @@ async def run_job(
     except Exception as error:  # a bug here must still leave an honest record
         finished = replace(job, state=FAILED, finished_at=clock(), error=f"worker error: {error}")
         jobs.write(finished)
-        record(finished)
+        record(finished, outcome_for(finished))
         raise
     else:
         jobs.write(finished)
-        record(finished)
+        record(finished, outcome_for(finished))
     finally:
         jobs.wav_path(job_id).unlink(missing_ok=True)
         lock.release()
