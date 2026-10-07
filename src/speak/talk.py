@@ -179,29 +179,22 @@ async def _ensure_server(
 ) -> None:
     """Start the speech server unless something already answers on its port.
 
-    `ensure_running` spawns unconditionally: its lock only excludes another session
-    starting at the same moment. So a server that is already up must not be met with
-    a second one, which would overwrite the record of the first and leave the last
-    process out stopping the wrong pid. Liveness, not readiness - any HTTP answer
-    means the port is taken. A server that is up but has no transcription model is
-    likewise not replaced; `capture` reports that case instead.
-    `speak.server.warm_speech_server` guards the session path the same way for the
-    same reason: change the two together.
+    `NemoSupervisor.warm` leaves a server that answers alone, one with no
+    transcription model included; `capture` reports that case instead.
     """
-    if await transcriber.reachable():
-        return
-    if not settings.server.autostart:
+    if settings.server.autostart:
+        await _start(supervisor, transcriber)
+    elif not await transcriber.reachable():
         # `__main__.build_supervisor` builds no supervisor under this setting; a user
         # who said they would run the server must not get one spawned behind their
         # back here either.
         raise TranscriptionFailed(SERVER_UNREACHABLE)
-    await _start(supervisor)
 
 
-async def _start(supervisor: NemoSupervisor) -> None:
+async def _start(supervisor: NemoSupervisor, transcriber: Transcriber) -> None:
     """Start the server, turning a missing binary into an error that says what to do."""
     try:
-        await supervisor.ensure_running()
+        await supervisor.warm(transcriber.reachable)
     except OSError as error:
         raise TranscriptionFailed(f"{NO_SERVER} ({error})") from error
 

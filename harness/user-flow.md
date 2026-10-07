@@ -185,6 +185,7 @@ One per machine, reference-counted on disk under the shared state directory (`<c
 
 | Situation | What happens |
 |---|---|
+| something answers on the port (session warmup, `/talk`) | no spawn: `NemoSupervisor.warm` leaves it alone, even one this machine has no record of |
 | `server.json` names a live pid | no spawn; the port is probed and the caller proceeds |
 | another session holds the start lock | no spawn; the port is probed and the caller waits for it |
 | neither | the lock is claimed, the server spawned, its pid recorded, the port probed |

@@ -96,6 +96,12 @@ class FakeSupervisor:
             await self._blocked_by.wait()
         return True
 
+    async def warm(self, reachable) -> bool:
+        """`NemoSupervisor.warm`: start only when nothing answers on the port."""
+        if await reachable():
+            return False
+        return await self.ensure_running()
+
 
 class FakeRecorder:
     def __init__(self, recording: Recording, calls: list[str] | None = None) -> None:

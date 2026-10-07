@@ -5,7 +5,7 @@ import logging
 import math
 import random
 import time
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -68,6 +68,8 @@ class Supervisor(Protocol):
     async def release(self) -> bool: ...
 
     async def ensure_running(self) -> bool: ...
+
+    async def warm(self, reachable: Callable[[], Awaitable[bool]]) -> bool: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,20 +165,6 @@ async def shutdown(
         telemetry.conn.close()
 
 
-async def warm_speech_server(supervisor: "Supervisor", transcriber: Transcriber) -> bool:
-    """Start the shared speech server, unless something already holds its port.
-
-    `ensure_running` spawns unconditionally: its lock only excludes another session
-    starting at the same moment, so a session opened later would spawn a second
-    server, overwrite the record of the first, and leave it orphaned — the last
-    session out would then stop the wrong process. Liveness, not readiness: any
-    HTTP answer means the port is taken and this session has nothing to start.
-    """
-    if await transcriber.reachable():
-        return False
-    return await supervisor.ensure_running()
-
-
 async def start_listening(
     *,
     supervisor: "Supervisor | None",
@@ -196,7 +184,10 @@ async def start_listening(
         return None
     session.registered = True
     await supervisor.register()
-    session.warmup = asyncio.create_task(warm_speech_server(supervisor, ears.transcriber))
+    # `warm`, not `ensure_running`: a server already answering on the port, one this
+    # session's supervisor has no record of included, is used rather than met with a
+    # second.
+    session.warmup = asyncio.create_task(supervisor.warm(ears.transcriber.reachable))
     return session.warmup
 
 

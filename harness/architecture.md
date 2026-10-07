@@ -244,7 +244,9 @@ would wait for it until the host closed the pipe.
   `mic/`, an owner pid in the file inside it, and a lock left by a dead session
   reclaimed by the next caller. Not queueing on the lock, which is worse than
   refusing — you would start talking and a window you are not looking at would take
-  the words.
+  the words. Known limitation: the lock is a `speak_core.exclusive.ExclusiveLock` without an
+  ownerless grace, so a session that claims it in the instant between another's
+  `mkdir` and its owner write takes it too; the transcription lock shares the window.
 
 - **A second, in-process lock guards `listen` against itself.** The
   microphone lock is re-entrant by pid, which is what makes reclaiming a dead owner's
