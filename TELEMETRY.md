@@ -1,155 +1,140 @@
 # Telemetry
 
-`speak` reports anonymous usage data so its author can tell where to spend effort next.
-It is on by default. Turning it off takes one command and no account.
+voicebox reports anonymous usage data so its author can tell where to spend effort. It
+is on by default, starts only after you have been shown a one-time notice, and turning it
+off takes one command and no account.
 
-```text
-/speak:telemetry off     # collect nothing, send nothing but the install ping
-/speak:telemetry local   # collect on this machine, send nothing but the install ping
-/speak:telemetry on      # the default
-/speak:telemetry         # show the current mode
-/speak:stats             # see everything this machine has collected
-```
+    /voicebox:telemetry off      collect nothing; send only an anonymous install count
+    /voicebox:telemetry local    keep the data on this machine; send only that count
+    /voicebox:telemetry on       the default
+    /voicebox:stats              see everything this machine has recorded
 
-From a terminal, `uv run` against the plugin's directory runs the same commands:
-
-```bash
-uv run --directory <plugin directory> speak-telemetry off
-uv run --directory <plugin directory> speak-stats
-```
-
-`SPEAK_TELEMETRY` set to `off` or `local` in your environment lowers the mode for this
-tool alone, while it is set. It never raises it: `SPEAK_TELEMETRY=on` does not undo an
-`off` you chose with the command. `DO_NOT_TRACK=1` goes further: nothing is collected and
-**nothing at all is sent**, not even the install ping, with no configuration needed.
+Outside Claude Code the same commands are `uv run --directory <plugin folder>
+voicebox-telemetry off|local|on` and `… voicebox-stats`. `VOICEBOX_TELEMETRY=off` or
+`local` in the environment lowers the setting for that process alone; it can never raise
+it above what you chose. `DO_NOT_TRACK=1` goes further: nothing is collected and nothing
+at all is sent, not even the install count.
 
 ## What it is for
 
-Three questions, and nothing beyond them:
+Four questions, and nothing beyond them:
 
-- **Is the neural voice worth its gigabyte on the machines people actually run?** Or is
-  the built-in `say` carrying most sessions?
-- **Which host is this running under?** Claude Code is not the only thing that speaks MCP,
-  and effort should follow the users who exist rather than the ones assumed.
-- **Do people keep using voice input, or try it once?** And when they interrupt, what kind
-  of sentence were they cutting off?
+1. **Which features are used, and do people come back?** Transcription, voice-overs and
+   reading aloud compete for the same effort.
+2. **How fast is each kind of job on each kind of machine?** The estimates voicebox shows
+   should be honest, and some machines may be too slow to support.
+3. **What fails, where, and why?** In a fixed set of reasons, by OS and version.
+4. **What shape are the inputs and outputs?** How long, how large, which codec, format,
+   options and voice — never a name and never content.
 
-## The install ping
+## The notice
 
-One request when the plugin first runs on a machine, and one when a new version first
-runs. It is sent whether telemetry is `on`, `local` or `off`, so that installs can be
-counted at all. It carries exactly three fields:
+The first time voicebox could send anything, it shows this, once (and `/voicebox:setup`
+prints it too). Until it has been shown, voicebox records nothing and sends nothing.
+Telemetry from a session that never surfaces a tool reply or runs `/voicebox:setup` is
+therefore lost, not deferred.
 
-| Field | Example | Why |
-|---|---|---|
-| `plugin_version` | `1.7.0` | which releases are installed |
-| `os` | `darwin` | which platforms to support |
-| `event` | `install` or `upgrade` | new installs apart from upgrades |
+    voicebox collects anonymous usage data: which features you use, how long jobs
+    take on your machine, why they fail, and the size and format of files (never
+    their names or contents, and never the text you synthesize).
 
-There is no install id or any other identifier in it, so two pings cannot be linked to
-each other or to the rest of this page's data. It says the same thing in every mode, so
-it does not reveal whether you turned telemetry off. The server adds one to a daily
-count per version, OS, event and country, and keeps nothing per request.
+      /voicebox:telemetry off     collect nothing; send only an anonymous install count
+      /voicebox:telemetry local   keep the data; send only an anonymous install count
+      /voicebox:stats             see your own
 
-The only thing kept on your machine is `ping.json` beside the telemetry config, holding
-the last version pinged. Under `DO_NOT_TRACK` the ping is never sent and that file is
-never written.
+    Details: https://github.com/danilogr/voicebox/blob/main/TELEMETRY.md
+
+Under `DO_NOT_TRACK=1` no notice is owed and none is shown.
+
+## The install count
+
+One request when voicebox first runs on a machine and one when a new version first runs,
+in every setting except `DO_NOT_TRACK`, so that installs can be counted at all. It carries
+exactly `plugin_version` (`1.0.0`), `os` (`darwin`, `linux` or `win32`) and `event`
+(`install` or `upgrade`): no identifier, so two of them cannot be linked to each other or
+to anything else, and nothing that says whether you turned telemetry off. The server adds
+one to a daily count per version, OS, event and country and keeps nothing per request.
+Only `ping.json`, holding the last version counted, is kept on your machine.
 
 ## What is sent
 
-With telemetry `on`, and only then: counts, timings and fixed vocabularies. Every field, exhaustively — this table is the whole
-of it, and the machine-checked version is `contract/v1/schema.remote.sql` in the
-[speak-telemetry](https://github.com/danilogr/speak-telemetry) repo, which is the only
-schema the server will accept.
+With telemetry `on`, and only then. This is every field; the machine-checked version is
+`contract/v1/schema.remote.sql` in the voicebox-telemetry repository, the only schema the
+server accepts (a copy is in `tests/contract/v1/`).
 
-**Once per install**
+**Once per install:** a random `install_id`; `first_seen_at`, `last_seen_at`;
+`plugin_version`; `disclosure_ver` (which notice you were shown); `language`, `timezone`
+and the current UTC offset (`utc_offset_min`); `os`, `os_version` (major and minor only)
+and `arch`; `cpu_model`, `cpu_count`, `ram_gb` (bucketed: 8, 16, 32, 64 or 128); `accel`
+and `accel_name` (Metal, CUDA, ROCm or none). `country` is added by the server from the
+network edge; your machine never sends it.
 
-| Field | Example | Why |
-|---|---|---|
-| `install_id` | a random UUID | tells a heavy user from many light ones |
-| `plugin_version` | `1.3.0` | which releases are in use |
-| `country` | `US` | derived at the network edge, never sent by your machine |
-| `language`, `timezone`, `utc_offset_min` | `en-US`, `America/New_York`, `-240` | which languages to support; the offset is the current one, so it follows daylight saving |
-| `os`, `os_version`, `arch` | `darwin`, `25.6`, `arm64` | major/minor only, never the patch |
-| `cpu_model`, `cpu_count`, `ram_gb` | `Apple M5`, `10`, `32` | RAM is bucketed, never exact |
-| `accel`, `accel_name` | `metal` | whether local models could use acceleration |
+**Once per session** (one per MCP server process): `session_id`, `started_at`,
+`ended_at`; `plugin_version`; `core_version` (speak-core); `nemo_version`
+(NeMo-Speech.cpp, when installed); `harness` and `harness_version` (Claude Code,
+Antigravity, …); `ffmpeg_present`.
 
-**Once per session**
+**Once per job** — a transcription, a voice-over, or one reading-aloud run:
 
-| Field | Why |
+| Field | What it says |
 |---|---|
-| `session_id`, `started_at`, `ended_at` | how long sessions run |
-| `tts_engine`, `asr_engine` | which engine is configured; `asr_engine` is always `nemo` (`listen_enabled` is retained but always true) |
-| `harness`, `harness_version` | which host is driving the plugin |
+| `job_id`, `session_id`, `install_id`, `kind` | which job, in which session, of which kind |
+| `started_at`, `ended_at`, `wall_ms` | when and how long |
+| `status`, `reason`, `stage` | `ok`, `empty`, `stopped`, `refused`, `failed` or `crashed`; for a refusal or failure one of a fixed set of reasons (`busy`, `input_missing`, `ffmpeg_missing`, `timeout`, …), and where it stopped (`convert`, `asr`, `synthesize`, `encode`, …) |
+| `engine`, `model` | what did the work: `nemo`, `say`, …; `magpie`, `nemotron-3.5` |
+| `server_warm` | whether the speech server was already running |
 
-A session is sent when it starts, even if nothing is said in it, and sent again with its
-`ended_at` by the next session.
+Transcriptions add the file's `source_bytes`, `audio_ms`, `audio_codec`, `has_video`,
+whether it was `converted` first and how long that took (`convert_ms`), model time
+(`asr_ms`), the options asked for (`diarize`, `language` — requested, never detected —,
+`translate`, `format`), and the output's `words` and `chars`. The schema has a `speakers`
+column; voicebox 1.0.0 does not fill it.
 
-**Once per sentence spoken or heard**
+Voice-overs add `input_kind` (text or file), `input_format` (plain or markdown), the
+spoken text's `chars`, `words` and `paragraphs`, how many `chunks` it was sent in and
+how many were done (`chunks_done`), the `voice` (a voice the model ships, or `custom` for
+any other name), model time (`synth_ms`), joining and encoding time (`encode_ms`), the
+output's `audio_ms`, `format` and `output_bytes`.
 
-| Field | Why |
-|---|---|
-| `seq`, `direction`, `occurred_at` | reconstructs the back-and-forth of a conversation; `occurred_at` is when the sentence finished playing, or its transcription finished |
-| `engine`, `model`, `voice`, `device_kind` | what produced it: the engine that actually spoke, so a sentence the built-in voice spoke because the neural server was down says `say`; `voice` is a voice name the plugin ships, or `custom` for any other; `device_kind` is a category, never a device name |
-| `intent` | what kind of sentence it was — a question, a recap, a finished task |
-| `words`, `chars`, `audio_ms` | how much was said, never *what* |
-| `queue_wait_ms`, `synth_ms`, `play_ms`, `asr_ms` | where the time goes: `queue_wait_ms` is the wait behind other sentences before synthesis started; `synth_ms` is synthesis, which `say` and custom commands do inside `play_ms` instead |
-| `status` | `ok`, `interrupted` (cut off while playing), `discarded` (dropped before it played), `failed`, `refused`, or `heard_nothing` |
-| `source_bytes`, `audio_codec`, `converted`, `diarize`, `format` | the shape of a transcribed file — its size, codec, whether it was converted, whether speakers were labelled, and the output format. Only on `transcribe` rows. Never the file's name, its path, or what was said |
+Reading-aloud runs add how many `sentences` were queued and played (`sentences_played`),
+their `chars`, the `voice`, `synth_ms`, the `audio_ms` actually played, and
+`fallback_sentences` (spoken by macOS `say` because the speech server was still starting).
 
 ## What is never sent
 
-**Not what you said. Not what Claude said. Not any audio.**
+**Not what you transcribe, not what you synthesize, not what is read aloud, and no
+audio.** Also never: file names or paths, repository or project names, environment
+variables, hostnames, usernames, error messages, or free text of any kind. Your IP
+address is not a field of anything above.
 
-Also never: file paths, repository or project names, environment variables, hostnames,
-usernames, your IP address, the name of your microphone, or any free text of any kind.
-
-This is not a promise, it is a property of the design. The server's schema has no column
-for any of it. The client keeps a richer local database — including transcripts, if you
-turn on recording — and what uploads is that table *with the content columns removed*. A
-build step derives the server schema from the local one by stripping every column tagged
-`-- LOCAL`, and a test fails if the two drift apart. An untagged new column breaks the
-build rather than quietly shipping.
-
-Run `SPEAK_TELEMETRY_DEBUG=1` and the plugin prints exactly what it would send, the ping
+This is a property of the design, not a promise. voicebox keeps a richer local database
+(`telemetry.db` in its state directory, `~/Library/Caches/voicebox/` on macOS): it also
+holds each job's error message, its source file's name and its output path, so that
+`/voicebox:stats` can show you your own failures. What uploads is that table **with those
+columns removed**: the server's schema is derived from the local one by stripping every
+column tagged `-- LOCAL`, and a test fails if the two drift apart.
+`VOICEBOX_TELEMETRY_DEBUG=1` prints exactly what would be sent, the install count
 included, instead of sending it.
 
-## Keeping your own recordings
+## Where it goes
 
-Separate, and off by default:
-
-```text
-/speak:telemetry record on
-```
-
-This keeps the audio of what **you** say on your own computer, so you can later improve
-speech recognition for your own voice. **Recordings never leave your machine** under any
-setting, and they use real disk space. `/speak:telemetry record off` stops it.
-
-## Where it goes, and for how long
-
-To `speak-telemetry.actionableintelligence.app`, a Cloudflare Worker, into a database
-Danilo Gasques controls. Not shared, not sold, not fed to advertising.
-
-Your IP address reaches Cloudflare, as it does for any website. It is used once to
-rate-limit abuse and discarded in the same request; only the two-letter country is kept.
+To `voicebox-telemetry.actionableintelligence.app`, a Cloudflare Worker, into a database
+Danilo Gasques controls. Not shared, not sold, not used for advertising. Your IP address
+reaches Cloudflare as it does for any website; the server never writes it to its
+database: it is used for rate limiting and discarded, and only the two-letter country is
+kept. Each install may store 100 rows a day (jobs plus sessions); past that the server
+answers normally and drops them, and voicebox does not retry.
 
 ## Deleting your data
 
-There is deliberately **no delete API** — an erasure endpoint on a public server is a
-standing invitation to erase other people's data.
-
-Email **danilo@gasqu.es** with your install id, which `/speak:telemetry --id` prints, and it
-will be deleted.
-
-That id is also the only thing that connects these rows to you. Nothing here records who
-you are, so without it, this data cannot be traced to a person — which is why the request
-has to carry it. Under GDPR Article 11 a controller who cannot identify you is not
-required to start collecting information in order to, and your rights attach when you
-supply the identifier yourself.
+There is deliberately no delete API — an erasure endpoint on a public server invites
+erasing other people's data. Email **danilo@gasqu.es** with your install id, which
+`/voicebox:telemetry --id` prints, and it will be deleted. That id is the only thing
+connecting these rows to you, which is why the request has to carry it.
 
 ## Changing your mind
 
-Nothing is retroactive in either direction. Turning telemetry off stops future sends
-other than the install ping; it does not delete what has already arrived — email for that. Turning it back on does not
-send a backlog older than what is still in the local database.
+Nothing is retroactive. Turning telemetry off stops future sends other than the install
+count; it does not delete what has arrived — email for that. Turning it back on sends
+only what is still in the local database. The setting is read when a session starts, and a job is
+recorded for the session that accepted it, so a change applies from the next session.

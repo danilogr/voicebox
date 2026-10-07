@@ -1,4 +1,4 @@
-# Design guidelines
+# <img src="../assets/voicebox-detailed.svg" width="28" height="28" alt="" valign="middle" /> Design guidelines
 
 > Conventions this repo follows: environment, naming, layering, errors, logging,
 > comments and tests. `AGENTS.md` holds the operating rules and wins on any conflict.
@@ -24,6 +24,9 @@ in the config and type-checks the untyped test suite as well, which reports hund
 of errors that are not the ones being looked for.
 
 Python 3.12+, pytest, ruff for lint and format, mypy for types.
+
+Entry points are the only readers of `os.environ`: `voicebox.__main__`,
+`voicebox.synthesize.worker.main`, `voicebox.telemetry.commands`.
 
 speak-core is a git dependency pinned by tag. To change it, work in a checkout beside this one with `[tool.uv.sources] speak-core = { path = "../speak-core", editable = true }`; a step may commit that while in progress, and ends pinned to a pushed tag.
 
@@ -55,10 +58,9 @@ needs no return or argument annotations — but a function nested inside one sti
 
 ## Naming and layering
 
-- Exception names end in `Error` (ruff `N818`). Three read better without it and
-  suppress the rule where they are defined, each with its reason: `MicrophoneBusy`,
-  `RecorderUnavailable`, `TranscriptionFailed`
-  rather than a failure.
+- Exception names end in `Error` (ruff `N818`). A few read better as states and suppress
+  the rule where they are defined, each with its reason: `JobBusy`, `ToolMissing`,
+  `ProbeFailed`, `ConversionFailed`, `Refused`.
 - Pure logic is separated from the device or socket that feeds it: a state machine
   that takes values, wrapped in a thin shell that does the I/O. The shell is where
   the untestable part lives, so keep it small.
@@ -69,13 +71,11 @@ needs no return or argument annotations — but a function nested inside one sti
 
 - `logging.getLogger(__name__)` per module. Lazy `%`-style arguments (ruff `G`), never
   an f-string inside a log call.
-- No `print()` in library code. The one exception is `talk.py`, where stdout *is* the
-  product: a slash command splices it into the prompt.
+- No `print()` in library code. Console scripts write to the streams they are given; a
+  detached worker's `main` prints only its usage line to stderr.
 - An error a user has to act on says what to do, not just what failed. An error that
   reaches the model travels as a `ToolError`, because the MCP SDK replaces raw
   exception text with a generic message.
-- Anything user-facing that could be mistaken for content gets a marker: `/talk`
-  prefixes failures with `speak:` so a transcript cannot be confused with an error.
 
 ## Comments and docs
 
@@ -94,7 +94,8 @@ needs no return or argument annotations — but a function nested inside one sti
 
 ## Tests
 
-- No network, no audio, no microphone. Every one of those is injected.
+- No network, no audio, no speech server: each is injected. The one exception runs this
+  machine's ffmpeg when it is installed, skipped when not.
 - A test must fail when the behaviour it names is removed. Check it: delete the
   behaviour and watch it go red. A test that passes either way pins nothing, and a
   green suite full of those is worse than a smaller honest one.

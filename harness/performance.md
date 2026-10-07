@@ -1,4 +1,4 @@
-# Performance
+# <img src="../assets/voicebox-detailed.svg" width="28" height="28" alt="" valign="middle" /> Performance
 
 > Measured figures and the hardware they came from. Update when a measurement is
 > retaken or a default changes because of one. Decisions that rest on these numbers
@@ -66,8 +66,9 @@ the baseline. The rule: the largest size whose worst passage stays within 5 poin
 baseline's worst, and whose audio length per character stays within ±25 % of the
 baseline (a skipped or repeated passage moves both). That is 1500 characters per
 request. Four times the slowest request at that size, at least a minute, is 199 s: the
-least any request waits (below). The estimate `synthesize` returns uses the median throughput at
-that size, 29.5 characters a second, plus 10 s when the server has to start first.
+least any request waits (below). The estimate `synthesize` returns uses the median
+throughput at that size, 29.5 characters a second, plus 10 s when the server has to start
+first.
 
 "Reads cleanly" here means no measurable regression against a noisy baseline, judged
 from transcripts alone; nobody listened to the audio. The baseline's worst is one
@@ -112,6 +113,12 @@ minutes, and none less than 199 s. A request that times out fails the job with r
 `timeout`, and is not retried. The time left that `job_status` reports is the characters still to speak at
 the job's overall throughput so far.
 
+## Transcription
+
+A transcription job runs `nemo-speech transcribe`, which loads the model per job, so its
+time includes the load. On the M5, cold: about 6.9x realtime with speakers labelled and
+9.5x without (`jobs/store.py`'s estimate uses these).
+
 ## Resident memory
 
 | Server | Once `/health` answers |
@@ -131,7 +138,7 @@ than starting one per session, and behind stopping it when the last session leav
 ## Disk
 
 The two models together are **1.4 GB**: MagpieTTS v2607 at 640 MB with its codec and
-the `nemotron-3.5-asr-streaming-0.6b` q8_0 transcription model at 707 MB. `/speak:setup`
+the `nemotron-3.5-asr-streaming-0.6b` q8_0 transcription model at 707 MB. `/voicebox:setup`
 pulls both, because the same server serves speech and transcription. The model cache
 is keyed by revision, so an install upgraded from 0.1.0 also keeps the v2602 MagpieTTS
 file (447 MB) until it is deleted by hand.
@@ -153,18 +160,3 @@ Metal synthesis on an M5 is silence, which is why `install-nemo.sh` requires 0.2
 A machine with neither Metal nor CUDA falls back to CPU under `auto`. Only the M5's
 CPU has been measured, but at that speed most sentences outrun `DEFAULT_TIMEOUT`
 (15 s) and are spoken by `say` instead.
-
-## Microphone warmup
-
-CoreAudio delivers exact zeros while an input primes. A Bluetooth earbud produced
-its first non-zero sample **630 ms** after the stream opened; a muted or disabled
-input never produces one at all. The deafness window is 1.5 s,
-which is a little over twice the slowest start measured — short enough that stepping
-past a dead default is not felt, long enough that a slow device is not mistaken for
-a dead one.
-
-Speech levels on the same microphone peaked around **0.21–0.31** RMS against a gate
-that calibrated to the **0.01** floor, so the working margin is an order of
-magnitude. The gate ceiling is **0.05**, which only binds in a room noisy enough
-that ambient x 3 exceeds it; at that point a quiet speaker would have little headroom,
-and no measurement has been taken in such a room.

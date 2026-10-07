@@ -1,358 +1,183 @@
-# Architecture
+# <img src="../assets/voicebox-detailed.svg" width="28" height="28" alt="" valign="middle" /> Architecture
 
-> System shape and the decisions behind it. Update after an agreed
-> architectural change. Keep decisions with their rationale (the "why").
+> System shape and the decisions behind it. Update after an agreed architectural
+> change. Keep decisions with their rationale (the "why").
 
 ## Overview
 
-`speak` is a Claude Code plugin that gives the agent a voice. It runs as an MCP
-server over stdio and exposes five tools — `speak`, `stop_speaking`, `list_voices`,
-`set_voice`, `speech_status` — so the model can say one short sentence out loud at the
-moments where a voice beats scrollback. Its single responsibility is turning a sentence
-into audible speech without ever blocking the agent and without letting two utterances
-overlap.
+voicebox is a coding-agent plugin for offline transcription, voice-overs and reading
+aloud. It runs as an MCP server over stdio (`voicebox-mcp`) with six tools —
+`transcribe`, `synthesize`, `job_status`, `read_aloud`, `reading_status`,
+`stop_reading` — and the commands `/voicebox:narrate`, `/voicebox:setup`,
+`/voicebox:telemetry` and `/voicebox:stats`. Everything runs on the machine, on NVIDIA
+NeMo-Speech.cpp.
 
-It also hears, unconditionally. A sixth tool, `listen`, records the user and
-returns a transcript, and the `/talk` slash command dictates a prompt instead of
-typing it. There are therefore two entry points into the same code: the long-lived
-MCP server (`__main__`) and a short-lived one-shot process (`talk`) that a slash
-command runs and whose stdout is injected into the user's message. Both transcribe
-against the same shared speech server that `speak_core.supervisor.NemoSupervisor` manages.
+Transcription and synthesis are **jobs**: the tool checks the request, records it, and
+starts a detached worker that owns it to the end, so a long job outlives the session
+that asked for it. Reading aloud is not a job: sentences go through the speech queue in
+the MCP server and play as they are queued.
 
-The engines, the supervisor, the playback queue, the speaker lock, the shared settings and the telemetry mechanism are [speak-core](https://github.com/danilogr/speak-core)'s, a git dependency pinned by tag; their design and the decisions behind them are in its `harness/architecture.md`. This document covers what this plugin builds on top.
+The engines, the supervisor of the shared speech server, the playback queue, the speaker
+lock, the shared settings and the telemetry mechanism are
+[speak-core](https://github.com/danilogr/speak-core)'s, a git dependency pinned by tag;
+their design is in its `harness/architecture.md`. This document covers voicebox.
 
 ## Components & boundaries
 
-- **`__main__`** — the composition root for the MCP server. Reads the environment,
-  builds every other component, and starts the transport. It must not contain speech
-  behaviour; the only logic it owns is which components to build at all, in
-  `build_ears` and `build_supervisor`, which `tests/test_composition.py` covers. Voice input added a second entry point, so the
-  boundary rule now names both: `__main__` and `talk` are the only modules that read
-  this plugin's configuration from `os.environ`, and neither installs a log handler
-  itself — both call `speak_core.runtime.configure_logging`. One other module touches the
-  environment at all: `speak_core.engines.say` reads `LANG` to filter `say -v '?'` by locale,
-  which is the platform's setting rather than the plugin's configuration.
-- **`settings.Settings`** — this plugin's settings: a `ServerSettings`, a `VoiceSettings`
-  read under `SPEAK_`, and the listening and transcription settings, under the same
-  rules.
-- **`server.create_server`** — the transport layer. Defines the tools inside a
-  factory that closes over its dependencies, so there is no module-level mutable state
-  and tests can build a server over fakes. It must not contain speech logic; it
-  normalizes, delegates, and formats the reply. `listen` is defined only when the
-  factory is given an `Ears`, which bundles the recorder, the transcriber, the
-  microphone lock, the capture limits and the recording cue into one presence check.
-- **`cue`** — the three sounds that bracket one recording: open, close, and the error
-  tone that replaces the close when nothing was captured. Played through the resolved
-  player with the same detached-spawn helper the speech queue uses. It must not know
-  why the microphone is opening, and it must never fail a recording: a missing sound
-  file, a missing player or a non-zero exit is a debug log and nothing else.
-- **`capture`** — the microphone. `SilenceTracker` is a pure state machine fed block
-  energies and decides when an utterance has ended; `MicrophoneRecorder` is a thin
-  shell that opens a `sounddevice` stream and feeds it. The split is what lets every
-  capture path be tested without audio hardware.
-- **`miclock`** — one holder at a time for the single microphone, elected the same
-  way the speech server's start lock is. It must not know what the microphone is for.
-- **`listening`** — what both of this plugin's entry points build the same way for
-  listening: the capture limits, the microphone, the cue and the transcription timeout.
-- **`talk`** — the `/talk` one-shot: hold the shared server for the life of the
-  process, record, transcribe, print. It is the only module besides `__main__` that
-  reads the plugin's configuration from the environment, and the only one where
-  printing to stdout is the point.
-- **`transcribe`** — file transcription. `service` holds the two tools' logic,
-  `probe` and `prepare` read and convert media, `jobs` keeps one JSON record per
-  job, and `worker` is the detached process that owns a job end to end. It shares
-  no state with the speech server: a transcription cannot stall speech.
+- **`__main__`** — the composition root: reads the environment, builds everything, runs
+  stdio. Entry points are the only modules that read `os.environ`: `__main__`,
+  `synthesize.worker.main` (the server settings it inherited, so an API key is never
+  written to disk) and `telemetry.commands`. None installs a log handler except through
+  `speak_core.runtime.configure_logging` or the workers' own `basicConfig`.
+- **`config.Settings`** — the shared `ServerSettings`, a `VoiceSettings` read under
+  `VOICEBOX_` (default engine `nemo`), the transcription settings and the state dir.
+- **`server.create_server`** — the transport: tools defined inside a factory that closes
+  over its dependencies, no module-level state. It normalises, delegates and formats; it
+  holds no job or speech logic. It also serves `commands/narrate.md` as the `narrate`
+  prompt.
+- **`jobs/`** — what every job kind shares: `store` (one JSON record per job, a subclass
+  per kind), `lock` (one job at a time), `desk` (claiming, launching a worker,
+  recognising a dead one) and `status` (`job_status`).
+- **`transcribe/`** — `service` checks a file and starts `worker`, which converts with
+  ffmpeg when needed and runs `nemo-speech transcribe`.
+- **`synthesize/`** — `service` checks a request and stages the spoken text; `worker`
+  splits it (`text`), synthesizes each chunk over HTTP, joins (`audio`), encodes
+  (`encode`) and writes the file. `limits` holds the measured request limits.
+- **`narration`** — one telemetry row per reading-aloud run, fed by the queue's
+  `on_finish`.
+- **`programs`** — running ffprobe and ffmpeg with timeouts.
+- **`telemetry/`** — see below.
+
 ## Data model
 
-Almost nothing is persistent.
-
-- **Session state** (in memory, per process): the active voice and rate, whether the
-  voice is re-rolled per utterance, the warmup task, and whether this session has
-  registered with `speak_core.supervisor.NemoSupervisor`. Claude Code runs one server process
-  per session, so this is already isolated from every other window. Deliberately never
-  written to disk.
-- **Plugin state** (on disk, per machine), under `SPEAK_STATE_DIR` (`<cache>/speak`):
-  - `mic/owner` — the pid of the session currently recording. Its directory is the
-    lock; the file says who holds it, so a lock left by a dead session is reclaimed.
-  - `transcribe/`, `transcriptions/` — background transcription jobs and their output.
-
-Voice input is not persistent by default. A recording lives in memory as WAV bytes for
-the length of one transcription and is discarded. It is written to disk only when the user
-turns recording on (`record: true` in the telemetry config), in which case each recording is
-kept locally beside its utterance row so a user can later train a model on their own voice.
-Recordings are never uploaded under any setting — the server schema has no column for them.
+- **Session state** (in memory): whether this session registered with the supervisor,
+  whether it has checked the client's `client_info`, the open reading-aloud run.
+- **Plugin state** under `VOICEBOX_STATE_DIR` (`<cache>/voicebox`):
+  - `job/owner` — the one-job lock: the pid of the session that claimed it, then of the
+    worker that took it over.
+  - `jobs/<job_id>.json` — every job's record, written by the tool once and by the
+    worker after that; `.log` (the worker's stderr), `.pid` (the pid the spawn returned),
+    and while a job runs, `.wav` (transcription's converted audio), `.txt` (synthesis's
+    staged text) and `.d/` (synthesis's chunk WAVs). Records outlive their job by two
+    weeks.
+  - `telemetry.db` — the local telemetry store.
+- **Consent** in `<config>/voicebox/` (`~/Library/Application Support/voicebox`):
+  `telemetry.json`, `ping.json`, `notice.json`.
+- **Shared state** in `<cache>/speak-core/`: the speech server's lock, pid record and
+  client registry, and the speaker lock — speak-core's.
 
 ## Telemetry
 
-`speak/telemetry/` is this plugin's part of the telemetry, on top of `speak_core.telemetry`
-(identity, consent, the machine probe, the store, shipping and the install ping). The rest
-of the plugin only reaches it through two seams: the queue's `on_finish` callback (one `UtteranceOutcome` per
-utterance that leaves it) and a `TelemetrySession` handed to `create_server` and to
-`talk.dictate`. Neither the queue nor the server knows what a `TelemetrySession`
-does with what it is given, matching the existing rule that the queue must not know
-which engine produced an utterance.
+`telemetry/` is voicebox's part, on `speak_core.telemetry`:
 
-- **`contract.py`** — this plugin's schema; a test checks its column lists against the
-  SQL, including every `-- LOCAL` column.
-- **`session.py`** — turns queue outcomes and listen/talk attempts into stored rows.
-  Every public method catches its own failures: a dead telemetry backend has to be
-  indistinguishable from a healthy one.
-- **`compose.py`** — this plugin's `build()`: `start_install`, then its own `sessions`
-  row, then the `TelemetrySession`. Shared by `__main__` and `talk`.
-- **`stats.py`** — `speak-stats`: `stats.render` is this plugin's plain SQL over its
-  tables, run through `speak_core.telemetry.report`, which finds the store and prints the
-  install id and mode.
-- **`commands.py`** — the two console scripts; the only telemetry module that reads
-  `os.environ` and `sys.argv`.
-
-Shipping and the ping run once per session, scheduled from `create_server`'s lifespan
-rather than from `__main__.build()` itself: `build()` runs before the event loop
-starts, so nothing there can call `asyncio.create_task`. `/talk` sends the ping
-alongside its recording but never ships; the next MCP session ships its rows.
-
-The lifespan's shutdown is what closes a session row, so `__main__.serve_stdio`
-turns SIGTERM and SIGHUP into a cancellation that unwinds through it, as Ctrl-C does.
-Left at their defaults, either signal kills the process before any of it runs. Once
-that shutdown has run, `__main__.run` ends the process with `os._exit`: the MCP
-transport reads stdin on a non-daemon thread no signal interrupts, and a normal exit
-would wait for it until the host closed the pipe.
+- **`contract.py`** — the `jobs` row table, the schema (`schema.sql`, vendored byte for
+  byte from voicebox-telemetry's `contract/v1`), the identity and the store's path.
+- **`rows.py`** — `job_row`, the one function every row goes through: it clamps numbers
+  to the contract's ceilings, drops strings that do not fit their pattern, records
+  unknown voices as `custom`, and keeps `reason` and `stage` only where the contract
+  allows them. A caller's bug (a field of another kind, a status the kind cannot have)
+  raises instead.
+- **`jobs.py`** — a finished job's row, from its record; `record.py` stores it.
+- **`session.py`**, **`compose.py`** — one session's row and connection.
+- **`notice.py`** — the first-run notice's text and the once-per-session hand-out.
+- **`stats.py`**, **`commands.py`** — `voicebox-stats` and `voicebox-telemetry`.
 
 ## External dependencies
 
-- **`mcp`** — the official MCP SDK. Provides the stdio transport, protocol negotiation,
-  tool-schema generation from type hints, and the client used by the end-to-end tests.
-- **`speak-core`** — the shared speech library, `speak-core @ git+https://github.com/danilogr/speak-core@<tag>`.
-- **`sounddevice`** — the microphone binding, and the only native-wheel dependency
-  here. Imported inside the recorder rather than at module scope, so a machine without
-  a working PortAudio still runs the speech half of the plugin.
-- **`uv`** — environment and dependency management, and the launcher. Must be
-  resolvable at startup; `scripts/speak-mcp` finds it.
-- **macOS `say`** — the default engine, and the fallback whenever the speech server
-  cannot be reached. macOS-only, which is the one part of the plugin that is: on any
-  other platform it is reported once at startup, and `SPEAK_ENGINE=nemo` or
-  `SPEAK_ENGINE=command` is the way through.
-- **A WAV player** — discovered, not assumed: `afplay`, PowerShell's `SoundPlayer`, or
-  one of `paplay`, `aplay`, `ffplay`, `play`, `mpv`. Not a hard dependency; with none
-  present the cues are skipped and the `nemo` engine speaks through the fallback rather
-  than writing audio nothing can play.
-- **The cue sounds** — synthesised by `scripts/make-cues.py` and committed under
-  `src/speak/assets`. Not taken from the host operating system: the paths differ per
-  platform, and shipping another vendor's audio is not ours to do.
-- **NVIDIA NeMo-Speech.cpp** (https://github.com/NVIDIA/NeMo-Speech.cpp, optional) — the
-  local neural speech server: MagpieTTS for speech, Nemotron 3.5 for recognition.
-  Installed by `speak-core-setup` and managed by `speak_core.supervisor.NemoSupervisor`. Not vendored: it is a
-  per-platform binary plus both models, which is over a gigabyte of download. Sizes
-  are in `performance.md`.
+- **NVIDIA NeMo-Speech.cpp** (https://github.com/NVIDIA/NeMo-Speech.cpp) — the local
+  speech stack voicebox exists to wrap: MagpieTTS for speech (reading aloud, voice-overs)
+  and Nemotron 3.5 for recognition (transcription, through the `nemo-speech transcribe`
+  CLI). Installed by `speak-core-setup` (`/voicebox:setup`); its server is shared by every
+  plugin built on speak-core and run by speak-core's supervisor.
+- **ffmpeg / ffprobe** — probing and converting media for transcription; m4a and mp3
+  voice-overs.
+- **`mcp`** — the MCP SDK: stdio transport and tool schemas.
+- **`speak-core`** — `speak-core @ git+https://github.com/danilogr/speak-core@<tag>`.
+- **`uv`** — environment and launcher; `scripts/voicebox-mcp` finds it.
 
 ## Key decisions (with rationale)
 
-- **The wire carries no plugin name.** Contract v1 fixes the ping at three fields
-  (`plugin_version`, `os`, `event`) and the transport sends no user agent, so a backend
-  cannot tell one plugin's ping from another's. Each plugin has its own telemetry
-  Worker, so nothing needs splitting by product. A plugin's identity
-  (`TelemetryIdentity`) steers only the client: its variables, config directory,
-  endpoint and disclosure version.
+- **One job at a time, whatever its kind.** Transcription and synthesis contend for the
+  same accelerator, and two at once would each run slower than one after the other. One
+  lock (`<state>/job`) covers both; a second call is refused at once with the running
+  job's id rather than queued, so the answer is immediate. The lock is not re-entrant
+  (the session claims it for a worker that does not exist yet) and waits out an ownerless
+  directory for two seconds before reclaiming it, so a session mid-claim is never robbed.
+  An in-process gate in the server closes the window between a claim and the worker's
+  takeover. Rejected: a queue of jobs, which turns "busy" into a wait nobody asked for.
 
-- **The when-to-speak policy lives in the `speak` tool description.**
-  A tool description is always in the model's context at the moment the choice is made.
-  Not a hook or a skill, neither of which can add a callable tool or is guaranteed
-  to be read at that moment.
+- **A job is owned by a detached worker, and the record is the source of truth.** A
+  three-hour recording is minutes of work and a long voice-over more; nothing should
+  depend on the asking session staying open. The tool writes the record once; the worker
+  writes every later version; status reads the record and turns a dead worker's job into
+  `crashed`, using the pid sidecar the spawn wrote so a worker that died at once is
+  noticed at once.
 
-  The closing one-line recap is part of that policy and lives in the same place, for the
-  same reason plus one more: a `Stop` hook receives a shell command and no view of the
-  turn, so it can play a fixed sound but cannot say what changed. The hook types that
-  could summarise — `prompt` and `agent` — are restricted to tool events. Only the model
-  can write the recap. Nor per-user memory or `AGENTS.md`, which would make
-  the plugin's own behaviour depend on machine-local state that does not travel with it.
+- **Job ids are uuid4s**, because the store's id is telemetry's `job_id`, the contract's
+  idempotency key. Whoever ends a job records its row, insert-if-absent: the worker, the
+  tool for a refusal, or any process that finds a dead worker (including the sweep every
+  session runs at start) — so a crash found twice is one row.
 
-- **Voice and rate are per connection and never persisted.** One server
-  process per session means a plain attribute is already isolated. Not a
-  machine-wide voice file, which would leak one window's choice into every other.
+- **A job's telemetry belongs to the session that accepted it.** The record carries that
+  session's database path and ids, so a worker that outlives its session still files its
+  row there. The setting is read once per session, so a change applies from the next one.
 
-- **Dependencies are injected, and the server is built by a factory.**
-  `create_server` closes over its engine, queue, and `speak_core.supervisor.NemoSupervisor`; the queue takes its
-  process launcher, and `NemoSupervisor` its spawn, liveness, and kill callables. This is
-  what lets the suite cover the real code paths with no audio, no sockets, and no
-  speech server. Not module-level singletons, which would force monkeypatching.
+- **synthesize has no fallback.** A voice-over that changes voice halfway is worse than
+  an error, so it calls speak-core's `NemoSynthesizer` directly with its own per-request
+  timeout and fails with a named reason, where reading aloud falls back to `say`. NeMo is
+  required at call time: the server answers, or its binary resolves and voicebox may
+  start it.
 
-- **Deliberate tool failures raise `ToolError`.** The SDK withholds a raw
-  exception's text from the model and sends a generic message instead, which would turn
-  "unknown voice X; available: …" into unusable feedback. `ToolError` carries the
-  message through.
+- **No text is ever dropped, and chunk size is measured.** One request must finish inside
+  its timeout and long inputs may read worse, so the text is sent in chunks; the size is
+  the largest that read back as cleanly as single sentences on this machine
+  (`performance.md`). Chunks follow paragraphs, then sentences, clauses and words; a word
+  longer than a chunk is cut, never dropped (so text without spaces is cut at the size
+  limit). Markdown loses only its markup, list numbers included; fenced code is skipped
+  whole, because code read aloud is noise in a voice-over (as `/voicebox:narrate`
+  already skips it).
 
-- **A random session voice is resolved lazily, not at startup.** A
-  speech server reports no voices until it has warmed up, so rolling at construction
-  would always fall back to the default. The roll happens on first use and retries
-  until the engine can answer. Per engine, the eligible pool differs: `nemo` uses every
-  speaker the model reports, while `say` reports mostly novelty and legacy voices and so
-  draws from a curated natural-voice list, narrowed to what is actually installed.
-  `SPEAK_VOICE_POOL` overrides both and is taken at its word, so it also works with an
-  engine that reports no names at all.
+- **A request's timeout follows the machine.** The speech server finishes a request its
+  client gave up on, so a retry queues behind work nobody will use. Each request may take
+  four times what the slowest pace this job has shown would need, bounded below by the
+  Metal figure and above by the CPU backend's pace and 45 minutes; a timeout fails the
+  job and is not retried (`performance.md`).
 
-- **Shutdown silences the queue before tearing down its worker.** The
-  worker task owns the running child process, so cancelling it first drops the handle
-  and leaves the machine talking after the session is gone. Stopping the queue first
-  terminates the child while it is still tracked.
+- **A voice-over never overwrites a file.** An explicit output that exists is refused; a
+  default one that exists gets the job id in its name. The file is written beside its
+  final path and renamed into place, so nobody finds half of it.
 
-- **stdout is the protocol channel.** All logging goes to stderr, and the
-  log handler is installed in one place. A stray `print` in library code desynchronizes
-  the session, so library modules use `logging.getLogger(__name__)` only.
+- **The worker registers with the supervisor for its whole life.** A session ending
+  elsewhere would otherwise stop the shared server mid-job; it starts the server through
+  `NemoSupervisor.warm`, which never replaces one already answering.
 
-  `/talk` is the exception that proves it: its stdout is a prompt, not a protocol,
-  and a failure there is printed to stdout as well as stderr. `commands/talk.md`
-  branches on a line beginning `speak:`, and only stdout is certainly injected —
-  whether a slash command's `!` capture carries stderr from a non-zero exit is not
-  this plugin's to guarantee, and if it does not, stderr alone leaves the model an
-  empty transcript under an instruction to act on it as the user's request. The
-  prefix is what keeps the stdout copy from being read as speech.
+- **Reading aloud goes through the core queue and the speaker lock.** Sentences from
+  every plugin on speak-core interleave rather than overlap, and `stop_reading` ends a
+  wait for the speakers at once. `read_aloud` returns at once; `/voicebox:narrate` paces
+  itself in rounds checked with `reading_status`, so a "stop" loses seconds.
 
-- **`.mcp.json` launches `/bin/sh scripts/speak-mcp` rather than `uv`.**
-  `/bin/sh` is an absolute path present on every target system, so the launch has no
-  PATH dependency; the shim then finds uv via `$SPEAK_UV`, the PATH, and the locations
-  uv's installers use. Not invoking `uv` directly, which fails under any parent
-  that does not source the user's shell profile.
+- **`/voicebox:narrate` is also an MCP prompt.** Claude Code reads `commands/*.md`; every
+  other MCP client sees only what the server offers. Serving the same file keeps one copy
+  of the instruction.
 
-- **`listen` drains the speech queue before opening the microphone.**
-  `speak` returns immediately by design, so a question is usually still playing when
-  the next tool call runs, and without the drain the recording captures the agent's
-  own voice. `speak_core.queue.SpeechQueue.drain()` exists for this and waits out synthesis as well as
-  playback, and it waits as long as utterances keep finishing: one spoken answer is
-  several of them, and each costs its synthesis as well as its audio, so a batch runs
-  for minutes of legitimate work. Only a stall - nothing finishing inside a minute -
-  ends the wait, and then the call is refused rather than recorded. Our own voice handed
-  back as the user's answer is a fabricated request the model acts on, where a refusal
-  can simply be retried.
-  Not a combined `ask(question)` tool, which duplicates `speak` to buy only the
-  ordering the drain already gives.
+- **Nothing is collected or sent before the first-run notice has been shown.** It is
+  appended once to the first tool reply of a session (with an instruction to show it word
+  for word) and printed by `/voicebox:setup`. Not collecting before it also keeps the
+  first install count an `install`, which the ping decides from the consent file
+  collecting would create. A session that surfaces neither loses its telemetry.
 
-  `/talk` has none of this and cannot: it is a separate process with no handle on
-  the session's queue, and a cross-process "is anything playing" signal costs more
-  than the problem is worth. So a `/talk` started mid-sentence records the agent's
-  voice, and `commands/talk.md` says to act on the result as the user's request.
-  Documented in the README as a thing to wait out rather than engineered around.
+- **A refusal is recorded only for a closed-set reason.** An argument the model only has
+  to give differently is answered and not counted; it says nothing about voicebox.
 
-- **Recording stops on silence, not on a keypress.** Neither entry point
-  has a terminal: the MCP server owns stdin for the protocol, and a slash command's
-  bash output is captured. There is no key to press, so silence is the only available
-  end-of-turn signal. The gate is calibrated from the room's own ambient level over
-  the first 300 ms rather than fixed, because a fixed threshold fails on a quiet
-  microphone and in a noisy room alike.
+- **A build that is not a release sends nothing.** The contract takes `major.minor.patch`
+  versions only; a development build collects locally and logs that it will not send,
+  rather than having every request refused.
 
-- **The microphone is arbitrated by a lock, and contention fails fast.**
-  There is one microphone and any number of sessions; two recordings at once produce
-  garbage in both. The election is `speak_core.supervisor.NemoSupervisor`'s, reused: an atomic `mkdir` on
-  `mic/`, an owner pid in the file inside it, and a lock left by a dead session
-  reclaimed by the next caller. Not queueing on the lock, which is worse than
-  refusing — you would start talking and a window you are not looking at would take
-  the words. Known limitation: the lock is a `speak_core.exclusive.ExclusiveLock` without an
-  ownerless grace, so a session that claims it in the instant between another's
-  `mkdir` and its owner write takes it too; the transcription lock shares the window.
+- **Deliberate tool failures raise `ToolError` or return a sentence.** The SDK hides a raw
+  exception's text from the model; a refusal the model can act on travels as text.
 
-- **A second, in-process lock guards `listen` against itself.** The
-  microphone lock is re-entrant by pid, which is what makes reclaiming a dead owner's
-  lock possible but means it does not separate two calls inside one session: both
-  would acquire it, and the first to finish would release the cross-process lock while
-  the other was still recording. `listen` therefore also holds an `asyncio.Lock` and
-  refuses a concurrent call rather than queueing it, so the answer is immediate.
+- **stdout is the protocol channel.** All logging goes to stderr through one handler;
+  the detached workers log to their job log.
 
-- **Capture uses the `sounddevice` package rather than an ffmpeg
-  subprocess.** It is the first native-wheel dependency here, and it is what makes
-  voice input work off macOS; an `avfoundation` command line would not. The import is
-  inside the recorder so a machine without a working PortAudio still gets speech.
-  Not ffmpeg, which is one more thing to install and macOS-specific in this use.
-
-- **A denied microphone arrives as silence, not as an error.** macOS opens the stream
-  and delivers zeroed samples rather than raising, so there is no error to report and
-  no way to distinguish a denied input from a muted one at the API. Both read as exact
-  digital silence, which the deafness check treats as a muted device and names as such
-  — permission is one of the causes that message lists. "Heard nothing" is reserved for
-  a live microphone whose gate never opened, so the two remedies stay separate.
-
-- **Whether anyone spoke is recorded by the tracker, not inferred from
-  the terminal state.** `SilenceTracker.feed` checks the cap before the start
-  timeout, so a recording of an empty room ends CAPPED rather than SILENT whenever
-  the cap is the shorter limit — which `listen(max_seconds=8)` produces against the
-  default 10 s timeout, and `max_seconds` is a parameter the model chooses. Treating
-  CAPPED as speech would send room tone to the transcriber, and a transcription model
-  given silence reliably emits a stock phrase: a fabricated answer for `listen`, and an
-  injected prompt for `/talk`, whose command file says to act on it as the user's
-  request. `Recording.has_speech` is therefore the fact that the gate opened, carried
-  from the tracker. Clamping the start timeout to the cap is not enough: it narrows the
-  window but still lands on CAPPED when the two are equal.
-
-- **The microphone gate is clamped from above as well as below.**
-  Calibration averages the first 300 ms, and nothing cues the user to wait, so
-  talking straight away is the ordinary first run rather than a corner case. Without an
-  upper clamp the gate lands near three times speech level, above anything a microphone
-  produces, and the recording ends SILENT at the start timeout with nothing to show for
-  it. A gate that is too low costs a longer recording; one that is too high loses the
-  utterance and misdirects the user.
-
-- **The default input is tried first, and a silent device is stepped
-  over.** A stream of exact zeros is not a quiet room: a live microphone always carries
-  a noise floor, so digital silence means a muted or disabled input. The OS default
-  leads the search, so the device chosen in system settings wins on the first recording
-  of every session; whatever answers is kept for the rest of the session, in memory
-  only. Not persisting the choice, which would let a remembered device silently
-  override the setting the user can see. A device is skipped only for exact silence,
-  never for being quiet, or a pause would cascade through every input at ten seconds
-  each.
-
-- **Deafness is judged on its own window, not the calibration window.**
-  CoreAudio hands over exact zeros while an input primes, and a Bluetooth microphone
-  can take most of a second, so a 300 ms verdict rejects a working device that is
-  merely slow. A device gets 1.5 s to produce anything; calibration then runs from its
-  first real sample, which also keeps priming silence out of the ambient average — a
-  gate diluted by zeros lands at the floor, and in a noisy room a floor-level gate
-  opens on the room and never closes.
-
-- **A word spoken before the gate arms starts the utterance.** Calibration runs for
-  300 ms from the first real sample, and a one-word answer can be over before it ends.
-  Averaging that voice into the ambient puts the gate above the speech it exists to
-  detect, and the blocks are already buffered, so a block at or above the ceiling ends
-  calibration instead: the gate takes the floor and the utterance begins there. The
-  ceiling is the dividing line because no room delivers a block that loud, while a noisy
-  room can still push the computed gate above it.
-
-- **An empty capture ends on a different sound.** Recording stops on
-  silence whether or not anyone spoke, so without a distinct tone the two are
-  indistinguishable until the transcript fails to arrive. It replaces the closing cue
-  rather than following it: "got it" then "that failed" is worse than only the second.
-
-- **The cue sounds ship with the plugin, and the player is resolved.** A path into a
-  system sound directory or a fixed player binary would tie playback to one operating
-  system, while the microphone half is portable. Generated sounds are reproducible and
-  carry no one else's assets; a resolved player keeps playback a subprocess, which the
-  queue needs because it stops an utterance by terminating it.
-
-- **Conversation mode is served as an MCP prompt, from its command file.** Claude Code
-  reads `commands/*.md` itself; every other MCP client sees only what the server
-  offers. The `converse` prompt serves that same file with its frontmatter removed, and
-  takes its description from the frontmatter, so both have one copy whichever app asks.
-  It is read once at startup, like the tool descriptions, and a checkout without the
-  file loses the prompt and nothing else. It is offered only when `listen` is
-  registered, because its instruction is to call it. `/talk` stays a slash command: it
-  records before the user's message exists, and a prompt handler blocked on a
-  microphone for seconds is what a client's timeout cuts off.
-
-- **The microphone is cued open and cued shut, and the opening cue is
-  awaited.** Nothing else told the user the microphone was open; `/talk` is the acute
-  case, where you press enter and have no way to tell whether to talk now or in two
-  seconds. The closing cue is not decoration either: recording ends on silence rather
-  than on a keypress, so without it you never learn when the gate decided you had
-  finished. Both are awaited to completion. That is a correctness requirement for the
-  opening one and not merely tidiness: `SilenceTracker` calibrates its gate from the
-  first 300 ms of audio, so a chime still sounding when the stream opens is averaged
-  into the ambient level, sets the gate above what a voice reaches, and ends the
-  recording in silence — the failure the upper clamp was added to survive. The clamp
-  stays as the backstop; the cue is not allowed to lean on it. The end cue is awaited
-  too, because the latency costs nothing next to the transcription that follows.
-
-  The cues bracket the recording alone: they sound after the microphone lock is held
-  and the speech server has answered, so a refused or unserviceable `listen` stays
-  silent, and the closing one sounds when recording stops rather than when the
-  transcript arrives. A cue is a convenience and a recording is not, so a missing
-  sound file, a missing player, or a player that exits non-zero degrades to a debug
-  log. Not playing the cue without awaiting it, which is exactly the
-  calibration bug above; and a cue on only one end, which leaves the more useful half
-  of the question — am I still being recorded? — unanswered.
+- **`.mcp.json` launches `/bin/sh scripts/voicebox-mcp`**, which finds `uv` itself, so a
+  parent with a bare `PATH` still starts the server.
