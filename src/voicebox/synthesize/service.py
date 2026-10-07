@@ -14,7 +14,7 @@ from pathlib import Path
 from speak_core.engines.asr import Liveness
 
 from voicebox.config import Settings
-from voicebox.jobs.desk import Desk, busy_message, claim, duration, launch
+from voicebox.jobs.desk import Desk, busy_message, claim, duration, launch, record_unstarted
 from voicebox.jobs.lock import BUSY
 from voicebox.jobs.store import RUNNING, SynthesisJob, new_job_id
 from voicebox.programs import FFMPEG_REMEDY
@@ -122,7 +122,11 @@ async def start(
             )
         )
 
-    source = Path(request.path).expanduser() if request.path is not None else None
+    try:
+        source = _expanded(request.path) if request.path is not None else None
+    except RuntimeError as error:
+        refuse("input_missing", {}, None)
+        return f"cannot resolve the path {request.path}: {error}"
     try:
         prepared = await _prepare(speech, settings, request, source, job_id)
     except Refused as refusal:
@@ -134,14 +138,6 @@ async def start(
     except BUSY:
         refuse("busy", prepared.shape, source)
         return busy_message(desk)
-    text_path = desk.jobs.text_path(job_id)
-    try:
-        text_path.parent.mkdir(parents=True, exist_ok=True)
-        text_path.write_text(prepared.text, encoding="utf-8")
-    except OSError as error:
-        lock.release()
-        return f"could not start synthesis: {error}"
-
     job = SynthesisJob(
         job_id=job_id,
         state=RUNNING,
@@ -163,6 +159,15 @@ async def start(
         paragraphs=prepared.paragraphs,
         cold_start=prepared.cold_start,
     )
+    text_path = desk.jobs.text_path(job_id)
+    try:
+        text_path.parent.mkdir(parents=True, exist_ok=True)
+        text_path.write_text(prepared.text, encoding="utf-8")
+    except OSError as error:
+        lock.release()
+        desk.jobs.discard_artifacts(job_id)
+        record_unstarted(desk, job, error)
+        return f"could not start synthesis: {error}"
     argv = [sys.executable, "-m", "voicebox.synthesize.worker", str(settings.state_dir), job_id]
     failure = await launch(desk, lock, job, argv)
     if failure is not None:
@@ -235,6 +240,11 @@ async def _prepare(
     )
 
 
+def _expanded(raw: str) -> Path:
+    """`~` and `~user` expanded; raises RuntimeError for a home that cannot be found."""
+    return Path(raw).expanduser()
+
+
 def _read(source: Path, shape: dict[str, object]) -> str:
     if not source.is_absolute():
         raise Refused(
@@ -262,7 +272,14 @@ def _output(
 ) -> Path:
     suffix = f".{request.format}"
     if request.output is not None:
-        output = Path(request.output).expanduser()
+        try:
+            output = _expanded(request.output)
+        except RuntimeError as error:
+            raise Refused(
+                "output_unwritable",
+                f"cannot resolve the output path {request.output}: {error}",
+                shape,
+            ) from None
         if not output.is_absolute():
             raise Refused("output_unwritable", f"output must be an absolute path: {output}", shape)
         if output.suffix.lower() in AUDIO_SUFFIXES and output.suffix.lower() != suffix:
@@ -272,7 +289,7 @@ def _output(
                 "change one of them",
                 shape,
             )
-        if output.exists():
+        if _taken(output):
             raise Refused(
                 "output_unwritable",
                 f"{output} already exists, and voicebox never overwrites a file; choose "
@@ -288,11 +305,28 @@ def _output(
         )
     else:
         output = source.with_suffix(suffix)
-        if output.exists():
+        if _taken(output):
             output = source.with_name(f"{source.stem}.{job_id[:8]}{suffix}")
+            if _taken(output):
+                raise Refused(
+                    "output_unwritable",
+                    f"{output} already exists, and voicebox never overwrites a file; "
+                    "give output with another path",
+                    shape,
+                )
     if not output.parent.is_dir() or not os.access(output.parent, os.W_OK):
-        raise Refused("output_unwritable", f"cannot write audio to {output.parent}", shape)
+        raise Refused(
+            "output_unwritable",
+            f"cannot write audio to {output.parent}; give output with a path elsewhere",
+            shape,
+        )
     return output
+
+
+def _taken(path: Path) -> bool:
+    """Something is at `path`, a dangling symlink included: writing there would follow
+    the link and create what it points at."""
+    return path.exists() or path.is_symlink()
 
 
 async def _voice(

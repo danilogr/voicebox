@@ -184,3 +184,47 @@ async def test_a_running_job_of_any_kind_makes_it_busy(tmp_path):
     )
     assert "one job at a time" in answer
     assert JobStore(tmp_path / "state").recent() == []
+
+
+async def test_a_dangling_symlink_at_the_output_is_refused_not_followed(tmp_path):
+    target = tmp_path / "elsewhere.wav"
+    link = tmp_path / "out.wav"
+    link.symlink_to(target)
+    answer = await reply(tmp_path, request(text="Hello.", output=str(link)))
+    assert "already exists" in answer and not target.exists()
+    assert JobStore(tmp_path / "state").recent() == []
+
+
+async def test_a_dangling_symlink_at_the_default_output_is_stepped_around(tmp_path):
+    md = source(tmp_path)
+    (tmp_path / "notes.wav").symlink_to(tmp_path / "nowhere.wav")
+    await reply(tmp_path, request(path=str(md)))
+    job = the_job(tmp_path)
+    assert job.output == str(tmp_path / f"notes.{job.job_id[:8]}.wav")
+
+
+async def test_a_taken_fallback_name_is_refused(tmp_path, monkeypatch):
+    import voicebox.synthesize.service as service
+
+    md = source(tmp_path)
+    (tmp_path / "notes.wav").write_bytes(b"a")
+    monkeypatch.setattr(service, "new_job_id", lambda: "deadbeef-0000-4000-8000-000000000000")
+    (tmp_path / "notes.deadbeef.wav").write_bytes(b"b")
+    answer = await reply(tmp_path, request(path=str(md)))
+    assert "give output" in answer and JobStore(tmp_path / "state").recent() == []
+
+
+async def test_a_home_that_cannot_be_found_is_a_refusal_not_a_crash(tmp_path):
+    assert "cannot resolve" in await reply(tmp_path, request(path="~nosuchuser_xyz/a.md"))
+    answer = await reply(tmp_path, request(text="Hi.", output="~nosuchuser_xyz/a.wav"))
+    assert "cannot resolve" in answer
+
+
+async def test_an_unwritable_source_directory_points_at_output(tmp_path):
+    md = source(tmp_path)
+    tmp_path.chmod(0o500)
+    try:
+        answer = await reply(tmp_path, request(path=str(md)))
+    finally:
+        tmp_path.chmod(0o700)
+    assert "give output" in answer

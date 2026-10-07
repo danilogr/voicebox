@@ -106,10 +106,10 @@ audio takes around 21 minutes. A request may take four times what the slowest pa
 job has shown would need, counting only requests of at least 200 characters: a short
 request is mostly fixed cost (a 6-character heading runs at about 8 characters a
 second) or, sent while another session holds the server, mostly waiting. Before such a
-request has finished, it may take four times what the CPU pace would need, about 1.2
-characters a second. No request waits longer than the CPU backend's pace would need or
-45 minutes, and none less than 199 s. A request that times out fails the job with reason `timeout`, and is not
-retried. The time left that `job_status` reports is the characters still to speak at
+request has finished, the pace is the CPU backend's, about 1.2 characters a second. No
+request waits longer than four times what the CPU backend's pace would need, or 45
+minutes, and none less than 199 s. A request that times out fails the job with reason
+`timeout`, and is not retried. The time left that `job_status` reports is the characters still to speak at
 the job's overall throughput so far.
 
 ## Resident memory

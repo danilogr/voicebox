@@ -2,6 +2,7 @@
 stage), refused, or crashed - the last recorded once however many sessions find it."""
 
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from speak_core.engines.asr import Liveness
@@ -15,6 +16,7 @@ from voicebox.jobs.status import job_status
 from voicebox.jobs.store import JobStore
 from voicebox.synthesize.worker import WorkerSpeech, run_job
 from voicebox.telemetry.jobs import record_job
+from voicebox.telemetry.session import TelemetrySession
 
 
 async def finish(state_dir, synthesizer):
@@ -140,3 +142,69 @@ async def test_every_refusal_reason_is_a_shippable_row(tmp_path):
             "input_unsupported",
         ]
     )
+
+
+def _session(tmp_path: Path) -> tuple[Path, TelemetrySession]:
+    from telemetry_support import INSTALL, SESSION
+
+    from voicebox.telemetry.session import TelemetrySession
+
+    db = tmp_path / "telemetry.db"
+    return db, TelemetrySession(conn=opened(db), install_id=INSTALL, session_id=SESSION, db_path=db)
+
+
+async def test_a_busy_refusal_is_one_shippable_row(tmp_path):
+    from synthesis_support import ME, OTHER, desk_at, request, settings, speech
+    from voicebox.synthesize.service import start
+
+    db, session = _session(tmp_path)
+    job_lock(tmp_path / "state", is_alive=lambda p: True, pid=OTHER).acquire()
+    desk = desk_at(tmp_path, alive=(ME, OTHER))
+    await start(
+        desk,
+        speech(),
+        settings(tmp_path),
+        request(text="Hi.", output=str(tmp_path / "o.wav")),
+        session,
+    )
+    (row,) = assert_shippable(db)
+    assert (row["status"], row["reason"]) == ("refused", "busy")
+
+
+async def test_a_server_that_is_down_and_not_ours_to_start_is_one_shippable_row(tmp_path):
+    from synthesis_support import desk_at, request, settings, speech
+    from voicebox.synthesize.service import start
+
+    db, session = _session(tmp_path)
+    await start(
+        desk_at(tmp_path),
+        speech(Liveness.ABSENT),
+        settings(tmp_path, autostart=False),
+        request(text="Hi.", output=str(tmp_path / "o.wav")),
+        session,
+    )
+    (row,) = assert_shippable(db)
+    assert (row["status"], row["reason"]) == ("refused", "server_unavailable")
+
+
+async def test_a_staging_failure_is_one_failed_row_and_frees_the_lock(tmp_path):
+    from dataclasses import replace as replaced
+
+    from synthesis_support import ME, desk_at, request, settings, speech
+    from voicebox.synthesize.service import start
+
+    db, session = _session(tmp_path)
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "jobs").write_text("a file where the jobs directory belongs")
+    desk = replaced(desk_at(tmp_path), record=record_job)
+    answer = await start(
+        desk,
+        speech(),
+        settings(tmp_path),
+        request(text="Hi.", output=str(tmp_path / "o.wav")),
+        session,
+    )
+    assert answer.startswith("could not start synthesis")
+    (row,) = assert_shippable(db)
+    assert (row["status"], row["reason"]) == ("failed", "other")
+    assert job_lock(tmp_path / "state", is_alive=lambda p: p == ME).owner() is None
