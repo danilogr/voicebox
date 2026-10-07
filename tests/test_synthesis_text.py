@@ -293,3 +293,45 @@ def test_a_wordless_piece_between_words_is_not_sent_alone():
 
 def test_the_stop_replaces_the_space_before_a_clause_mark():
     assert [c.text for c in chunk_text("end of the line ,", max_chars=100)] == ["end of the line."]
+
+
+def test_a_stray_backtick_pairs_with_nothing_beyond_its_paragraph():
+    source = (
+        "Press the ` key.\n\nRun `make` then **build** it.\n\n"
+        "Open [the page](https://x.y/z) and call `go`.\n\nDone `now`."
+    )
+    assert paragraphs(strip_markdown(source)) == [
+        "Press the ` key.",
+        "Run make then build it.",
+        "Open the page and call go.",
+        "Done now.",
+    ]
+
+
+def test_a_code_span_keeps_the_spaces_inside_its_markers():
+    assert paragraphs(strip_markdown("Type `ls `and enter.")) == ["Type ls and enter."]
+    assert paragraphs(strip_markdown("Run `a\n  b` now.")) == ["Run a b now."]
+
+
+@pytest.mark.parametrize("text", ["Item 0 here", "Option <0> and <12> and 0", ""])
+def test_text_that_looks_like_a_placeholder_is_left_alone(text):
+    assert paragraphs(strip_markdown(f"{text} and `code`")) == [
+        " ".join(f"{text} and code".split())
+    ]
+
+
+def test_a_placeholder_lookalike_with_no_code_does_not_raise():
+    assert paragraphs(strip_markdown("7 alone")) == ["7 alone"]
+
+
+def test_a_list_starting_at_one_may_interrupt_a_paragraph():
+    assert paragraphs(strip_markdown("Steps:\n1. one\n2. two")) == ["Steps: one two"]
+
+
+def test_a_continuation_line_does_not_end_the_list():
+    assert paragraphs(strip_markdown("1. first\n   more\n2. second")) == ["first more second"]
+    assert paragraphs(strip_markdown("1. first\n   more\n   3. nested")) == ["first more nested"]
+
+
+def test_whitespace_only_lines_are_blank_lines():
+    assert paragraphs(strip_markdown("one\n   \n2. two")) == ["one", "two"]

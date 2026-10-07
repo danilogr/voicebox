@@ -21,15 +21,18 @@ _BULLET = re.compile(r"^\s*[-*+]\s+")
 _NUMBERED = re.compile(r"^\s*\d{1,9}[.)]\s+")
 _TABLE_RULE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")
 _REFERENCE = re.compile(r"^\s{0,3}\[[^\]]+\]:\s*\S+(\s+(\"[^\"]*\"|'[^']*'|\([^)]*\)))?\s*$")
-_CODE_OR_COMMENT = re.compile(r"(`+)([^`]+?)\1|<!--.*?-->", re.DOTALL)
+# A code span never crosses a blank line, so a stray backtick pairs with nothing beyond
+# its paragraph.
+_SPAN = r"(`+)((?:[^`\n]|\n(?![ \t]*\n))+?)\1"
+_CODE_OR_COMMENT = re.compile(_SPAN + r"|<!--.*?-->", re.DOTALL)
+_ONE = re.compile(r"^\s*0*1[.)]\s+")
 _TAG = re.compile(r"</?[A-Za-z][^>\n]*>")
 _IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
 _LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 _REFERENCE_LINK = re.compile(r"\[([^\]]+)\]\[[^\]]*\]")
 _AUTOLINK = re.compile(r"<(?:https?|mailto):[^>]+>")
 _BARE_URL = re.compile(r"([ \t]*)(\()?(https?://\S+)")
-_CODE = re.compile(r"(`+)([^`]+?)\1")
-_HOLDER = re.compile("\ue000(\\d+)\ue001")
+_CODE = re.compile(_SPAN)
 _URL_TAIL = re.compile(r"[.,;:!?)\]'\"]*$")
 _STAR = re.compile(r"(\*{1,3})(?=\S)(.+?)(?<=\S)\1")
 _UNDERSCORE = re.compile(r"(?<!\w)(_{1,3})(?=\S)(.+?)(?<=\S)\1(?!\w)")
@@ -59,18 +62,28 @@ def strip_markdown(text: str) -> str:
     """
     codes: list[str] = []
     lines: list[str] = []
-    list_may_start = True  # a numbered marker only opens a list, never a wrapped line
-    for line in _hold_code(_without_fences(text), codes).splitlines():
-        if _SETEXT.match(line) or _RULE.match(line) or _TABLE_RULE.match(line) or not line:
+    mark = _unused_mark(text)
+    holder = re.compile(f"{mark}(\\d+){mark}")
+    in_list = False
+    list_may_start = True  # a numbered marker other than 1 only continues a list
+    for line in _hold_code(_without_fences(text), codes, mark).splitlines():
+        if not line.strip() or _SETEXT.match(line) or _RULE.match(line):
             lines.append("")
-            list_may_start = True
+            in_list, list_may_start = False, True
+            continue
+        if _TABLE_RULE.match(line):
+            lines.append("")
+            in_list, list_may_start = False, True
             continue
         if _REFERENCE.match(line):
             continue
         heading = _HEADING.match(line) is not None
         line = _QUOTE.sub("", line)
         bullet = _BULLET.match(line) is not None
-        numbered = list_may_start and _NUMBERED.match(line) is not None
+        numbered = _NUMBERED.match(line) is not None and (
+            list_may_start or _ONE.match(line) is not None
+        )
+        indented = line[:1].isspace()
         line = _NUMBERED.sub("", _BULLET.sub("", line)) if numbered or bullet else line
         if heading:
             line = _HEADING_TAIL.sub("", _HEADING.sub("", line))
@@ -78,8 +91,19 @@ def strip_markdown(text: str) -> str:
             line = ", ".join(cell.strip() for cell in line.strip().strip("|").split("|"))
         line = _inline(line)
         lines += ["", line, ""] if heading else [line]
-        list_may_start = heading or bullet or numbered
-    return _HOLDER.sub(lambda m: codes[int(m.group(1))], "\n".join(lines))
+        if bullet or numbered:
+            in_list = list_may_start = True
+        elif heading:
+            in_list, list_may_start = False, True
+        else:  # an indented line continues its list item; the next marker still counts
+            in_list = in_list and indented
+            list_may_start = in_list
+    return holder.sub(lambda m: codes[int(m.group(1))], "\n".join(lines))
+
+
+def _unused_mark(text: str) -> str:
+    """A private-use character absent from `text`, so a placeholder cannot collide."""
+    return next(chr(c) for c in range(0xE000, 0xF900) if chr(c) not in text)
 
 
 def _without_fences(text: str) -> str:
@@ -101,12 +125,12 @@ def _without_fences(text: str) -> str:
     return _CODE_OR_COMMENT.sub(lambda m: m.group(0) if m.group(1) else "", "\n".join(kept))
 
 
-def _hold_code(text: str, codes: list[str]) -> str:
+def _hold_code(text: str, codes: list[str], mark: str) -> str:
     """Replace each inline code span by a one-token placeholder, remembering its text."""
 
     def hold(match: re.Match[str]) -> str:
-        codes.append(" ".join(match.group(2).split()))
-        return f"\ue000{len(codes) - 1}\ue001"
+        codes.append(re.sub(r"\s+", " ", match.group(2)))
+        return f"{mark}{len(codes) - 1}{mark}"
 
     return _CODE.sub(hold, text)
 

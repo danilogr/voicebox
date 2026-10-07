@@ -90,3 +90,7 @@ def test_the_pauses_count_toward_the_size_limit(tmp_path, monkeypatch):
     pieces = [Piece(wav(tmp_path / f"{i}.wav", 200, rate=1000), False) for i in range(2)]  # 800
     with pytest.raises(OutputTooLargeError):
         concatenate(pieces, tmp_path / "joined.wav", gap_ms=300, paragraph_gap_ms=300)
+
+
+def test_the_size_limit_is_what_the_wave_module_can_write():
+    assert audio.MAX_DATA_BYTES == 2**32 - 37

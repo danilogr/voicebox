@@ -18,8 +18,8 @@ class OutputTooLargeError(ValueError):
     """The joined audio is larger than a WAV file can hold."""
 
 
-# A RIFF chunk size is 32 bits and the header takes 36 bytes of it.
-MAX_DATA_BYTES = 2**32 - 36
+# The wave module packs 36 + the data size into 32 bits.
+MAX_DATA_BYTES = 2**32 - 37
 
 
 @dataclass(frozen=True, slots=True)
