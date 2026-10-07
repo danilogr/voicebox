@@ -20,7 +20,8 @@ In Claude Code:
     /plugin install voicebox@voicebox-marketplace
 
 voicebox needs [uv](https://docs.astral.sh/uv/), which launches it; if `uv` is not on the
-`PATH` or in a standard location, set `VOICEBOX_UV` to its full path.
+`PATH` or in a standard location, set `VOICEBOX_UV` (used by the server launcher) to its
+full path.
 
 Restart Claude Code, then run `/voicebox:setup` once. It installs NeMo-Speech.cpp and its
 two models (about 1.4 GB) and shows voicebox's one-time telemetry notice. Transcription,
@@ -100,6 +101,7 @@ Environment variables, read when the server starts:
 | `VOICEBOX_MAX_CHARS` | `400` | longest sentence `read_aloud` accepts; the rest is cut |
 | `VOICEBOX_TRANSCRIBE_DIR` | the input's folder | where transcripts go |
 | `VOICEBOX_TRANSCRIBE_TIMEOUT` | unset | seconds after which `job_status` calls a transcription possibly wedged; it does not stop the job |
+| `VOICEBOX_UV` | found on `PATH` or in a standard location | full path to `uv`, used by the server launcher |
 | `VOICEBOX_STATE_DIR` | `~/Library/Caches/voicebox` | jobs and the local telemetry store |
 | `NEMO_HTTP_URL` | `http://127.0.0.1:8082` | the speech server |
 | `NEMO_BIN` | `nemo-speech` | the server binary, when it is not on `PATH` |

@@ -66,8 +66,8 @@ server accepts (a copy is in `tests/contract/v1/`).
 `plugin_version`; `disclosure_ver` (which notice you were shown); `language`, `timezone`
 and the current UTC offset (`utc_offset_min`); `os`, `os_version` (major and minor only)
 and `arch`; `cpu_model`, `cpu_count`, `ram_gb` (bucketed: 8, 16, 32, 64 or 128); `accel`
-and `accel_name` (Metal, CUDA, ROCm, none or unknown). `country` is added by the server from the
-network edge; your machine never sends it.
+and `accel_name` (Metal, CUDA, ROCm, none or unknown). `country` is added by the server
+from the network edge; your machine never sends it.
 
 **Once per session** (one per MCP server process): `session_id`, `install_id`,
 `started_at`, `ended_at`; `plugin_version`; `core_version` (speak-core); `nemo_version`
