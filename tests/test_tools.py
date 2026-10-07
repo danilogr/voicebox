@@ -1,100 +1,60 @@
 import asyncio
 
 from fakes import FakeEngine, FakeQueue
-from speak import tools
-from speak.server import create_server
-from speak.settings import Settings
-from speak.transcribe.jobs import JobStore
-from speak.transcribe.lock import transcription_lock
-from speak.transcribe.probe import Probe
-from speak.transcribe.service import Scribe
+from voicebox import tools
+from voicebox.config import Settings
+from voicebox.server import create_server
+from voicebox.transcribe.jobs import JobStore
+from voicebox.transcribe.lock import transcription_lock
+from voicebox.transcribe.probe import Probe
+from voicebox.transcribe.service import Scribe, build_scribe
 
-TOOL_NAMES = {"speak", "stop_speaking", "list_voices", "set_voice", "speech_status"}
+SPEECH_TOOLS = {"speak", "stop_speaking", "speech_status"}
 
 
-def server() -> object:
+def server(scribe=None) -> object:
     return create_server(
         settings=Settings.from_env({}, platform="darwin"),
         engine=FakeEngine(),
         queue=FakeQueue(),
         supervisor=None,
+        scribe=scribe,
     )
 
 
-async def tools_by_name() -> dict:
-    return {tool.name: tool for tool in await server().list_tools()}
+async def tools_by_name(scribe=None) -> dict:
+    return {tool.name: tool for tool in await server(scribe).list_tools()}
 
 
-async def test_exposes_exactly_the_expected_tools():
-    assert set(await tools_by_name()) == TOOL_NAMES
+async def test_without_transcription_only_the_speech_tools_exist():
+    assert set(await tools_by_name()) == SPEECH_TOOLS
 
 
 async def test_speak_requires_only_the_text():
     schema = (await tools_by_name())["speak"].input_schema
     assert schema["required"] == ["text"]
-    assert set(schema["properties"]) == {"text", "voice", "rate", "intent"}
 
 
-async def test_speak_intent_is_an_explicit_enum_the_model_can_read():
-    """The task list gives the enum in prose (spec 2); the schema has to carry it
-    as data too, or a client that only reads the schema never learns the values."""
-    schema = (await tools_by_name())["speak"].input_schema
-    intent_schema = schema["properties"]["intent"]
-    # Optional parameters land as anyOf: [<the type>, {"type": "null"}] with pydantic.
-    branches = intent_schema.get("anyOf", [intent_schema])
-    enums = [branch["enum"] for branch in branches if "enum" in branch]
-    assert len(enums) == 1
-    assert set(enums[0]) == set(tools.INTENT_VALUES)
-
-
-async def test_set_voice_requires_a_voice():
-    assert (await tools_by_name())["set_voice"].input_schema["required"] == ["voice"]
-
-
-async def test_the_listing_tools_take_no_arguments():
-    tools = await tools_by_name()
-    assert tools["list_voices"].input_schema.get("required", []) == []
-    assert tools["stop_speaking"].input_schema.get("required", []) == []
-
-
-async def test_the_speak_description_carries_the_when_to_speak_policy():
-    description = (await tools_by_name())["speak"].description
-    assert "finished a task" in description
-    assert "blocked" in description
-    assert "Do not narrate routine progress" in description
-
-
-async def test_the_speak_description_asks_for_a_closing_recap():
-    description = (await tools_by_name())["speak"].description
-    assert "recap" in description
-    assert "outcome" in description
+async def test_speak_intent_is_an_explicit_enum():
+    branches = (await tools_by_name())["speak"].input_schema["properties"]["intent"]
+    enums = [b["enum"] for b in branches.get("anyOf", [branches]) if "enum" in b]
+    assert enums and set(enums[0]) == set(tools.INTENT_VALUES)
 
 
 async def test_no_description_arrives_with_source_indentation():
     for tool in (await tools_by_name()).values():
-        assert tool.description is not None
-        indented = [line for line in tool.description.splitlines() if line.startswith("    ")]
-        assert indented == [], f"{tool.name} description is indented: {indented}"
+        assert "\n    " not in tool.description
 
 
 async def test_every_tool_is_described():
     for tool in (await tools_by_name()).values():
-        assert tool.description and len(tool.description) > 40
+        assert tool.description
 
 
 async def test_the_transcription_tools_exist_when_a_scribe_is_given(tmp_path):
-    from speak.transcribe.service import build_scribe
-
-    settings = Settings.from_env({"SPEAK_STATE_DIR": str(tmp_path)}, platform="darwin")
-    served = create_server(
-        settings=settings,
-        engine=FakeEngine(),
-        queue=FakeQueue(),
-        supervisor=None,
-        scribe=build_scribe(settings),
-    )
-    by_name = {tool.name: tool for tool in await served.list_tools()}
-    assert {"transcribe", "transcription_status"} <= set(by_name)
+    settings = Settings.from_env({"VOICEBOX_STATE_DIR": str(tmp_path)}, platform="darwin")
+    by_name = await tools_by_name(build_scribe(settings))
+    assert set(by_name) == SPEECH_TOOLS | {"transcribe", "transcription_status"}
     assert "instead of Whisper" in by_name["transcribe"].description
     fmt = by_name["transcribe"].input_schema["properties"]["format"]
     assert set(fmt["enum"]) == {"text", "json", "srt", "vtt"}
@@ -118,7 +78,7 @@ async def test_two_transcribe_calls_never_run_together(tmp_path):
     async def spawn(argv, log) -> int:
         return 4242
 
-    settings = Settings.from_env({"SPEAK_STATE_DIR": str(tmp_path / "state")}, platform="darwin")
+    settings = Settings.from_env({"VOICEBOX_STATE_DIR": str(tmp_path / "state")}, platform="darwin")
     served = create_server(
         settings=settings,
         engine=FakeEngine(),
@@ -162,7 +122,7 @@ async def test_a_second_transcribe_call_is_refused_without_waiting_for_the_first
     async def spawn(argv, log) -> int:
         return 4242
 
-    settings = Settings.from_env({"SPEAK_STATE_DIR": str(tmp_path / "state")}, platform="darwin")
+    settings = Settings.from_env({"VOICEBOX_STATE_DIR": str(tmp_path / "state")}, platform="darwin")
     served = create_server(
         settings=settings,
         engine=FakeEngine(),

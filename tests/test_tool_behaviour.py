@@ -3,8 +3,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 from speak_core.queue import QueueStats
 
 from fakes import FakeEngine, FakeQueue, FakeSupervisor
-from speak.server import create_server
-from speak.settings import Settings
+from voicebox.config import Settings
+from voicebox.server import create_server
 
 
 def build(engine=None, queue=None, supervisor=None, env=None):
@@ -27,7 +27,7 @@ async def test_speak_collapses_whitespace_before_queueing():
 
 
 async def test_speak_truncates_at_the_configured_cap():
-    server, _, queue = build(env={"SPEAK_MAX_CHARS": "11"})
+    server, _, queue = build(env={"VOICEBOX_MAX_CHARS": "11"})
     await call(server, "speak", text="one two three four")
     assert queue.enqueued[0][0] == "one two…"
 
@@ -55,13 +55,13 @@ async def test_speak_rejects_empty_text_with_a_message_the_model_can_read():
 
 
 async def test_speak_uses_the_starting_voice_from_the_environment():
-    server, _, queue = build(env={"SPEAK_VOICE": "Samantha", "SPEAK_RATE": "190"})
+    server, _, queue = build(env={"VOICEBOX_VOICE": "Samantha", "VOICEBOX_RATE": "190"})
     await call(server, "speak", text="hi")
     assert queue.enqueued[0] == ("hi", "Samantha", 190)
 
 
 async def test_an_explicit_voice_overrides_the_session_voice():
-    server, _, queue = build(env={"SPEAK_VOICE": "Samantha"})
+    server, _, queue = build(env={"VOICEBOX_VOICE": "Samantha"})
     await call(server, "speak", text="hi", voice="Sofia")
     assert queue.enqueued[0][1] == "Sofia"
 
@@ -78,51 +78,6 @@ async def test_speak_works_without_a_supervisor():
     server, _, queue = build(supervisor=None)
     await call(server, "speak", text="hi")
     assert len(queue.enqueued) == 1
-
-
-async def test_list_voices_names_the_engine_and_the_available_voices():
-    server, _, _ = build(engine=FakeEngine(voices=["John", "Sofia"], default_voice="John"))
-    message = await call(server, "list_voices")
-    assert "engine: fake" in message
-    assert "active voice: John" in message
-    assert "Available: John, Sofia." in message
-
-
-async def test_list_voices_says_so_when_the_engine_reports_none():
-    server, _, _ = build(engine=FakeEngine(voices=[]))
-    message = await call(server, "list_voices")
-    assert "does not report voice names" in message
-    assert "active voice: the engine default" in message
-
-
-async def test_set_voice_matches_case_insensitively_and_applies_to_later_speech():
-    server, _, queue = build(engine=FakeEngine(voices=["Sofia"]))
-    assert await call(server, "set_voice", voice="sofia") == "voice set to Sofia for this session"
-    await call(server, "speak", text="hi")
-    assert queue.enqueued[0][1] == "Sofia"
-
-
-async def test_set_voice_rejects_a_name_the_engine_does_not_have():
-    server, _, _ = build(engine=FakeEngine(voices=["John", "Sofia"]))
-    with pytest.raises(ToolError, match="unknown voice"):
-        await call(server, "set_voice", voice="Bruce")
-
-
-async def test_set_voice_lists_the_real_names_when_it_rejects():
-    server, _, _ = build(engine=FakeEngine(voices=["John", "Sofia"]))
-    with pytest.raises(ToolError, match="John, Sofia"):
-        await call(server, "set_voice", voice="Bruce")
-
-
-async def test_set_voice_accepts_any_name_when_the_engine_lists_none():
-    server, _, _ = build(engine=FakeEngine(voices=[]))
-    assert "Bruce" in await call(server, "set_voice", voice="Bruce")
-
-
-async def test_set_voice_rejects_blank_input():
-    server, _, _ = build()
-    with pytest.raises(ToolError, match="needs a voice name"):
-        await call(server, "set_voice", voice="   ")
 
 
 async def test_stop_speaking_reports_how_many_were_dropped():

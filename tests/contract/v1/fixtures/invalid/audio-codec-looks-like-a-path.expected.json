@@ -1,6 +1,0 @@
-{
-  "status": 400,
-  "error_code": "schema_violation",
-  "field": "/utterances/0/audio_codec",
-  "reason": "pattern: audio_codec must match ^[a-z0-9_]+$ -- every codec_name ffprobe reports matches it; a path-shaped value is a buggy client, never a real codec"
-}

@@ -1,7 +1,0 @@
-{
-  "status": 400,
-  "error_code": "schema_violation",
-  "field": "/utterances/0",
-  "reason": "false schema (allOf/if-else): format describes a transcript output and is not an allowed property on any other source. Pointer granularity for a failure inside an if/then/else is implementation-defined - ajv names the property, jsonschema the containing object - so only the prefix is binding.",
-  "field_is_prefix": true
-}

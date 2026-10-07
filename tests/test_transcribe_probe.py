@@ -4,9 +4,9 @@ from typing import NoReturn
 
 import pytest
 
-from speak.transcribe.commands import CommandResult, ToolMissing
-from speak.transcribe.prepare import ConversionFailed, convert, needs_conversion
-from speak.transcribe.probe import ProbeFailed, parse_probe, probe
+from voicebox.transcribe.commands import CommandResult, ToolMissing
+from voicebox.transcribe.prepare import ConversionFailed, convert, needs_conversion
+from voicebox.transcribe.probe import ProbeFailed, parse_probe, probe
 
 VIDEO_ONLY_MP4 = {
     "streams": [{"codec_name": "h264", "codec_type": "video"}],

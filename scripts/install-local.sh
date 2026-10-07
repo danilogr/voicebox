@@ -25,7 +25,7 @@ case "$version" in
     ;;
 esac
 
-target="$HOME/.claude/plugins/cache/speak-marketplace/speak/$version"
+target="$HOME/.claude/plugins/cache/voicebox-marketplace/voicebox/$version"
 
 # --delete is destructive, so refuse anything outside the plugin cache.
 case "$target" in
@@ -38,7 +38,7 @@ esac
 
 if [ ! -d "$target" ]; then
   echo "no install found at $target" >&2
-  echo "run /plugin install speak@speak-marketplace once, then re-run this." >&2
+  echo "run /plugin install voicebox@voicebox-marketplace once, then re-run this." >&2
   exit 1
 fi
 

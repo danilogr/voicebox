@@ -1,6 +1,6 @@
 import pytest
 
-from speak.transcribe.lock import TranscriptionBusy, transcription_lock
+from voicebox.transcribe.lock import TranscriptionBusy, transcription_lock
 
 ALIVE = {100, 200, 300}
 

@@ -5,8 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from speak.transcribe.jobs import DONE, RETENTION_S, RUNNING, Job, JobStore, eta_seconds, new_job_id
-from speak.transcribe.output import output_path, transcript_text
+from voicebox.transcribe.jobs import (
+    DONE,
+    RETENTION_S,
+    RUNNING,
+    Job,
+    JobStore,
+    eta_seconds,
+    new_job_id,
+)
+from voicebox.transcribe.output import output_path, transcript_text
 
 
 def job(**overrides: object) -> Job:

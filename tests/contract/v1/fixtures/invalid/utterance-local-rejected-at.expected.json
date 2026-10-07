@@ -1,6 +1,0 @@
-{
-  "status": 400,
-  "error_code": "schema_violation",
-  "field": "/utterances/0/rejected_at",
-  "reason": "additionalProperties: `utterances.rejected_at` is LOCAL-tagged in schema.sql; it records that the server refused a row, and is not a property of the utterance schema."
-}

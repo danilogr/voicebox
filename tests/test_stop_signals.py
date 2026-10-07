@@ -17,7 +17,7 @@ import pytest
 CHILD = """
 import asyncio, sys
 from pathlib import Path
-from speak.__main__ import serve_stdio
+from voicebox.__main__ import serve_stdio
 
 class Server:
     async def run_stdio_async(self):
@@ -37,7 +37,7 @@ asyncio.run(serve_stdio(Server()))
 BLOCKED_READER_CHILD = """
 import asyncio, sys, threading
 from pathlib import Path
-from speak.__main__ import run
+from voicebox.__main__ import run
 
 class Server:
     async def run_stdio_async(self):

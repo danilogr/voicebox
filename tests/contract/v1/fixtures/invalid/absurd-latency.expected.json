@@ -1,6 +1,0 @@
-{
-  "status": 400,
-  "error_code": "schema_violation",
-  "field": "/utterances/0/synth_ms",
-  "reason": "maximum: synth_ms must be <= 120000 (2 minutes; CONTRACT.md 'Bounds not given by the spec')"
-}

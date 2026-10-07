@@ -1,6 +1,6 @@
 """End-to-end: a real server process driven over stdio by a real MCP client.
 
-`SPEAK_ENGINE=command` points at a recorder script, so the suite exercises the
+`VOICEBOX_ENGINE=command` points at a recorder script, so the suite exercises the
 whole path without producing audio.
 """
 
@@ -15,8 +15,8 @@ import pytest
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from speak.__main__ import build_supervisor
-from speak.settings import Settings
+from voicebox.__main__ import build_supervisor
+from voicebox.config import Settings
 
 RECORDER = """#!{python}
 import json, sys, pathlib
@@ -40,22 +40,22 @@ def server_env(command: str, state_dir: str, extra_env: dict[str, str] | None = 
     """The environment one subprocess server runs in.
 
     The developer's shell is inherited, so everything that decides whether a session
-    manages the shared speech server is pinned here. Voice input is unconditional, so
-    every session now wants one and `NEMO_AUTOSTART=0` is the whole guard: without
-    it each of these subprocesses would register in the real state directory and, on
-    teardown, SIGTERM the pid in the real `server.json`, stopping the speech server the
-    developer's other Claude Code windows are using.
+    manages the shared speech server is pinned here. Every session may start one, so
+    `NEMO_AUTOSTART=0` is the whole guard: without it each of these subprocesses would
+    register in the real state directory and, on teardown, SIGTERM the pid in the real
+    `server.json`, stopping the speech server the developer's other Claude Code windows
+    are using.
     """
     return {
         **os.environ,
-        "SPEAK_ENGINE": "command",
-        "SPEAK_COMMAND": command,
+        "VOICEBOX_ENGINE": "command",
+        "VOICEBOX_COMMAND": command,
         "NEMO_AUTOSTART": "0",
-        "SPEAK_STATE_DIR": state_dir,
+        "VOICEBOX_STATE_DIR": state_dir,
         "SPEAK_CORE_STATE_DIR": state_dir,
-        # Telemetry reads its own config directory, never SPEAK_STATE_DIR; without
-        # this, every subprocess below would write to the real machine's config dir.
-        "SPEAK_TELEMETRY": "off",
+        # Telemetry is off in every subprocess here.
+        "VOICEBOX_TELEMETRY": "off",
+        "DO_NOT_TRACK": "1",
         **(extra_env or {}),
     }
 
@@ -65,7 +65,7 @@ async def connected(command: str, extra_env: dict[str, str] | None = None):
     with tempfile.TemporaryDirectory() as state_dir:
         parameters = StdioServerParameters(
             command=sys.executable,
-            args=["-m", "speak"],
+            args=["-m", "voicebox"],
             env=server_env(command, state_dir, extra_env),
             cwd=str(Path.cwd()),
         )
@@ -97,10 +97,7 @@ async def test_initializes_and_reports_its_name(recorder):
         assert {tool.name for tool in result.tools} == {
             "speak",
             "stop_speaking",
-            "list_voices",
-            "set_voice",
             "speech_status",
-            "listen",
             "transcribe",
             "transcription_status",
         }
@@ -136,21 +133,6 @@ async def test_an_empty_sentence_comes_back_as_an_error(recorder):
         assert "nothing to speak" in result.content[0].text
 
 
-async def test_set_voice_is_rejected_with_a_readable_message(recorder):
-    script, _ = recorder
-    async with connected(f"{sys.executable} {script}") as session:
-        await text_of(session, "set_voice", voice="Sofia")
-        assert "Sofia" in await text_of(session, "list_voices")
-
-
-async def test_list_voices_reports_the_command_engine(recorder):
-    script, _ = recorder
-    async with connected(f"{sys.executable} {script}") as session:
-        message = await text_of(session, "list_voices")
-        assert "engine: command" in message
-        assert "does not report voice names" in message
-
-
 async def test_stop_speaking_answers_even_when_nothing_is_playing(recorder):
     script, _ = recorder
     async with connected(f"{sys.executable} {script}") as session:
@@ -167,7 +149,7 @@ async def test_speech_status_is_offered_over_stdio(recorder):
 
 async def test_the_character_cap_is_honoured_end_to_end(recorder):
     script, log = recorder
-    async with connected(f"{sys.executable} {script}", {"SPEAK_MAX_CHARS": "11"}) as session:
+    async with connected(f"{sys.executable} {script}", {"VOICEBOX_MAX_CHARS": "11"}) as session:
         await text_of(session, "speak", text="one two three four")
         await _wait_for_lines(log, 1)
 
@@ -227,19 +209,3 @@ async def test_closing_the_session_kills_a_playing_utterance(tmp_path):
         await asyncio.sleep(0.02)
     os.kill(child, signal.SIGKILL)
     raise AssertionError(f"player {child} survived the session")
-
-
-async def test_a_client_sees_conversation_mode_over_stdio(recorder):
-    """The prompt exists for MCP clients other than Claude Code, so it is checked the way
-    they receive it: a real client, over stdio, from a separate server process. Only
-    one prompt is expected, so no other command file can leak out as one."""
-    script, _ = recorder
-    async with connected(f"{sys.executable} {script}", {}) as session:
-        listed = (await session.list_prompts()).prompts
-        prompts = {prompt.name: prompt.description for prompt in listed}
-        assert set(prompts) == {"converse"}
-        assert prompts["converse"]
-
-        served = (await session.get_prompt("converse")).messages[0].content.text
-        assert not served.startswith("---")
-        assert "listen" in served

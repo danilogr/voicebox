@@ -1,5 +1,6 @@
 {
-  "name": "speak",
-  "version": "1.6.0",
-  "description": "Gives Claude Code a voice: a speak tool that says one short sentence out loud when a task finishes, when it is blocked, or when it needs an answer. Queued so utterances never overlap, and pluggable so speech can come from macOS say, a plugin-managed local NeMo-Speech.cpp server, or any command."
+  "name": "voicebox",
+  "version": "1.0.0",
+  "description": "Offline transcription, voice-overs and read-aloud: transcribe audio and video, turn text into an audio file in a chosen voice, and read long text aloud. Runs entirely on your machine, powered by NVIDIA NeMo-Speech.cpp.",
+  "repository": "https://github.com/danilogr/voicebox"
 }

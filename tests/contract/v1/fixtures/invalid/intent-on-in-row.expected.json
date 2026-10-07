@@ -1,7 +1,0 @@
-{
-  "status": 400,
-  "error_code": "schema_violation",
-  "field": "/utterances/0",
-  "reason": "false schema (allOf/if-then): intent is out-only (spec 2, 'Declared at the call site'); it is not an allowed property when direction is 'in'. Pointer granularity for a false schema under `properties` is implementation-defined - ajv names the property, jsonschema the containing object - so only the prefix is binding.",
-  "field_is_prefix": true
-}

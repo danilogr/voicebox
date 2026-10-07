@@ -1,15 +1,15 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
-  "name": "speak-marketplace",
+  "name": "voicebox-marketplace",
   "version": "1.0.0",
-  "description": "Local marketplace hosting the speak plugin",
+  "description": "voicebox: local speech for coding agents, on NVIDIA NeMo-Speech.cpp",
   "owner": {
     "name": "Danilo Gasques"
   },
   "plugins": [
     {
-      "name": "speak",
-      "description": "Gives Claude Code a voice: a speak tool that says one short sentence out loud at the moments that matter.",
+      "name": "voicebox",
+      "description": "Offline transcription, voice-overs and read-aloud, on your machine.",
       "source": "./",
       "category": "productivity"
     }
