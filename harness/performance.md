@@ -47,16 +47,19 @@ three requests fired together finished at 3.4 s, 7.3 s and 10.6 s for a wall clo
 
 `synthesize` sends a long text to the speech server in chunks, because one request has
 to finish inside its timeout and a long input may read worse. Three passages of plain
-prose were synthesized at each request size with MagpieTTS (voice `John`, the plugin's
-server flags, NeMo-Speech.cpp 0.2.0 on Metal, server warm), then transcribed back with
-the same server's Nemotron 3.5 and scored against the input:
+prose were synthesized at each request size with MagpieTTS (voice `John`) on the Apple M5
+on Metal, by a private NeMo-Speech.cpp 0.2.0 server started with the plugin's flags and
+warmed first, then transcribed back with the same server's Nemotron 3.5 and scored
+against the input. Each reading is the longest run of whole sentences from the start of
+its passage that fits the size, so a passage's longer readings begin with its shorter
+ones:
 
-| Request size | Synthesis (median / slowest) | Audio | Realtime factor | Word error rate (worst) |
+| Request size (characters) | Synthesis (median / slowest) | Audio | Realtime factor | Word error rate (worst) |
 |---|---|---|---|---|
-| ~120 chars | 1.4 s / 2.1 s | 2.7 s | 0.50x | 12.5% |
-| ~500 chars | 12.8 s / 16.5 s | 24.3 s | 0.52x | 9.7% |
-| ~1000 chars | 33.4 s / 34.7 s | 63.9 s | 0.52x | 8.1% |
-| ~1500 chars | 46.9 s / 49.7 s | 89.5 s | 0.52x | 8.4% |
+| 47–82 (one sentence) | 1.4 s / 2.1 s | 2.7 s | 0.50x | 12.5% |
+| 282–492 | 12.8 s / 16.5 s | 24.3 s | 0.52x | 9.7% |
+| 941–999 | 33.4 s / 34.7 s | 63.9 s | 0.52x | 8.1% |
+| 1385–1456 | 46.9 s / 49.7 s | 89.5 s | 0.52x | 8.4% |
 
 The word error rate includes the recogniser's own mistakes, so the one-sentence rows are
 the baseline. The rule: the largest size whose worst passage stays within 5 points of the
@@ -66,15 +69,35 @@ request. A request's own timeout is four times the slowest request at that size,
 least a minute: 199 s. The estimate `synthesize` returns uses the median throughput at
 that size, 29.5 characters a second, plus 10 s when the server has to start first.
 
-The one-sentence baseline's worst is a single spelling difference in an eight-word
-sentence (`harbour` heard as `harbor`), so it sets a loose bar. Above one sentence the
-transcripts show short false starts and stray syllables at a few sentence joins (`peda`
-before `people`, `than a dad` before `the first lesson`) and a word heard twice
-(`reasons reasons`). Every size from 500 up shares them, because each passage's longer
-readings start with its shorter ones, and the error rate does not grow with length. The
-~500 row fails the pace test on one passage, whose 282-character reading runs 41 % longer
-per character than the baseline: a 2.1 s pause near its start, which every longer reading
-of that passage also holds, weighs more in a short reading.
+"Reads cleanly" here means no measurable regression against a noisy baseline, judged
+from transcripts alone; nobody listened to the audio. The baseline's worst is one
+spelling difference in an eight-word sentence (`harbour` heard as `harbor`), which puts
+the word-error bar at 17.5 %, and no size came near it: the bar excluded nothing, and
+the pace test was the only one that discriminated. It excluded the 282–492 row on one
+passage, whose 282-character reading runs 41 % longer per character than the baseline
+because a 2.1 s pause near its start, which every longer reading of that passage also
+holds, weighs more in a short reading. 1500 is the top of the sweep, not a measured
+limit: no larger size was tried.
+
+The transcripts show defects that single sentences do not. Every size from 282–492 up
+shares the ones in the passages' opening sentences, because the readings share those
+prefixes: false starts and stray syllables at sentence joins (`peda` before `people`,
+`than a dad` before `the first lesson`, `nodindo`, `adelana`), and the last word or
+words of a sentence heard twice (`reasons reasons`). That echo also lands on the end of
+a request in four of the nine readings above one sentence (`worse worse`, `reasons
+reasons`, `music music`, `that is fine that is fine`) and in none of the three single
+sentences. The 941–999 and 1385–1456 readings carry further defects in the text only
+they contain: `a faint` missing (a possible two-word skip, or a recogniser miss),
+`grease` heard as `pedigrees a greece`, stray `uh` and `but`, and, in the 1385–1456
+readings only, `yet` missing. The error rate does not grow
+with length: these defects sit where the text sits, so a smaller chunk would not remove
+them, and it would add request ends for the echo to land on.
+
+The 199 s timeout assumes Metal. On the CPU backend, at about 0.07x realtime ("Metal
+against CPU" below), a 1500-character request of about 90 s of audio would take around
+20 minutes and exceed it. The synthesis worker splits a chunk whose request times out
+in half, at a sentence or clause boundary and down to one sentence, and retries each
+half once before failing the job with reason `timeout`.
 
 ## Resident memory
 
