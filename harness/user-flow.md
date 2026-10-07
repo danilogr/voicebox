@@ -37,7 +37,7 @@
 |---|---|---|
 | `split` | reads the staged text, cuts it into chunks | `other` (text gone) |
 | `synthesize` | starts the server if needed and waits for it; one request per chunk, in order | `server_unavailable`, `nemo_missing`, `timeout`, `model_failed` — naming the chunk |
-| `encode` | joins the WAVs with 250 ms pauses (700 ms between paragraphs); ffmpeg for m4a/mp3 | `format_mismatch`, `model_failed`, `ffmpeg_missing`, `conversion_failed`, `timeout` |
+| `encode` | joins the WAVs with 250 ms pauses (700 ms between paragraphs); ffmpeg for m4a/mp3 | `format_mismatch`, `output_unwritable` (a WAV over 4 GiB), `model_failed`, `ffmpeg_missing`, `conversion_failed`, `timeout` |
 | `write` | copies to a hidden partial file beside the output, renames it into place | `output_unwritable` |
 
 4. Whatever ended it, the staged text and chunk WAVs are deleted, the row recorded, the

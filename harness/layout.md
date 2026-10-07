@@ -77,6 +77,7 @@
 
 | Path | What it covers |
 |---|---|
+| `conftest.py`, `fakes.py`, `telemetry/telemetry_support.py` | Shared fixtures and fakes |
 | `contract/` | The vendored contract (`CONTRACT.md`, `v1/`), its fixtures, freshness against the voicebox-telemetry checkout, and every client-produced row validated |
 | `telemetry/` | Rows, session, composition, notice, stats, commands, and each job kind's rows |
 | `test_job_*.py` | Store, lock and status |

@@ -66,11 +66,11 @@ server accepts (a copy is in `tests/contract/v1/`).
 `plugin_version`; `disclosure_ver` (which notice you were shown); `language`, `timezone`
 and the current UTC offset (`utc_offset_min`); `os`, `os_version` (major and minor only)
 and `arch`; `cpu_model`, `cpu_count`, `ram_gb` (bucketed: 8, 16, 32, 64 or 128); `accel`
-and `accel_name` (Metal, CUDA, ROCm or none). `country` is added by the server from the
+and `accel_name` (Metal, CUDA, ROCm, none or unknown). `country` is added by the server from the
 network edge; your machine never sends it.
 
-**Once per session** (one per MCP server process): `session_id`, `started_at`,
-`ended_at`; `plugin_version`; `core_version` (speak-core); `nemo_version`
+**Once per session** (one per MCP server process): `session_id`, `install_id`,
+`started_at`, `ended_at`; `plugin_version`; `core_version` (speak-core); `nemo_version`
 (NeMo-Speech.cpp, when installed); `harness` and `harness_version` (Claude Code,
 Antigravity, …); `ffmpeg_present`.
 
@@ -82,7 +82,7 @@ Antigravity, …); `ffmpeg_present`.
 | `started_at`, `ended_at`, `wall_ms` | when and how long |
 | `status`, `reason`, `stage` | `ok`, `empty`, `stopped`, `refused`, `failed` or `crashed`; for a refusal or failure one of a fixed set of reasons (`busy`, `input_missing`, `ffmpeg_missing`, `timeout`, …), and where it stopped (`convert`, `asr`, `synthesize`, `encode`, …) |
 | `engine`, `model` | what did the work: `nemo`, `say`, …; `magpie`, `nemotron-3.5` |
-| `server_warm` | whether the speech server was already running |
+| `server_warm` | synthesis and narration: whether the speech server was already running |
 
 Transcriptions add the file's `source_bytes`, `audio_ms`, `audio_codec`, `has_video`,
 whether it was `converted` first and how long that took (`convert_ms`), model time
@@ -136,5 +136,6 @@ connecting these rows to you, which is why the request has to carry it.
 
 Nothing is retroactive. Turning telemetry off stops future sends other than the install
 count; it does not delete what has arrived — email for that. Turning it back on sends
-only what is still in the local database. The setting is read when a session starts, and a job is
-recorded for the session that accepted it, so a change applies from the next session.
+only what is still in the local database. The setting is read when a session starts, and
+a job is recorded for the session that accepted it, so a change applies from the next
+session.

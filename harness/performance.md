@@ -110,8 +110,8 @@ second) or, sent while another session holds the server, mostly waiting. Before 
 request has finished, the pace is the CPU backend's, about 1.2 characters a second. No
 request waits longer than four times what the CPU backend's pace would need, or 45
 minutes, and none less than 199 s. A request that times out fails the job with reason
-`timeout`, and is not retried. The time left that `job_status` reports is the characters still to speak at
-the job's overall throughput so far.
+`timeout`, and is not retried. The time left that `job_status` reports is the characters
+still to speak at the job's overall throughput so far.
 
 ## Transcription
 

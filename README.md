@@ -19,6 +19,9 @@ In Claude Code:
     /plugin marketplace add danilogr/voicebox
     /plugin install voicebox@voicebox-marketplace
 
+voicebox needs [uv](https://docs.astral.sh/uv/), which launches it; if `uv` is not on the
+`PATH` or in a standard location, set `VOICEBOX_UV` to its full path.
+
 Restart Claude Code, then run `/voicebox:setup` once. It installs NeMo-Speech.cpp and its
 two models (about 1.4 GB) and shows voicebox's one-time telemetry notice. Transcription,
 m4a and mp3 also need `ffmpeg` (`brew install ffmpeg` on macOS). voicebox works under
@@ -51,9 +54,9 @@ and the transcript translated.
 `synthesize` writes one audio file from pasted text or from a text or markdown file.
 Markdown markup is not read out (list numbers and bullets included) and code blocks are
 skipped; every other word is spoken, however long the text. The audio goes beside the
-source file unless you say where, and an existing file is never overwritten. Like
-transcription it runs in the background, and `job_status` reports how many chunks are
-done. Only one voicebox job runs at a time.
+source file unless you say where, and an existing file is never overwritten. Pasted text
+must name an output path. Like transcription it runs in the background, and `job_status`
+reports how many chunks are done. Only one voicebox job runs at a time.
 
 ## <img src="assets/narrate-detailed.svg" width="28" height="28" alt="" valign="middle" /> Read aloud
 
@@ -81,7 +84,7 @@ over it.
 |---|---|
 | `/voicebox:narrate [file, URL or nothing]` | Read a long text aloud |
 | `/voicebox:setup` | Install NeMo-Speech.cpp and the models |
-| `/voicebox:telemetry [on\|local\|off\|--id]` | Show or change the telemetry setting |
+| `/voicebox:telemetry [on\|local\|off\|--id\|notice]` | Show or change the telemetry setting; `notice` prints the first-run notice |
 | `/voicebox:stats` | What voicebox has recorded about your own jobs |
 
 ## Settings
@@ -110,7 +113,8 @@ the speech server decides its arguments, so keep them identical.
 ## Limits
 
 - One voicebox job runs at a time; a second request is refused with the running job's id.
-- Voice-overs are read in requests of up to 1,500 characters. The last word or two of a
+- Voice-overs are sent to the speech server in chunks of a measured size
+  ([harness/performance.md](harness/performance.md)). The last word or two of a
   request is sometimes spoken twice.
 - Text with no spaces between words (Chinese, Japanese) is cut at the request size
   rather than at a word boundary.
