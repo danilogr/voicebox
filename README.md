@@ -130,6 +130,8 @@ Claude uses these tools automatically based on your instructions:
 | `/speak:converse` | Start two-way spoken conversation mode for the current session. |
 | `/speak:narrate` | Read a document, web page, or conversation snippet out loud. |
 | `/speak:setup` | Install local NeMo models for transcription and neural voices. |
+| `/speak:telemetry` | Show or change the telemetry mode (`on`, `local`, `off`), print the install id, or keep your own recordings. |
+| `/speak:stats` | Show everything telemetry has collected on this machine. |
 
 ---
 
@@ -169,7 +171,7 @@ Customize settings via environment variables or in `.mcp.json`:
 
 - **100% On-Device Audio**: All speech synthesis, microphone recordings, and file transcriptions run entirely on your hardware. Audio, transcripts, and file names never leave your machine.
 - **Anonymous Metrics**: By default, anonymous event counts and execution timings are shared to track engine stability. No text, audio, file paths, or personal identifiers are ever collected. See [`TELEMETRY.md`](TELEMETRY.md) for complete details.
-- **Opt-Out**: Run `speak-telemetry off` or set `DO_NOT_TRACK=1` to disable reporting completely.
+- **Opt-Out**: Run `/speak:telemetry off` to stop collecting and sending usage data; the anonymous install ping still goes. Set `DO_NOT_TRACK=1` to send nothing at all. `/speak:stats` shows what this machine has collected.
 
 ---
 

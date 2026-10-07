@@ -59,6 +59,8 @@ Markdown instruction files loaded by Claude Code when a user runs slash commands
 | [`commands/converse.md`](../commands/converse.md) | `/speak:converse` | Puts the session into spoken conversation mode: Claude speaks answers aloud via `speak` and listens for user replies via `listen`. |
 | [`commands/narrate.md`](../commands/narrate.md) | `/speak:narrate` | Instructs Claude to read long texts, files, or URLs aloud in controlled 10-sentence rounds without overwhelming the speech queue. |
 | [`commands/talk.md`](../commands/talk.md) | `/talk` | Captures user speech via `scripts/speak-talk`, injects the transcript into the prompt, and warns Claude to verify destructive actions. |
+| [`commands/telemetry.md`](../commands/telemetry.md) | `/speak:telemetry` | Runs `speak-telemetry` through `uv run` with the user's arguments: shows or changes the telemetry mode, prints the install id, or switches recordings on or off. |
+| [`commands/stats.md`](../commands/stats.md) | `/speak:stats` | Runs `speak-stats` through `uv run` to show what telemetry has collected on this machine. |
 
 ---
 

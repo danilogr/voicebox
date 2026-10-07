@@ -3,16 +3,25 @@
 `speak` reports anonymous usage data so its author can tell where to spend effort next.
 It is on by default. Turning it off takes one command and no account.
 
-```bash
-speak-telemetry off      # collect nothing, send nothing but the install ping
-speak-telemetry local    # collect on this machine, send nothing but the install ping
-speak-telemetry on       # the default
-speak-stats              # see everything this machine has collected
+```text
+/speak:telemetry off     # collect nothing, send nothing but the install ping
+/speak:telemetry local   # collect on this machine, send nothing but the install ping
+/speak:telemetry on      # the default
+/speak:telemetry         # show the current mode
+/speak:stats             # see everything this machine has collected
 ```
 
-`SPEAK_TELEMETRY=off` in your environment does what `off` does, for this tool alone.
-`DO_NOT_TRACK=1` goes further: nothing is collected and **nothing at all is sent**, not
-even the install ping, with no configuration needed.
+From a terminal, `uv run` against the plugin's directory runs the same commands:
+
+```bash
+uv run --directory <plugin directory> speak-telemetry off
+uv run --directory <plugin directory> speak-stats
+```
+
+`SPEAK_TELEMETRY` set to `off` or `local` in your environment lowers the mode for this
+tool alone, while it is set. It never raises it: `SPEAK_TELEMETRY=on` does not undo an
+`off` you chose with the command. `DO_NOT_TRACK=1` goes further: nothing is collected and
+**nothing at all is sent**, not even the install ping, with no configuration needed.
 
 ## What it is for
 
@@ -109,13 +118,13 @@ included, instead of sending it.
 
 Separate, and off by default:
 
-```bash
-speak-telemetry record on
+```text
+/speak:telemetry record on
 ```
 
 This keeps the audio of what **you** say on your own computer, so you can later improve
 speech recognition for your own voice. **Recordings never leave your machine** under any
-setting, and they use real disk space. `speak-telemetry record off` stops it.
+setting, and they use real disk space. `/speak:telemetry record off` stops it.
 
 ## Where it goes, and for how long
 
@@ -130,7 +139,7 @@ rate-limit abuse and discarded in the same request; only the two-letter country 
 There is deliberately **no delete API** — an erasure endpoint on a public server is a
 standing invitation to erase other people's data.
 
-Email **danilo@gasqu.es** with your install id, which `speak-telemetry --id` prints, and it
+Email **danilo@gasqu.es** with your install id, which `/speak:telemetry --id` prints, and it
 will be deleted.
 
 That id is also the only thing that connects these rows to you. Nothing here records who
