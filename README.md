@@ -116,8 +116,10 @@ the speech server decides its arguments, so keep them identical.
 
 - One voicebox job runs at a time; a second request is refused with the running job's id.
 - Voice-overs are sent to the speech server in chunks of a measured size
-  ([harness/performance.md](harness/performance.md)). The last word or two of a
-  request is sometimes spoken twice.
+  ([harness/performance.md](harness/performance.md)). Synthesized speech sometimes
+  repeats a word or two, at the end of a chunk and inside one; they were found by
+  transcribing the audio back, so whether the speech model or the recogniser made each
+  one is not settled.
 - A voice-over is one WAV file (encoded from it for m4a and mp3), and a WAV file holds
   about 27 hours of audio: `synthesize` refuses text estimated to need more, which is
   about 1.2 million characters of prose.
@@ -127,6 +129,9 @@ the speech server decides its arguments, so keep them identical.
   A CPU-only machine is far slower than one with Metal or CUDA, and its voice-overs take
   correspondingly long ([measurements](harness/performance.md)). A request that times out
   fails the job; it is not retried.
+- The speech server answers one request at a time. A sentence read aloud while a
+  voice-over is being written waits behind that job's request, and one that waits too
+  long is spoken by `say` instead of the neural voice.
 - The telemetry setting is read when a session starts, and a job is recorded for the
   session that accepted it: a change applies from the next session.
 

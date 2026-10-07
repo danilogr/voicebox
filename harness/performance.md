@@ -100,6 +100,14 @@ readings only, `yet` missing. The error rate does not grow
 with length: these defects sit where the text sits, so a smaller chunk would not remove
 them, and it would add request ends for the echo to land on.
 
+Repeated words are not tied to request ends. Two voice-overs written through
+`synthesize` itself (a 961-character paragraph in one chunk, and a 4,229-character one
+in three) and transcribed back the same way had a word heard twice at two of their four
+chunk ends (`size size`, and a final `again` said again) and inside chunks, mid-sentence
+and at a sentence's end (`get get`, `machine machine`, `button button`). Transcripts
+alone cannot say whether the speech model or the recogniser made each repeat; listening
+to the audio would.
+
 The speech server finishes a request its client has given up on. On the M5 against the
 running server, a short request took 0.73 s alone and 19.9 s when sent right after
 aborting a request of about 770 characters: it waited behind the abandoned one. Retrying
