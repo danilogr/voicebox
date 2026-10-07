@@ -1,7 +1,7 @@
 import sys
 
-from voicebox.transcribe import commands
-from voicebox.transcribe.commands import CommandResult, run_command
+from voicebox import programs as commands
+from voicebox.programs import CommandResult, run_command
 
 
 async def test_a_command_that_finishes_within_its_timeout_returns_normally():

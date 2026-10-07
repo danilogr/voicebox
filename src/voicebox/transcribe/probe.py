@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from voicebox.transcribe.commands import FFMPEG_REMEDY, Runner, ToolMissing, run_probe_command
+from voicebox.programs import FFMPEG_REMEDY, Runner, ToolMissing, run_probe_command
 
 PROBE_ARGS = (
     "-v",

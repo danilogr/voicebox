@@ -1,4 +1,4 @@
-"""Running the external programs transcription depends on."""
+"""Running the external programs voicebox depends on: ffprobe and ffmpeg."""
 
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
@@ -76,3 +76,11 @@ async def run_convert_command(argv: Sequence[str]) -> CommandResult:
     """`run_command` bound to the ffmpeg-conversion ceiling - the default `Runner`
     for `convert()`, threaded through the worker as its own default too."""
     return await run_command(argv, timeout=CONVERT_TIMEOUT_S)
+
+
+class ConversionFailed(RuntimeError):  # noqa: N818 - reads as a state, not a failure mode
+    """ffmpeg ran but could not produce the audio asked for."""
+
+    def __init__(self, message: str, *, timed_out: bool = False) -> None:
+        super().__init__(message)
+        self.timed_out = timed_out

@@ -4,8 +4,8 @@ from typing import NoReturn
 
 import pytest
 
-from voicebox.transcribe.commands import CommandResult, ToolMissing
-from voicebox.transcribe.prepare import ConversionFailed, convert, needs_conversion
+from voicebox.programs import CommandResult, ConversionFailed, ToolMissing
+from voicebox.transcribe.prepare import convert, needs_conversion
 from voicebox.transcribe.probe import ProbeFailed, parse_probe, probe
 
 VIDEO_ONLY_MP4 = {

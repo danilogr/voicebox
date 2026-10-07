@@ -10,9 +10,9 @@ from voicebox.config import Settings
 from voicebox.jobs.desk import Desk, busy_message, claim, duration, launch
 from voicebox.jobs.lock import BUSY
 from voicebox.jobs.store import RUNNING, TranscriptionJob, new_job_id
+from voicebox.programs import ToolMissing
 from voicebox.telemetry.rows import TRANSCRIPTION, JobFacts, iso, job_row, wall_ms
 from voicebox.telemetry.session import TelemetrySession
-from voicebox.transcribe.commands import ToolMissing
 from voicebox.transcribe.output import FORMATS, output_path
 from voicebox.transcribe.prepare import needs_conversion
 from voicebox.transcribe.probe import Probe, ProbeFailed

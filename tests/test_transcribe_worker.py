@@ -4,7 +4,7 @@ import pytest
 
 from voicebox.jobs.lock import JobBusy, job_lock
 from voicebox.jobs.store import DONE, EMPTY, FAILED, RUNNING, JobStore, TranscriptionJob
-from voicebox.transcribe.commands import CommandResult
+from voicebox.programs import CommandResult
 from voicebox.transcribe.worker import cli_argv, run_job
 
 CLAIMER, WORKER, OTHER = 100, 200, 300

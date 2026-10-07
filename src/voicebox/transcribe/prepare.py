@@ -2,18 +2,16 @@
 
 from pathlib import Path
 
-from voicebox.transcribe.commands import FFMPEG_REMEDY, Runner, ToolMissing, run_convert_command
+from voicebox.programs import (
+    FFMPEG_REMEDY,
+    ConversionFailed,
+    Runner,
+    ToolMissing,
+    run_convert_command,
+)
 from voicebox.transcribe.probe import Probe
 
 CONVERT_ARGS = ("-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le")
-
-
-class ConversionFailed(RuntimeError):  # noqa: N818 - reads as a state, not a failure mode
-    """ffmpeg ran but could not produce the audio asked for."""
-
-    def __init__(self, message: str, *, timed_out: bool = False) -> None:
-        super().__init__(message)
-        self.timed_out = timed_out
 
 
 def needs_conversion(found: Probe) -> bool:

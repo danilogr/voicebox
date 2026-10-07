@@ -11,9 +11,9 @@ from voicebox.config import Settings
 from voicebox.jobs.desk import Desk, claim, reconcile
 from voicebox.jobs.lock import JobBusy, job_lock
 from voicebox.jobs.store import RUNNING, JobStore, TranscriptionJob
+from voicebox.programs import CommandResult
 from voicebox.telemetry.jobs import record_job
 from voicebox.telemetry.session import TelemetrySession
-from voicebox.transcribe.commands import CommandResult
 from voicebox.transcribe.probe import Probe
 from voicebox.transcribe.service import TranscribeRequest, start
 from voicebox.transcribe.worker import run_job
@@ -343,7 +343,7 @@ async def test_a_file_with_no_audio_is_refused_input_unsupported_with_its_shape(
 
 
 async def test_missing_ffprobe_is_refused_ffmpeg_missing(tmp_path):
-    from voicebox.transcribe.commands import ToolMissing
+    from voicebox.programs import ToolMissing
 
     media = tmp_path / "a.m4a"
     media.write_bytes(b"x")

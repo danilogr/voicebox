@@ -21,10 +21,10 @@ from speak_core.supervisor import process_is_alive
 from voicebox.jobs.desk import Record
 from voicebox.jobs.lock import JobBusy, job_lock
 from voicebox.jobs.store import DONE, EMPTY, FAILED, Job, JobStore, TranscriptionJob
+from voicebox.programs import ConversionFailed, Runner, ToolMissing, run_convert_command
 from voicebox.telemetry.jobs import record_job
-from voicebox.transcribe.commands import Runner, ToolMissing, run_convert_command
 from voicebox.transcribe.output import transcript_text
-from voicebox.transcribe.prepare import ConversionFailed, convert
+from voicebox.transcribe.prepare import convert
 
 logger = logging.getLogger(__name__)
 
