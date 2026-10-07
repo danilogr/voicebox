@@ -213,7 +213,13 @@ def create_server(
         )
         if supervisor is not None and not session.registered:
             session.registered = True
-            await supervisor.register()
+            try:
+                await supervisor.register()
+            except OSError as error:
+                # The sentence is already queued: failing the call now would make the
+                # caller retry it and be read twice. Without the registration the shared
+                # speech server may stop under this session; the reading itself goes on.
+                logger.warning("could not register with the speech server: %s", error)
         if ahead == 0:
             return reply("reading")
         return reply(f"queued behind {ahead} sentence{_plural(ahead)}")

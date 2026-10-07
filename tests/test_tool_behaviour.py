@@ -123,28 +123,37 @@ async def test_concurrent_read_aloud_calls_enqueue_in_arrival_order_despite_a_sl
     narration.close()
 
 
-async def test_a_stop_during_the_probe_leaves_nothing_enqueued_after_it():
+async def test_a_stop_while_a_read_aloud_waits_on_the_supervisor_leaves_nothing_after_it():
     import asyncio
 
-    from voicebox.narration import NarrationTracker
+    entered, release = asyncio.Event(), asyncio.Event()
 
-    async def warm() -> bool:
-        await asyncio.sleep(0.05)
-        return True
+    class SlowSupervisor(FakeSupervisor):
+        async def register(self) -> None:
+            entered.set()
+            await release.wait()
+            await super().register()
 
-    narration = NarrationTracker(
-        telemetry=None, engine="nemo", model=None, voice=None, pending=lambda: 0, warm=warm
-    )
     queue = FakeQueue()
-    server = create_server(
-        settings=Settings.from_env({}, platform="darwin"),
-        engine=FakeEngine(),
-        queue=queue,
-        supervisor=None,
-        narration=narration,
-    )
-    await call(server, "read_aloud", text="One.")
-    await call(server, "stop_reading")
-    await asyncio.sleep(0.1)
-    # The sentence was enqueued before the stop, and the stop dropped it.
+    server, _ = build(queue=queue, supervisor=SlowSupervisor())
+    reading = asyncio.create_task(call(server, "read_aloud", text="One."))
+    await entered.wait()  # read_aloud is suspended inside register, after its enqueue
+    assert await call(server, "stop_reading") == "stopped; dropped 0 sentences"
+    release.set()
+    assert await reading == "reading"
+    # The sentence was enqueued before the stop, and the stop came after it.
     assert len(queue.enqueued) == 1 and queue.stopped == 1
+
+
+async def test_an_unwritable_state_directory_never_fails_a_sentence_already_enqueued(caplog):
+    class BrokenSupervisor(FakeSupervisor):
+        async def register(self) -> None:
+            raise OSError("read-only file system")
+
+    queue = FakeQueue()
+    server, _ = build(queue=queue, supervisor=BrokenSupervisor())
+    with caplog.at_level("WARNING"):
+        assert await call(server, "read_aloud", text="One.") == "reading"
+    assert await call(server, "read_aloud", text="Two.") == "reading"
+    assert [text for text, _, _ in queue.enqueued] == ["One.", "Two."]
+    assert "read-only file system" in caplog.text

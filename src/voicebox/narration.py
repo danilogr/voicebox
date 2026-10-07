@@ -115,7 +115,8 @@ class NarrationTracker:
         """The queue's `on_finish`: one sentence left the queue, however it ended."""
         if self._stale > 0:
             # The outcome of a sentence queued in a run that has since ended: the queue
-            # answers every sentence exactly once and in order, so these come first.
+            # answers every sentence exactly once, and sentences enqueued before a close
+            # are all answered before any enqueued after it, so these come first.
             self._stale -= 1
             return
         run = self._run
