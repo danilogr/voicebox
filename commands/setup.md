@@ -20,5 +20,7 @@ the speech server runs, roughly 1.75 GB of resident memory.
 4. On success, say what is now available: `transcribe` for audio and video files,
    `synthesize` for turning a text or a file into one audio file, and `/voicebox:narrate`
    for reading a long text aloud. The plugin starts and stops the speech server on its own.
+5. Run `uv run --directory "${CLAUDE_PLUGIN_ROOT}" --quiet voicebox-telemetry notice` and
+   show its output word for word: it is voicebox's one-time telemetry notice.
 
 Do not start the server yourself and do not edit the user's shell profile without asking.

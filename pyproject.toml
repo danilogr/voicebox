@@ -10,6 +10,8 @@ dependencies = [
 
 [project.scripts]
 voicebox-mcp = "voicebox.__main__:main"
+voicebox-telemetry = "voicebox.telemetry.commands:telemetry_main"
+voicebox-stats = "voicebox.telemetry.commands:stats_main"
 
 [build-system]
 requires = ["hatchling"]

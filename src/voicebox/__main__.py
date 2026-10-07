@@ -4,6 +4,8 @@ import asyncio
 import logging
 import os
 import signal
+import sys
+from collections.abc import Coroutine, Mapping
 from typing import Protocol
 
 from mcp.server.mcpserver import MCPServer
@@ -12,10 +14,19 @@ from speak_core.queue import SpeechQueue
 from speak_core.runtime import configure_logging, supervisor_for
 from speak_core.speaker import SpeakerLock
 from speak_core.supervisor import NemoSupervisor
+from speak_core.telemetry import consent as telemetry_consent
+from speak_core.telemetry import notice as telemetry_notice
+from speak_core.telemetry import ping as telemetry_ping
+from speak_core.telemetry import ship as telemetry_ship
+from speak_core.telemetry import store as telemetry_store
+from speak_core.telemetry import wiring as telemetry_wiring
 
 from voicebox.config import PLUGIN, Settings
 from voicebox.jobs.desk import build_desk, sweep
-from voicebox.server import create_server
+from voicebox.server import VERSION, create_server
+from voicebox.telemetry import compose as telemetry_compose
+from voicebox.telemetry.contract import IDENTITY, SCHEMA, db_path
+from voicebox.telemetry.notice import Notice
 
 logger = logging.getLogger(__name__)
 
@@ -29,23 +40,100 @@ def build_supervisor(settings: Settings) -> NemoSupervisor | None:
     return supervisor_for(settings.server)
 
 
-def build(settings: Settings) -> MCPServer:
-    """Wire the engine, queue, supervisor and transcription together."""
+async def _ship_backlog(env: Mapping[str, str], settings: Settings) -> None:
+    """Ship once, at session start, off the hot path. A failure leaves rows unshipped
+    for the next session to retry."""
+    debug = IDENTITY.debug_requested(env)
+    consented = telemetry_consent.load_consent(env, IDENTITY, host_platform=sys.platform)
+    if not consented.collects or not (consented.uploads or debug):
+        return
+    try:
+        conn = telemetry_store.connect(db_path(settings.state_dir), SCHEMA)
+    except OSError as error:
+        logger.debug("telemetry: could not open the local store to ship: %s", error)
+        return
+    try:
+        shipped = await telemetry_ship.ship(
+            conn,
+            schema=SCHEMA,
+            install_id=consented.install_id,
+            url=IDENTITY.ingest_url(env),
+            transport=telemetry_wiring.http_transport,
+            debug=debug,
+        )
+        logger.debug("telemetry: shipped %d row(s)", shipped)
+    except Exception:
+        logger.debug("telemetry: shipping failed", exc_info=True)
+    finally:
+        conn.close()
+
+
+async def _send_ping(ping: telemetry_ping.Ping, env: Mapping[str, str]) -> None:
+    """The install ping, in the background. A failure is due again next session."""
+    try:
+        await telemetry_ping.send(
+            ping, transport=telemetry_wiring.http_transport, debug=IDENTITY.debug_requested(env)
+        )
+    except Exception:
+        logger.debug("telemetry: the install ping failed", exc_info=True)
+
+
+def _spawn(coroutine: Coroutine[object, object, object]) -> None:
+    """Run in the background, keeping a reference so the task is not collected midway."""
+    task = asyncio.create_task(coroutine)
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+
+
+def build(settings: Settings, env: Mapping[str, str]) -> MCPServer:
+    """Wire the engine, queue, supervisor, jobs and telemetry together."""
     supervisor = build_supervisor(settings)
 
     def start_speech_server() -> None:
         """Kick off a cold start without waiting: this sentence goes out through `say`."""
-        if supervisor is None:
-            return
-        task = asyncio.create_task(supervisor.ensure_running())
-        _background.add(task)
-        task.add_done_callback(_background.discard)
+        if supervisor is not None:
+            _spawn(supervisor.ensure_running())
 
     engine = build_engine(settings.speech, settings.server, on_unavailable=start_speech_server)
     queue = SpeechQueue(
         prepare=engine.prepare,
         speaker=SpeakerLock(shared_dir=settings.server.shared_dir),
     )
+
+    # Nothing is collected or sent until the first-run notice has been shown: that keeps
+    # "shown before anything is sent" literal, and keeps the first ping an install,
+    # which the ping decides from the consent file that collecting would create.
+    notice_due = telemetry_notice.due(env, IDENTITY, host_platform=sys.platform)
+    ping = None
+    telemetry = None
+    # A build whose versions are not release versions would have every request refused.
+    shippable = telemetry_compose.versions_shippable(VERSION)
+    if not shippable:
+        logger.info("telemetry: %s is not a release build; nothing will be sent", VERSION)
+    if not notice_due:
+        # Decided before `compose.build`, which may create the consent file it reads.
+        if shippable:
+            ping = telemetry_ping.due(
+                env,
+                IDENTITY,
+                plugin_version=VERSION,
+                host_platform=sys.platform,
+                ingest_url=IDENTITY.ingest_url(env),
+            )
+        telemetry = telemetry_compose.build(env, settings=settings, plugin_version=VERSION)
+    notice = Notice(
+        pending=notice_due,
+        mark_shown=lambda: telemetry_notice.mark_shown(env, IDENTITY, host_platform=sys.platform),
+    )
+
+    def schedule_sends() -> None:
+        """Deferred to the server's lifespan: `build()` runs before an event loop exists.
+        The ping goes whatever the telemetry mode; the backlog only when it collects."""
+        if ping is not None:
+            _spawn(_send_ping(ping, env))
+        if telemetry is not None and shippable:
+            _spawn(_ship_backlog(env, settings))
+
     desk = build_desk(settings)
     # A worker that died while no session was asking is found now, not at the first
     # status call, and the lock it left is freed for this session's first job.
@@ -56,6 +144,9 @@ def build(settings: Settings) -> MCPServer:
         queue=queue,
         supervisor=supervisor,
         desk=desk,
+        telemetry=telemetry,
+        notice=notice,
+        on_session_start=schedule_sends,
     )
 
 
@@ -128,9 +219,10 @@ def run(server: StdioServer) -> None:
 
 def main() -> None:
     configure_logging(PLUGIN)
-    settings = Settings.from_env(os.environ)
+    env = dict(os.environ)
+    settings = Settings.from_env(env)
     try:
-        server = build(settings)
+        server = build(settings, env)
     except ValueError as error:
         logger.error("%s", error)
         raise SystemExit(2) from error

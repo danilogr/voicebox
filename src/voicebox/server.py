@@ -1,4 +1,5 @@
-"""The MCP server: file transcription, and a speech queue for reading text aloud."""
+"""The MCP server: file transcription, background jobs, and a speech queue for reading
+text aloud."""
 
 import asyncio
 import logging
@@ -13,12 +14,15 @@ from pydantic import Field
 from speak_core.engines.base import Engine
 from speak_core.queue import QueueStats
 from speak_core.queue import describe as describe_queue
+from speak_core.telemetry.wiring import normalize_harness
 from speak_core.text import normalize
 
 from voicebox import tools
 from voicebox.config import Settings
 from voicebox.jobs.desk import Desk, busy_message
 from voicebox.jobs.status import job_status as describe_jobs
+from voicebox.telemetry.notice import Notice
+from voicebox.telemetry.session import TelemetrySession
 from voicebox.transcribe import service as transcription
 
 logger = logging.getLogger(__name__)
@@ -51,6 +55,9 @@ class SessionState:
     """What this connection has done that its shutdown must undo. Never written to disk."""
 
     registered: bool = False
+    # Set once the first tool call has looked for the MCP client's own `client_info`,
+    # whether or not it found one: there is nothing more to learn by asking again.
+    harness_checked: bool = False
 
 
 def _plural(count: int) -> str:
@@ -80,6 +87,7 @@ async def shutdown(
     worker: asyncio.Task[None],
     supervisor: "Supervisor | None",
     session: SessionState,
+    telemetry: TelemetrySession | None = None,
 ) -> None:
     """Silence the speaker first, then tear the session down.
 
@@ -92,6 +100,9 @@ async def shutdown(
     await asyncio.gather(worker, return_exceptions=True)
     if supervisor is not None and session.registered:
         await supervisor.release()
+    if telemetry is not None:
+        telemetry.close()
+        telemetry.conn.close()
 
 
 def create_server(
@@ -101,9 +112,30 @@ def create_server(
     queue: Queue,
     supervisor: Supervisor | None,
     desk: Desk | None = None,
+    telemetry: TelemetrySession | None = None,
+    notice: Notice | None = None,
     on_session_start: Callable[[], None] | None = None,
 ) -> MCPServer:
     session = SessionState()
+
+    def reply(text: str) -> str:
+        """Every successful tool reply goes through here, so the first one of a session
+        that owes the first-run notice carries it."""
+        shown = notice.take() if notice is not None else None
+        return text if shown is None else f"{text}\n\n{shown}"
+
+    def note_harness(ctx: Context) -> None:
+        """Correct the session row's harness from the MCP client's own `client_info`, the
+        first time a tool call can supply it. Only ever narrows: without it the row keeps
+        what the environment decided at session start."""
+        if telemetry is None or session.harness_checked:
+            return
+        session.harness_checked = True
+        found = client_info(ctx)
+        if found is None:
+            return
+        name, version = found
+        telemetry.update_harness(normalize_harness(name), version)
 
     @asynccontextmanager
     async def lifespan(_: MCPServer) -> AsyncIterator[None]:
@@ -115,7 +147,13 @@ def create_server(
         try:
             yield
         finally:
-            await shutdown(queue=queue, worker=worker, supervisor=supervisor, session=session)
+            await shutdown(
+                queue=queue,
+                worker=worker,
+                supervisor=supervisor,
+                session=session,
+                telemetry=telemetry,
+            )
 
     server = MCPServer(name="voicebox", version=VERSION, lifespan=lifespan)
 
@@ -125,7 +163,10 @@ def create_server(
         voice: Annotated[str | None, Field(description=tools.VOICE_OVERRIDE)] = None,
         rate: Annotated[float | None, Field(description=tools.RATE)] = None,
         intent: Annotated[tools.Intent | None, Field(description=tools.INTENT)] = None,
+        *,
+        ctx: Context,
     ) -> str:
+        note_harness(ctx)
         try:
             spoken = normalize(text, max_chars=settings.speech.max_chars)
         except ValueError as error:
@@ -140,20 +181,22 @@ def create_server(
             intent=intent,
         )
         if ahead == 0:
-            return f'speaking: "{spoken}"'
-        return f'queued behind {ahead} utterance{_plural(ahead)}: "{spoken}"'
+            return reply(f'speaking: "{spoken}"')
+        return reply(f'queued behind {ahead} utterance{_plural(ahead)}: "{spoken}"')
 
     @server.tool(name="stop_speaking", description=tools.STOP_SPEAKING)
-    async def stop_speaking() -> str:
+    async def stop_speaking(*, ctx: Context) -> str:
+        note_harness(ctx)
         dropped = await queue.stop()
-        return f"stopped; dropped {dropped} utterance{_plural(dropped)}"
+        return reply(f"stopped; dropped {dropped} utterance{_plural(dropped)}")
 
     @server.tool(name="speech_status", description=tools.SPEECH_STATUS)
-    async def speech_status() -> str:
+    async def speech_status(*, ctx: Context) -> str:
+        note_harness(ctx)
         stats = queue.stats()
         if stats.size == 0:
-            return f"nothing queued; {stats.finished} spoken so far"
-        return f"{describe_queue(stats)}; {stats.finished} spoken so far"
+            return reply(f"nothing queued; {stats.finished} spoken so far")
+        return reply(f"{describe_queue(stats)}; {stats.finished} spoken so far")
 
     if desk is not None:
         # The job lock is claimed for a worker that does not exist yet, so between a job
@@ -177,27 +220,35 @@ def create_server(
             translate_to: Annotated[
                 str | None, Field(description=tools.TRANSCRIBE_TRANSLATE)
             ] = None,
+            *,
+            ctx: Context,
         ) -> str:
+            note_harness(ctx)
             if starting.locked():
-                return busy_message(desk)
+                return reply(busy_message(desk))
             async with starting:
-                return await transcription.start(
-                    desk,
-                    settings,
-                    transcription.TranscribeRequest(
-                        path=path,
-                        output_dir=output_dir,
-                        format=format,
-                        diarize=diarize,
-                        language=language,
-                        translate_to=translate_to,
-                    ),
+                return reply(
+                    await transcription.start(
+                        desk,
+                        settings,
+                        transcription.TranscribeRequest(
+                            path=path,
+                            output_dir=output_dir,
+                            format=format,
+                            diarize=diarize,
+                            language=language,
+                            translate_to=translate_to,
+                        ),
+                    )
                 )
 
         @server.tool(name="job_status", description=tools.JOB_STATUS)
         async def job_status(
             job_id: Annotated[str | None, Field(description=tools.JOB_ID)] = None,
+            *,
+            ctx: Context,
         ) -> str:
-            return describe_jobs(desk, settings, job_id)
+            note_harness(ctx)
+            return reply(describe_jobs(desk, settings, job_id))
 
     return server
