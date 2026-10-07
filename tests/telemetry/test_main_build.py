@@ -95,3 +95,16 @@ def test_a_corrupt_store_does_not_stop_the_server_from_being_built(tmp_path, cap
     spawned, served = run_build(captured, env)
     assert served["telemetry"] is None
     assert "_ship_backlog" not in spawned
+
+
+def test_a_sweep_that_cannot_run_is_logged_as_a_warning_and_the_server_is_still_built(
+    tmp_path, captured, monkeypatch, caplog
+):
+    def sweep(desk: object) -> None:
+        raise OSError("state dir unreadable")
+
+    monkeypatch.setattr(entry, "sweep", sweep)
+    env = env_for(tmp_path, DO_NOT_TRACK="1")
+    with caplog.at_level("WARNING", logger=entry.logger.name):
+        run_build(captured, env)
+    assert [r.levelname for r in caplog.records if "earlier jobs" in r.getMessage()] == ["WARNING"]

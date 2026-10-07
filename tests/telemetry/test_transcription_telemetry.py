@@ -8,7 +8,7 @@ import pytest
 from telemetry_support import INSTALL, SESSION, assert_shippable, opened, ref, stored_rows
 
 from voicebox.config import Settings
-from voicebox.jobs.desk import Desk, reconcile
+from voicebox.jobs.desk import Desk, claim, reconcile
 from voicebox.jobs.lock import JobBusy, job_lock
 from voicebox.jobs.store import RUNNING, JobStore, TranscriptionJob
 from voicebox.telemetry.jobs import record_job
@@ -162,7 +162,23 @@ async def test_conversion_time_is_measured(tmp_path):
         return CommandResult(0, b"", b"")
 
     await finish(tmp_path, run_cli=cli(), run=ffmpeg)
-    assert assert_shippable(db)[0]["convert_ms"] >= 0
+    (row,) = assert_shippable(db)
+    assert isinstance(row["convert_ms"], int) and row["convert_ms"] > 0
+
+
+async def test_a_model_failure_after_a_conversion_is_failed_at_asr_and_counts_the_conversion(
+    tmp_path,
+):
+    db = started(tmp_path, convert=True, stage="convert")
+
+    async def ffmpeg(argv) -> CommandResult:
+        Path(argv[-1]).write_bytes(b"RIFF")
+        return CommandResult(0, b"", b"")
+
+    await finish(tmp_path, run_cli=cli(code=1), run=ffmpeg)
+    (row,) = assert_shippable(db)
+    assert (row["status"], row["reason"], row["stage"]) == ("failed", "model_failed", "asr")
+    assert row["converted"] is True and row["convert_ms"] > 0
 
 
 async def test_a_worker_that_loses_the_lock_race_is_refused_busy(tmp_path):
@@ -180,6 +196,8 @@ async def test_a_worker_that_loses_the_lock_race_is_refused_busy(tmp_path):
     (row,) = assert_shippable(db)
     assert (row["status"], row["reason"]) == ("refused", "busy")
     assert "stage" not in row
+    # The worker never ran, so nothing was converted whatever the plan said.
+    assert "converted" not in row
 
 
 def test_a_dead_worker_is_recorded_as_crashed_once_at_its_stage(tmp_path):
@@ -373,6 +391,64 @@ async def test_a_worker_that_cannot_be_spawned_leaves_one_failed_other_row(tmp_p
     assert "could not start" in reply
     (row,) = assert_shippable(session.db_path)
     assert (row["status"], row["reason"], row["stage"]) == ("failed", "other", "asr")
+    assert "converted" not in row
+
+
+async def test_a_job_record_that_cannot_be_written_is_still_one_failed_other_row(tmp_path):
+    media = tmp_path / "a.m4a"
+    media.write_bytes(b"x")
+    session = session_for(tmp_path)
+    desk = replace(desk_for(tmp_path), record=record_job)
+
+    def write(job) -> None:
+        raise OSError("disk full")
+
+    desk.jobs.write = write  # type: ignore[method-assign]
+    reply = await start(desk, Settings(state_dir=tmp_path / "state"), request(media), session)
+    assert "could not start" in reply
+    (row,) = assert_shippable(session.db_path)
+    assert (row["status"], row["reason"]) == ("failed", "other")
+    assert "converted" not in row
+    # The lock is given back, so the next job is not turned away.
+    claim(desk).release()
+
+
+@pytest.mark.parametrize("seconds", [float("nan"), float("inf")])
+def test_a_duration_that_is_not_finite_still_leaves_a_row_without_it(tmp_path, seconds):
+    db = started(tmp_path, duration_s=seconds)
+    record_job(
+        replace(
+            JobStore(tmp_path).read("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
+            state="done",
+            finished_at=1100.0,
+        )
+    )
+    (row,) = assert_shippable(db)
+    assert row["status"] == "ok" and "audio_ms" not in row
+
+
+async def test_a_probe_with_a_duration_that_is_not_finite_is_still_one_refusal(tmp_path):
+    media = tmp_path / "a.wav"
+    media.write_bytes(b"x")
+    desk = desk_for(tmp_path, found=Probe(float("inf"), 1, "wav", "pcm_s16le", 16000, 1))
+    session = session_for(tmp_path)
+    await start(
+        desk,
+        Settings(state_dir=tmp_path / "state"),
+        request(media, output_dir=str(tmp_path / "missing")),
+        session,
+    )
+    (row,) = assert_shippable(session.db_path)
+    assert (row["status"], row["reason"]) == ("refused", "output_unwritable")
+    assert "audio_ms" not in row
+
+
+@pytest.mark.parametrize("ref_value", [{"db_path": "x"}, {"db_path": "x", "session_id": 1}])
+def test_a_job_whose_telemetry_reference_is_malformed_records_nothing_and_never_raises(
+    tmp_path, ref_value
+):
+    stale = job(tmp_path, tmp_path / "t.db", state="done", finished_at=1100.0)
+    record_job(replace(stale, telemetry=ref_value))  # type: ignore[arg-type]
 
 
 async def test_a_spawn_failure_is_still_recorded_when_writing_the_record_fails(tmp_path):

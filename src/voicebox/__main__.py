@@ -164,7 +164,7 @@ def build(settings: Settings, env: Mapping[str, str]) -> MCPServer:
     try:
         sweep(desk)
     except OSError:
-        logger.debug("could not reconcile earlier jobs at start", exc_info=True)
+        logger.warning("could not reconcile earlier jobs at start", exc_info=True)
     return create_server(
         settings=settings,
         engine=engine,

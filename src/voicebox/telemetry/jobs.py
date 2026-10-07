@@ -22,13 +22,16 @@ STATUS_OF_STATE = {DONE: "ok", EMPTY: "empty", FAILED: "failed", CRASHED: "crash
 REFUSED_REASON = "busy"
 
 
-def transcription_fields(job: TranscriptionJob) -> dict[str, object]:
+def transcription_fields(job: TranscriptionJob, *, ran: bool) -> dict[str, object]:
+    """`ran` is whether a worker did any work: `converted` says what happened, so a job
+    that never started has no answer to give."""
     return {
         "source_bytes": job.size_bytes,
-        "audio_ms": round(job.duration_s * 1000),
+        # Unrounded: `job_row` rounds a finite value and drops one that is not.
+        "audio_ms": job.duration_s * 1000,
         "audio_codec": job.codec,
         "has_video": job.has_video,
-        "converted": job.convert,
+        "converted": job.convert if ran else None,
         "convert_ms": job.convert_ms,
         "asr_ms": job.asr_ms,
         "diarize": job.diarize,
@@ -40,10 +43,10 @@ def transcription_fields(job: TranscriptionJob) -> dict[str, object]:
     }
 
 
-def _kind_fields(job: Job) -> tuple[str | None, dict[str, object]]:
+def _kind_fields(job: Job, *, ran: bool) -> tuple[str | None, dict[str, object]]:
     """The model a kind ran and its own fields."""
     if isinstance(job, TranscriptionJob):
-        return job.asr_model, transcription_fields(job)
+        return job.asr_model, transcription_fields(job, ran=ran)
     raise TypeError(f"no telemetry fields for a {job.kind} job")
 
 
@@ -53,7 +56,8 @@ def finished_row(job: Job, *, now: float, now_monotonic: float) -> dict[str, obj
     if ref is None or job.state not in STATUS_OF_STATE:
         return None
     status = "refused" if job.reason == REFUSED_REASON else STATUS_OF_STATE[job.state]
-    model, fields = _kind_fields(job)
+    # A refusal and a job whose worker never wrote its pid did no work.
+    model, fields = _kind_fields(job, ran=status != "refused" and job.worker_pid is not None)
     facts = JobFacts(
         job_id=job.job_id,
         session_id=ref["session_id"],
@@ -80,7 +84,7 @@ def record_job(job: Job) -> None:
     """Record a job that has ended, for the session that asked. Never raises."""
     try:
         row = finished_row(job, now=time.time(), now_monotonic=time.monotonic())
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, KeyError):
         logger.debug("telemetry: could not build the row for job %s", job.job_id, exc_info=True)
         return
     if row is not None and job.telemetry is not None:

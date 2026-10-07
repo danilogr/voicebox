@@ -92,6 +92,23 @@ def claim(desk: Desk) -> ExclusiveLock:
     return lock
 
 
+def _record_unstarted(desk: Desk, job: Job, error: OSError) -> None:
+    """A job that could not start still ends in exactly one row: its record is kept when
+    it can be written, and counted either way."""
+    failed = replace(
+        job,
+        state=FAILED,
+        finished_at=desk.clock(),
+        error=f"could not start: {error}",
+        reason="other",
+    )
+    try:
+        desk.jobs.write(failed)
+    except OSError as write_error:
+        logger.debug("could not record job %s as failed: %s", job.job_id, write_error)
+    desk.record(failed)
+
+
 async def launch(desk: Desk, lock: ExclusiveLock, job: Job, argv: Sequence[str]) -> str | None:
     """Write a job's first record and start its worker. `None` once it is running;
     otherwise why it could not start, with the lock already given back.
@@ -103,25 +120,13 @@ async def launch(desk: Desk, lock: ExclusiveLock, job: Job, argv: Sequence[str])
         desk.jobs.write(job)
     except OSError as error:
         lock.release()
+        _record_unstarted(desk, job, error)
         return str(error)
     try:
         worker_pid = await desk.spawn(argv, desk.jobs.log_path(job.job_id))
     except OSError as error:
         lock.release()
-        failed = replace(
-            job,
-            state=FAILED,
-            finished_at=desk.clock(),
-            error=f"could not start: {error}",
-            reason="other",
-        )
-        # The row is the job's one telemetry record, so a record that cannot be
-        # written must not stop it being counted.
-        try:
-            desk.jobs.write(failed)
-        except OSError as write_error:
-            logger.debug("could not record job %s as failed: %s", job.job_id, write_error)
-        desk.record(failed)
+        _record_unstarted(desk, job, error)
         return str(error)
     # A sidecar the tool alone writes, never the record: it makes a worker that died
     # before writing its own pid detectable at once instead of after the grace window.

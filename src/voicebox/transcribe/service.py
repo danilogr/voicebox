@@ -66,7 +66,8 @@ class _Refusal:
                 ),
                 {
                     "source_bytes": found.size_bytes if found is not None else None,
-                    "audio_ms": round(found.duration_s * 1000)
+                    # Unrounded: `job_row` rounds a finite value and drops one that is not.
+                    "audio_ms": found.duration_s * 1000
                     if found is not None and found.has_audio
                     else None,
                     "audio_codec": found.codec if found is not None else None,
