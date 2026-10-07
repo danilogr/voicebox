@@ -108,3 +108,34 @@ def test_a_sweep_that_cannot_run_is_logged_as_a_warning_and_the_server_is_still_
     with caplog.at_level("WARNING", logger=entry.logger.name):
         run_build(captured, env)
     assert [r.levelname for r in caplog.records if "earlier jobs" in r.getMessage()] == ["WARNING"]
+
+
+def test_narration_gets_no_telemetry_while_the_notice_is_due(tmp_path, captured):
+    env = env_for(tmp_path, DO_NOT_TRACK="")
+    _, served = run_build(captured, env)
+    narration = served["narration"]
+    assert narration._telemetry is None  # type: ignore[attr-defined]
+
+
+def test_narration_gets_the_session_once_the_notice_is_shown(tmp_path, captured):
+    env = env_for(tmp_path, DO_NOT_TRACK="")
+    mark_notice_shown(env)
+    _, served = run_build(captured, env)
+    assert served["narration"]._telemetry is served["telemetry"]  # type: ignore[attr-defined]
+
+
+def test_the_model_and_the_probe_belong_to_the_nemo_engine_only(tmp_path, captured):
+    _, served = run_build(captured, env_for(tmp_path, DO_NOT_TRACK="1"))
+    narration = served["narration"]
+    assert (narration._engine, narration._model, narration._warm) == (  # type: ignore[attr-defined]
+        "command",
+        None,
+        None,
+    )
+    run_build(
+        captured,
+        {**env_for(tmp_path, DO_NOT_TRACK="1"), "VOICEBOX_ENGINE": "nemo"},
+    )
+    narration = served["narration"]
+    assert narration._engine == "nemo" and narration._model  # type: ignore[attr-defined]
+    assert narration._warm is not None  # type: ignore[attr-defined]

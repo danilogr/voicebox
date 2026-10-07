@@ -41,6 +41,8 @@ class _Run:
     synth_ms: int = 0
     audio_ms: int = 0
     fallback: int = 0
+    # Sentences queued whose outcome has not arrived.
+    outstanding: int = 0
 
 
 class NarrationTracker:
@@ -68,26 +70,58 @@ class NarrationTracker:
         self._monotonic = monotonic
         self._run: _Run | None = None
         self._timer: asyncio.TimerHandle | None = None
+        self._probe: asyncio.Task[None] | None = None
+        # Outcomes still owed by runs that have ended.
+        self._stale = 0
 
-    async def queued(self, text: str) -> None:
-        """One sentence accepted by `read_aloud`, before it is enqueued."""
+    def queued(self, text: str) -> None:
+        """One sentence accepted by `read_aloud`, called right before it is enqueued.
+
+        Never awaits: requests are served concurrently, and a suspension here would let
+        a later sentence be enqueued first, or a `stop_reading` run between this call and
+        the enqueue. The server-warm probe runs beside the run instead.
+        """
         self._cancel_timer()
         run = self._run
         if run is None:
-            # Opened before awaiting anything, so two sentences arriving together share it.
             run = self._run = _Run(
                 job_id=new_job_id(), started_at=self._clock(), started_monotonic=self._monotonic()
             )
-            if self._warm is not None:
-                run.server_warm = await self._warm()
+            self._start_probe(run)
         run.sentences += 1
+        run.outstanding += 1
         run.chars += len(text)
+
+    def _start_probe(self, run: _Run) -> None:
+        if self._warm is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._probe = loop.create_task(self._probe_into(run, self._warm))
+
+    async def _probe_into(self, run: _Run, warm: Callable[[], Awaitable[bool]]) -> None:
+        try:
+            answer = await warm()
+        except Exception:
+            logger.debug("telemetry: the server-warm probe failed", exc_info=True)
+            return
+        # Only the run that asked: a run closed meanwhile has already been recorded.
+        if self._run is run:
+            run.server_warm = answer
 
     def finished(self, outcome: UtteranceOutcome) -> None:
         """The queue's `on_finish`: one sentence left the queue, however it ended."""
+        if self._stale > 0:
+            # The outcome of a sentence queued in a run that has since ended: the queue
+            # answers every sentence exactly once and in order, so these come first.
+            self._stale -= 1
+            return
         run = self._run
         if run is None:
             return
+        run.outstanding -= 1
         if outcome.synth_ms is not None:
             run.synth_ms += outcome.synth_ms
         if outcome.status == "ok":
@@ -146,9 +180,13 @@ class NarrationTracker:
 
     def _close(self, *, idle: bool) -> None:
         self._cancel_timer()
+        if self._probe is not None:
+            self._probe.cancel()
+            self._probe = None
         run, self._run = self._run, None
         if run is None:
             return
+        self._stale += max(run.outstanding, 0)
         if idle and run.played == 0 and run.failed > 0:
             self._record(run, "failed", "other")
         elif idle or run.played >= run.sentences:

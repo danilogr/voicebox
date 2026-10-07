@@ -105,13 +105,43 @@ async def test_every_narration_outcome_is_a_shippable_row(tmp_path):
         )
 
     ok = tracker("nemo")
-    await ok.queued("One.")
+    ok.queued("One.")
     ok.finished(outcome())
     ok.close()
     stopped = tracker("say")
-    await stopped.queued("One.")
-    await stopped.queued("Two.")
+    stopped.queued("One.")
+    stopped.queued("Two.")
     stopped.stopped()
     tracker("command").refused("input_unsupported")
-    statuses = sorted(row["status"] for row in assert_shippable(db))
-    assert statuses == ["ok", "refused", "stopped"]
+    broken = tracker("nemo")
+    broken.queued("One.")
+    broken.finished(outcome("failed", play_ms=None, audio_ms=None))
+    broken.close()
+    # A run closed by the session ending with nothing played is `stopped`; only the idle
+    # close reports `failed` (next test).
+    rows = assert_shippable(db)
+    assert sorted(row["status"] for row in rows) == ["ok", "refused", "stopped", "stopped"]
+
+
+async def test_a_failed_narration_row_is_shippable(tmp_path):
+    from test_narration import outcome
+
+    db = tmp_path / "telemetry.db"
+    telemetry = TelemetrySession(
+        conn=opened(db), install_id=INSTALL, session_id=SESSION, db_path=db
+    )
+    pending = [1]
+    narration = NarrationTracker(
+        telemetry=telemetry,
+        engine="nemo",
+        model="magpie",
+        voice="John",
+        pending=lambda: pending[0],
+        idle_s=0.01,
+    )
+    narration.queued("One.")
+    pending[0] = 0
+    narration.finished(outcome("failed", play_ms=None, audio_ms=None))
+    await asyncio.sleep(0.1)
+    (row,) = assert_shippable(db)
+    assert (row["status"], row["reason"], row["stage"]) == ("failed", "other", "play")

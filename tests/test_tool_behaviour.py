@@ -96,3 +96,55 @@ async def test_the_narrate_prompt_serves_the_command_with_its_source():
     assert not text.startswith("---")
     assert "/tmp/notes.md" in text and "$ARGUMENTS" not in text
     assert "read_aloud" in text and "reading_status" in text and "`listen`" not in text
+
+
+async def test_concurrent_read_aloud_calls_enqueue_in_arrival_order_despite_a_slow_probe():
+    import asyncio
+
+    from voicebox.narration import NarrationTracker
+
+    async def warm() -> bool:
+        await asyncio.sleep(0.05)
+        return True
+
+    narration = NarrationTracker(
+        telemetry=None, engine="nemo", model=None, voice=None, pending=lambda: 0, warm=warm
+    )
+    queue = FakeQueue()
+    server = create_server(
+        settings=Settings.from_env({}, platform="darwin"),
+        engine=FakeEngine(),
+        queue=queue,
+        supervisor=None,
+        narration=narration,
+    )
+    await asyncio.gather(*(call(server, "read_aloud", text=t) for t in ("One.", "Two.", "Three.")))
+    assert [text for text, _, _ in queue.enqueued] == ["One.", "Two.", "Three."]
+    narration.close()
+
+
+async def test_a_stop_during_the_probe_leaves_nothing_enqueued_after_it():
+    import asyncio
+
+    from voicebox.narration import NarrationTracker
+
+    async def warm() -> bool:
+        await asyncio.sleep(0.05)
+        return True
+
+    narration = NarrationTracker(
+        telemetry=None, engine="nemo", model=None, voice=None, pending=lambda: 0, warm=warm
+    )
+    queue = FakeQueue()
+    server = create_server(
+        settings=Settings.from_env({}, platform="darwin"),
+        engine=FakeEngine(),
+        queue=queue,
+        supervisor=None,
+        narration=narration,
+    )
+    await call(server, "read_aloud", text="One.")
+    await call(server, "stop_reading")
+    await asyncio.sleep(0.1)
+    # The sentence was enqueued before the stop, and the stop dropped it.
+    assert len(queue.enqueued) == 1 and queue.stopped == 1

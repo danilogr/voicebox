@@ -447,8 +447,11 @@ async def test_a_probe_with_a_duration_that_is_not_finite_is_still_one_refusal(t
 def test_a_job_whose_telemetry_reference_is_malformed_records_nothing_and_never_raises(
     tmp_path, ref_value
 ):
-    stale = job(tmp_path, tmp_path / "t.db", state="done", finished_at=1100.0)
+    db = tmp_path / "t.db"
+    ref_value = {**ref_value, "db_path": str(db)}
+    stale = job(tmp_path, db, state="done", finished_at=1100.0)
     record_job(replace(stale, telemetry=ref_value))  # type: ignore[arg-type]
+    assert not db.exists() or stored_rows(db) == []
 
 
 async def test_a_spawn_failure_is_still_recorded_when_writing_the_record_fails(tmp_path):

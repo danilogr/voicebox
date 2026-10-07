@@ -202,14 +202,16 @@ def create_server(
             if narration is not None:
                 narration.refused("input_unsupported")
             raise ToolError(str(error)) from error
-        if supervisor is not None and not session.registered:
-            session.registered = True
-            await supervisor.register()
+        # Bookkeeping and enqueue happen with no suspension between them, so concurrent
+        # calls queue in arrival order and a `stop_reading` cannot fall in between.
         if narration is not None:
-            await narration.queued(spoken)
+            narration.queued(spoken)
         ahead = queue.enqueue(
             spoken, voice=settings.speech.voice, rate=settings.speech.rate, intent="narration"
         )
+        if supervisor is not None and not session.registered:
+            session.registered = True
+            await supervisor.register()
         if ahead == 0:
             return reply("reading")
         return reply(f"queued behind {ahead} sentence{_plural(ahead)}")
