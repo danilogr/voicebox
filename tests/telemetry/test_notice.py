@@ -35,8 +35,8 @@ async def test_only_the_first_tool_reply_carries_it():
         supervisor=None,
         notice=Notice(pending=True, mark_shown=lambda: None),
     )
-    first = (await served.call_tool("speech_status", {})).content[0].text
-    second = (await served.call_tool("speech_status", {})).content[0].text
+    first = (await served.call_tool("reading_status", {})).content[0].text
+    second = (await served.call_tool("reading_status", {})).content[0].text
     assert TEXT in first
     assert TEXT not in second
 

@@ -95,20 +95,18 @@ async def test_initializes_and_reports_its_name(recorder):
     async with connected(f"{sys.executable} {script}") as session:
         result = await session.list_tools()
         assert {tool.name for tool in result.tools} == {
-            "speak",
-            "stop_speaking",
-            "speech_status",
+            "read_aloud",
+            "stop_reading",
+            "reading_status",
             "transcribe",
             "job_status",
         }
 
 
-async def test_speak_reaches_the_engine_and_says_the_normalized_text(recorder):
+async def test_read_aloud_reaches_the_engine_and_says_the_normalized_text(recorder):
     script, log = recorder
     async with connected(f"{sys.executable} {script}") as session:
-        assert await text_of(session, "speak", text="  hello   there  ") == (
-            'speaking: "hello there"'
-        )
+        assert await text_of(session, "read_aloud", text="  hello   there  ") == ("reading")
         await _wait_for_lines(log, 1)
 
     assert json.loads(log.read_text().splitlines()[0]) == ["hello there"]
@@ -118,7 +116,7 @@ async def test_utterances_reach_the_engine_in_order(recorder):
     script, log = recorder
     async with connected(f"{sys.executable} {script}") as session:
         for word in ("one", "two", "three"):
-            await text_of(session, "speak", text=word)
+            await text_of(session, "read_aloud", text=word)
         await _wait_for_lines(log, 3)
 
     spoken = [json.loads(line)[0] for line in log.read_text().splitlines()]
@@ -128,29 +126,29 @@ async def test_utterances_reach_the_engine_in_order(recorder):
 async def test_an_empty_sentence_comes_back_as_an_error(recorder):
     script, _ = recorder
     async with connected(f"{sys.executable} {script}") as session:
-        result = await session.call_tool("speak", {"text": "   "})
+        result = await session.call_tool("read_aloud", {"text": "   "})
         assert result.is_error is True
         assert "nothing to speak" in result.content[0].text
 
 
-async def test_stop_speaking_answers_even_when_nothing_is_playing(recorder):
+async def test_stop_reading_answers_even_when_nothing_is_playing(recorder):
     script, _ = recorder
     async with connected(f"{sys.executable} {script}") as session:
-        assert "stopped" in await text_of(session, "stop_speaking")
+        assert "stopped" in await text_of(session, "stop_reading")
 
 
-async def test_speech_status_is_offered_over_stdio(recorder):
+async def test_reading_status_is_offered_over_stdio(recorder):
     """The tool exists for any MCP client, so it is checked the way they receive it."""
     script, _ = recorder
     async with connected(f"{sys.executable} {script}") as session:
-        assert "speech_status" in {tool.name for tool in (await session.list_tools()).tools}
-        assert "nothing queued" in await text_of(session, "speech_status")
+        assert "reading_status" in {tool.name for tool in (await session.list_tools()).tools}
+        assert "nothing left to read" in await text_of(session, "reading_status")
 
 
 async def test_the_character_cap_is_honoured_end_to_end(recorder):
     script, log = recorder
     async with connected(f"{sys.executable} {script}", {"VOICEBOX_MAX_CHARS": "11"}) as session:
-        await text_of(session, "speak", text="one two three four")
+        await text_of(session, "read_aloud", text="one two three four")
         await _wait_for_lines(log, 1)
 
     assert json.loads(log.read_text().splitlines()[0]) == ["one two…"]
@@ -161,8 +159,15 @@ async def test_nothing_is_written_to_stdout_except_protocol_frames(recorder):
     script, _ = recorder
     async with connected(f"{sys.executable} {script}") as session:
         for _ in range(3):
-            await text_of(session, "speak", text="hi")
-        assert await text_of(session, "stop_speaking") is not None
+            await text_of(session, "read_aloud", text="hi")
+        assert await text_of(session, "stop_reading") is not None
+
+
+async def test_a_client_sees_the_narrate_prompt_over_stdio(recorder):
+    script, _ = recorder
+    async with connected(f"{sys.executable} {script}") as session:
+        prompts = {p.name for p in (await session.list_prompts()).prompts}
+        assert prompts == {"narrate"}
 
 
 async def _wait_for_lines(log: Path, count: int, timeout: float = 5.0) -> None:
@@ -193,7 +198,7 @@ async def test_closing_the_session_kills_a_playing_utterance(tmp_path):
     player.chmod(0o755)
 
     async with connected(f"{sys.executable} {player}") as session:
-        await text_of(session, "speak", text="a long sentence")
+        await text_of(session, "read_aloud", text="a long sentence")
         for _ in range(250):
             if marker.exists():
                 break

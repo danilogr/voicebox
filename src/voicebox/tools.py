@@ -4,32 +4,25 @@ A tool description is always in the model's context, so how each tool is meant t
 used lives here rather than in a hook or a skill.
 """
 
-from typing import Literal, get_args
-
-# Why a sentence was spoken. Carried to the queue unchanged; voicebox reads aloud only
-# for /voicebox:narrate, which passes "narration".
-Intent = Literal["narration", "unspecified"]
-INTENT_VALUES: tuple[str, ...] = get_args(Intent)
+from typing import Literal
 
 TranscriptFormat = Literal["text", "json", "srt", "vtt"]
 
-SPEAK = """Say one sentence aloud through the speakers. /voicebox:narrate uses it to read a
-long text in order; pass intent="narration" then.
+READ_ALOUD = """Read one sentence aloud through the speakers, as part of /voicebox:narrate.
 
-Returns immediately; sentences queue and play in order without overlapping, and never
-over another plugin's speech."""
+Returns at once. Sentences queue and play in order, never over another plugin's speech.
+Anything past about 400 characters is cut at a word boundary, so split a long sentence
+at a clause break first. This plays sound and writes no file; to make an audio file,
+use synthesize."""
 
-STOP_SPEAKING = """Stop talking immediately: silence the current sentence and drop anything
+READING_STATUS = """How many sentences are still waiting to be read aloud, and how many have
+been read. /voicebox:narrate calls it between rounds, so a "stop" from the user loses
+seconds of queued speech rather than minutes."""
+
+STOP_READING = """Stop reading aloud at once: silence the current sentence and drop everything
 queued behind it."""
 
-SPEECH_STATUS = """Report what the speech queue is holding: how many sentences are waiting,
-being synthesized, prepared and ready, whether one is playing, and how many have been
-spoken so far."""
-
-TEXT = "One sentence to say out loud."
-VOICE_OVERRIDE = 'Override the configured voice, e.g. "Sofia".'
-RATE = "Words per minute, for engines that take a rate."
-INTENT = 'Why this sentence is spoken: "narration" for /voicebox:narrate, else omit it.'
+SENTENCE = "One sentence of the text, written the way it should be heard."
 
 TRANSCRIBE = """Transcribe an audio or video file to text on this machine, with the local
 NeMo speech model. Use this whenever the user asks to transcribe a recording,

@@ -7,12 +7,13 @@ from voicebox.config import Settings
 from voicebox.server import create_server
 
 
-def build(engine=None, queue=None, supervisor=None, env=None):
+def build(queue=None, supervisor=None, env=None):
     settings = Settings.from_env(env or {}, platform="darwin")
-    engine = engine or FakeEngine()
     queue = queue or FakeQueue()
-    server = create_server(settings=settings, engine=engine, queue=queue, supervisor=supervisor)
-    return server, engine, queue
+    server = create_server(
+        settings=settings, engine=FakeEngine(), queue=queue, supervisor=supervisor
+    )
+    return server, queue
 
 
 async def call(server, name: str, **arguments: object) -> str:
@@ -20,101 +21,78 @@ async def call(server, name: str, **arguments: object) -> str:
     return result.content[0].text
 
 
-async def test_speak_collapses_whitespace_before_queueing():
-    server, _, queue = build()
-    await call(server, "speak", text="  hello\n  there  ")
-    assert queue.enqueued[0][0] == "hello there"
+async def test_read_aloud_collapses_whitespace_and_marks_it_narration():
+    server, queue = build()
+    await call(server, "read_aloud", text="  hello\n  there  ")
+    assert queue.enqueued == [("hello there", None, None)]
+    assert queue.intents == ["narration"]
 
 
-async def test_speak_truncates_at_the_configured_cap():
-    server, _, queue = build(env={"VOICEBOX_MAX_CHARS": "11"})
-    await call(server, "speak", text="one two three four")
+async def test_read_aloud_cuts_at_the_configured_cap():
+    server, queue = build(env={"VOICEBOX_MAX_CHARS": "10"})
+    await call(server, "read_aloud", text="one two three four five")
     assert queue.enqueued[0][0] == "one two…"
 
 
-async def test_speak_reports_that_it_is_speaking_when_nothing_is_ahead():
-    server, _, _ = build(queue=FakeQueue(ahead=0))
-    assert await call(server, "speak", text="hi") == 'speaking: "hi"'
+async def test_read_aloud_reads_in_the_configured_voice_and_rate():
+    server, queue = build(env={"VOICEBOX_VOICE": "Sofia", "VOICEBOX_RATE": "190"})
+    await call(server, "read_aloud", text="hi")
+    assert queue.enqueued[0] == ("hi", "Sofia", 190)
 
 
-async def test_speak_reports_the_queue_position_with_singular_wording():
-    server, _, _ = build(queue=FakeQueue(ahead=1))
-    assert await call(server, "speak", text="hi") == 'queued behind 1 utterance: "hi"'
+@pytest.mark.parametrize(
+    ("ahead", "reply"),
+    [(0, "reading"), (1, "queued behind 1 sentence"), (3, "queued behind 3 sentences")],
+)
+async def test_read_aloud_reports_its_place_in_the_queue(ahead, reply):
+    server, _ = build(queue=FakeQueue(ahead=ahead))
+    assert await call(server, "read_aloud", text="hi") == reply
 
 
-async def test_speak_reports_the_queue_position_with_plural_wording():
-    server, _, _ = build(queue=FakeQueue(ahead=3))
-    assert await call(server, "speak", text="hi") == 'queued behind 3 utterances: "hi"'
-
-
-async def test_speak_rejects_empty_text_with_a_message_the_model_can_read():
-    server, _, queue = build()
+async def test_empty_text_is_refused_with_a_readable_message():
+    server, queue = build()
     with pytest.raises(ToolError, match="nothing to speak"):
-        await call(server, "speak", text="   ")
+        await call(server, "read_aloud", text="   ")
     assert queue.enqueued == []
 
 
-async def test_speak_uses_the_starting_voice_from_the_environment():
-    server, _, queue = build(env={"VOICEBOX_VOICE": "Samantha", "VOICEBOX_RATE": "190"})
-    await call(server, "speak", text="hi")
-    assert queue.enqueued[0] == ("hi", "Samantha", 190)
-
-
-async def test_an_explicit_voice_overrides_the_session_voice():
-    server, _, queue = build(env={"VOICEBOX_VOICE": "Samantha"})
-    await call(server, "speak", text="hi", voice="Sofia")
-    assert queue.enqueued[0][1] == "Sofia"
-
-
-async def test_speak_registers_with_the_supervisor_exactly_once():
+async def test_reading_registers_with_the_supervisor_once():
     supervisor = FakeSupervisor()
-    server, _, _ = build(supervisor=supervisor)
-    await call(server, "speak", text="one")
-    await call(server, "speak", text="two")
+    server, _ = build(supervisor=supervisor)
+    await call(server, "read_aloud", text="one")
+    await call(server, "read_aloud", text="two")
     assert supervisor.registrations == 1
 
 
-async def test_speak_works_without_a_supervisor():
-    server, _, queue = build(supervisor=None)
-    await call(server, "speak", text="hi")
-    assert len(queue.enqueued) == 1
-
-
-async def test_stop_speaking_reports_how_many_were_dropped():
-    server, _, queue = build(queue=FakeQueue(dropped=3))
-    assert await call(server, "stop_speaking") == "stopped; dropped 3 utterances"
+@pytest.mark.parametrize(
+    ("dropped", "reply"), [(0, "stopped; dropped 0 sentences"), (1, "stopped; dropped 1 sentence")]
+)
+async def test_stop_reading_reports_what_it_dropped(dropped, reply):
+    server, queue = build(queue=FakeQueue(dropped=dropped))
+    assert await call(server, "stop_reading") == reply
     assert queue.stopped == 1
 
 
-async def test_stop_speaking_uses_singular_wording_for_one():
-    server, _, _ = build(queue=FakeQueue(dropped=1))
-    assert await call(server, "stop_speaking") == "stopped; dropped 1 utterance"
+async def test_reading_status_on_an_idle_queue():
+    stats = QueueStats(waiting=0, preparing=0, prepared=0, playing=False, finished=4)
+    server, _ = build(queue=FakeQueue(stats=stats))
+    assert await call(server, "reading_status") == "nothing left to read; 4 read so far"
 
 
-async def test_stop_speaking_on_silence_reports_zero():
-    server, _, _ = build(queue=FakeQueue(dropped=0))
-    assert await call(server, "stop_speaking") == "stopped; dropped 0 utterances"
+async def test_reading_status_counts_what_is_still_to_read():
+    stats = QueueStats(waiting=2, preparing=1, prepared=0, playing=True, finished=7)
+    server, _ = build(queue=FakeQueue(stats=stats))
+    reply = await call(server, "reading_status")
+    assert reply.startswith("4 still to read (")
+    assert reply.endswith("7 read so far")
 
 
-async def test_speech_status_reports_an_idle_queue():
-    server, _, _ = build()
-    assert "nothing queued" in await call(server, "speech_status")
-
-
-async def test_speech_status_reports_what_is_in_hand():
-    """A slow machine is indistinguishable from a stuck one without this: a caller that
-    can see three waiting and one playing knows to wait rather than to give up."""
-    busy = FakeQueue(stats=QueueStats(waiting=3, preparing=1, prepared=1, playing=True, finished=7))
-    server, _, _ = build(queue=busy)
-    said = await call(server, "speech_status")
-    assert "playing" in said
-    assert "3 waiting" in said
-    assert "1 prepared" in said
-    assert "7" in said
-
-
-async def test_speech_status_names_the_one_utterance_playing():
-    """The commonest non-idle state: one utterance playing with nothing behind it."""
-    busy = FakeQueue(stats=QueueStats(waiting=0, preparing=0, prepared=0, playing=True, finished=2))
-    server, _, _ = build(queue=busy)
-    assert await call(server, "speech_status") == "one playing; 2 spoken so far"
+async def test_the_narrate_prompt_serves_the_command_with_its_source():
+    server, _ = build()
+    (prompt,) = await server.list_prompts()
+    assert prompt.name == "narrate" and prompt.description
+    served = await server.get_prompt("narrate", {"source": "/tmp/notes.md"})
+    text = served.messages[0].content.text
+    assert not text.startswith("---")
+    assert "/tmp/notes.md" in text and "$ARGUMENTS" not in text
+    assert "read_aloud" in text and "reading_status" in text and "`listen`" not in text

@@ -1,7 +1,6 @@
 import asyncio
 
 from fakes import FakeEngine, FakeQueue
-from voicebox import tools
 from voicebox.config import Settings
 from voicebox.jobs.desk import Desk, build_desk
 from voicebox.jobs.lock import job_lock
@@ -9,7 +8,7 @@ from voicebox.jobs.store import JobStore
 from voicebox.server import create_server
 from voicebox.transcribe.probe import Probe
 
-SPEECH_TOOLS = {"speak", "stop_speaking", "speech_status"}
+SPEECH_TOOLS = {"read_aloud", "reading_status", "stop_reading"}
 
 
 def server(desk=None) -> object:
@@ -30,15 +29,9 @@ async def test_without_transcription_only_the_speech_tools_exist():
     assert set(await tools_by_name()) == SPEECH_TOOLS
 
 
-async def test_speak_requires_only_the_text():
-    schema = (await tools_by_name())["speak"].input_schema
-    assert schema["required"] == ["text"]
-
-
-async def test_speak_intent_is_an_explicit_enum():
-    branches = (await tools_by_name())["speak"].input_schema["properties"]["intent"]
-    enums = [b["enum"] for b in branches.get("anyOf", [branches]) if "enum" in b]
-    assert enums and set(enums[0]) == set(tools.INTENT_VALUES)
+async def test_read_aloud_requires_only_the_text():
+    schema = (await tools_by_name())["read_aloud"].input_schema
+    assert schema["required"] == ["text"] and set(schema["properties"]) == {"text"}
 
 
 async def test_no_description_arrives_with_source_indentation():

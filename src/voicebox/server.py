@@ -6,6 +6,7 @@ import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated, Protocol
 
 from mcp.server.mcpserver import Context, MCPServer
@@ -21,6 +22,7 @@ from voicebox import tools
 from voicebox.config import Settings
 from voicebox.jobs.desk import Desk, busy_message
 from voicebox.jobs.status import job_status as describe_jobs
+from voicebox.narration import NarrationTracker
 from voicebox.telemetry.notice import Notice
 from voicebox.telemetry.session import TelemetrySession
 from voicebox.transcribe import service as transcription
@@ -28,6 +30,11 @@ from voicebox.transcribe import service as transcription
 logger = logging.getLogger(__name__)
 
 VERSION = "1.0.0"
+
+# Claude Code reads `commands/*.md` itself; every other MCP client (Antigravity) sees only
+# what this server offers, so /voicebox:narrate is also served as a prompt from that same
+# file: one copy of the instruction, whichever app is asking.
+NARRATE_COMMAND = Path(__file__).resolve().parents[2] / "commands" / "narrate.md"
 
 
 class Queue(Protocol):
@@ -81,12 +88,32 @@ def client_info(ctx: Context) -> tuple[str, str | None] | None:
     return params.client_info.name, params.client_info.version
 
 
+def split_frontmatter(text: str) -> tuple[str, str]:
+    """A command file's `description` and its body, with the frontmatter removed.
+
+    A block that never closes is left in the body: stripping to the end of the file
+    would serve an empty instruction.
+    """
+    if not text.startswith("---\n"):
+        return "", text
+    end = text.find("\n---\n", 4)
+    if end == -1:
+        return "", text
+    description = ""
+    for line in text[4:end].splitlines():
+        key, _, value = line.partition(":")
+        if key.strip() == "description":
+            description = value.strip()
+    return description, text[end + 5 :].lstrip("\n")
+
+
 async def shutdown(
     *,
     queue: Queue,
     worker: asyncio.Task[None],
     supervisor: "Supervisor | None",
     session: SessionState,
+    narration: NarrationTracker | None = None,
     telemetry: TelemetrySession | None = None,
 ) -> None:
     """Silence the speaker first, then tear the session down.
@@ -98,6 +125,9 @@ async def shutdown(
     await queue.stop()
     worker.cancel()
     await asyncio.gather(worker, return_exceptions=True)
+    if narration is not None:
+        # The queue has settled, so an open reading is counted as it really ended.
+        narration.close()
     if supervisor is not None and session.registered:
         await supervisor.release()
     if telemetry is not None:
@@ -113,6 +143,7 @@ def create_server(
     supervisor: Supervisor | None,
     desk: Desk | None = None,
     telemetry: TelemetrySession | None = None,
+    narration: NarrationTracker | None = None,
     notice: Notice | None = None,
     on_session_start: Callable[[], None] | None = None,
 ) -> MCPServer:
@@ -152,17 +183,15 @@ def create_server(
                 worker=worker,
                 supervisor=supervisor,
                 session=session,
+                narration=narration,
                 telemetry=telemetry,
             )
 
     server = MCPServer(name="voicebox", version=VERSION, lifespan=lifespan)
 
-    @server.tool(name="speak", description=tools.SPEAK)
-    async def speak(
-        text: Annotated[str, Field(description=tools.TEXT)],
-        voice: Annotated[str | None, Field(description=tools.VOICE_OVERRIDE)] = None,
-        rate: Annotated[float | None, Field(description=tools.RATE)] = None,
-        intent: Annotated[tools.Intent | None, Field(description=tools.INTENT)] = None,
+    @server.tool(name="read_aloud", description=tools.READ_ALOUD)
+    async def read_aloud(
+        text: Annotated[str, Field(description=tools.SENTENCE)],
         *,
         ctx: Context,
     ) -> str:
@@ -170,33 +199,48 @@ def create_server(
         try:
             spoken = normalize(text, max_chars=settings.speech.max_chars)
         except ValueError as error:
+            if narration is not None:
+                narration.refused("input_unsupported")
             raise ToolError(str(error)) from error
         if supervisor is not None and not session.registered:
             session.registered = True
             await supervisor.register()
+        if narration is not None:
+            await narration.queued(spoken)
         ahead = queue.enqueue(
-            spoken,
-            voice=voice if voice is not None else settings.speech.voice,
-            rate=rate if rate is not None else settings.speech.rate,
-            intent=intent,
+            spoken, voice=settings.speech.voice, rate=settings.speech.rate, intent="narration"
         )
         if ahead == 0:
-            return reply(f'speaking: "{spoken}"')
-        return reply(f'queued behind {ahead} utterance{_plural(ahead)}: "{spoken}"')
+            return reply("reading")
+        return reply(f"queued behind {ahead} sentence{_plural(ahead)}")
 
-    @server.tool(name="stop_speaking", description=tools.STOP_SPEAKING)
-    async def stop_speaking(*, ctx: Context) -> str:
-        note_harness(ctx)
-        dropped = await queue.stop()
-        return reply(f"stopped; dropped {dropped} utterance{_plural(dropped)}")
-
-    @server.tool(name="speech_status", description=tools.SPEECH_STATUS)
-    async def speech_status(*, ctx: Context) -> str:
+    @server.tool(name="reading_status", description=tools.READING_STATUS)
+    async def reading_status(*, ctx: Context) -> str:
         note_harness(ctx)
         stats = queue.stats()
         if stats.size == 0:
-            return reply(f"nothing queued; {stats.finished} spoken so far")
-        return reply(f"{describe_queue(stats)}; {stats.finished} spoken so far")
+            return reply(f"nothing left to read; {stats.finished} read so far")
+        return reply(
+            f"{stats.size} still to read ({describe_queue(stats)}); {stats.finished} read so far"
+        )
+
+    @server.tool(name="stop_reading", description=tools.STOP_READING)
+    async def stop_reading(*, ctx: Context) -> str:
+        note_harness(ctx)
+        dropped = await queue.stop()
+        if narration is not None:
+            narration.stopped()
+        return reply(f"stopped; dropped {dropped} sentence{_plural(dropped)}")
+
+    try:
+        description, body = split_frontmatter(NARRATE_COMMAND.read_text(encoding="utf-8"))
+    except OSError as error:
+        logger.warning("/voicebox:narrate is not offered as a prompt: %s", error)
+    else:
+
+        @server.prompt(name="narrate", description=description)
+        def narrate(source: str = "") -> str:
+            return body.replace("$ARGUMENTS", source.strip())
 
     if desk is not None:
         # The job lock is claimed for a worker that does not exist yet, so between a job

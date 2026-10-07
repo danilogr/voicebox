@@ -11,7 +11,8 @@ from typing import Protocol
 
 from mcp.server.mcpserver import MCPServer
 from speak_core.engines import build_engine
-from speak_core.queue import SpeechQueue
+from speak_core.engines.asr import Liveness, NemoTranscriber
+from speak_core.queue import SpeechQueue, UtteranceOutcome
 from speak_core.runtime import configure_logging, supervisor_for
 from speak_core.speaker import SpeakerLock
 from speak_core.supervisor import NemoSupervisor
@@ -24,6 +25,7 @@ from speak_core.telemetry import wiring as telemetry_wiring
 
 from voicebox.config import PLUGIN, Settings
 from voicebox.jobs.desk import build_desk, sweep
+from voicebox.narration import NarrationTracker
 from voicebox.server import VERSION, create_server
 from voicebox.telemetry import compose as telemetry_compose
 from voicebox.telemetry.contract import IDENTITY, SCHEMA, db_path
@@ -90,17 +92,6 @@ def build(settings: Settings, env: Mapping[str, str]) -> MCPServer:
     """Wire the engine, queue, supervisor, jobs and telemetry together."""
     supervisor = build_supervisor(settings)
 
-    def start_speech_server() -> None:
-        """Kick off a cold start without waiting: this sentence goes out through `say`."""
-        if supervisor is not None:
-            _spawn(supervisor.ensure_running())
-
-    engine = build_engine(settings.speech, settings.server, on_unavailable=start_speech_server)
-    queue = SpeechQueue(
-        prepare=engine.prepare,
-        speaker=SpeakerLock(shared_dir=settings.server.shared_dir),
-    )
-
     # Nothing is collected or sent until the first-run notice has been shown: that keeps
     # "shown before anything is sent" literal, and keeps the first ping an install,
     # which the ping decides from the consent file that collecting would create.
@@ -128,6 +119,37 @@ def build(settings: Settings, env: Mapping[str, str]) -> MCPServer:
         still_due=lambda: telemetry_notice.due(env, IDENTITY, host_platform=sys.platform),
     )
 
+    def start_speech_server() -> None:
+        """Kick off a cold start without waiting: this sentence goes out through `say`."""
+        if supervisor is not None:
+            _spawn(supervisor.ensure_running())
+
+    engine = build_engine(settings.speech, settings.server, on_unavailable=start_speech_server)
+
+    def on_finish(outcome: UtteranceOutcome) -> None:
+        narration.finished(outcome)
+
+    queue = SpeechQueue(
+        prepare=engine.prepare,
+        on_finish=on_finish,
+        speaker=SpeakerLock(shared_dir=settings.server.shared_dir),
+    )
+    # Liveness only: the transcription client is the one that can ask the shared server
+    # whether it is up, which is what `server_warm` records.
+    probe = NemoTranscriber(base_url=settings.server.url, api_key=settings.server.api_key)
+
+    async def server_ready() -> bool:
+        return await probe.liveness() is Liveness.READY
+
+    narration = NarrationTracker(
+        telemetry=telemetry,
+        engine=engine.name,
+        model=settings.server.tts_model if engine.name == "nemo" else None,
+        voice=settings.speech.voice or engine.default_voice,
+        pending=lambda: queue.stats().size,
+        warm=server_ready if engine.name == "nemo" else None,
+    )
+
     def schedule_sends() -> None:
         """Deferred to the server's lifespan: `build()` runs before an event loop exists.
         The ping goes whatever the telemetry mode; the backlog only when it collects."""
@@ -150,6 +172,7 @@ def build(settings: Settings, env: Mapping[str, str]) -> MCPServer:
         supervisor=supervisor,
         desk=desk,
         telemetry=telemetry,
+        narration=narration,
         notice=notice,
         on_session_start=schedule_sends,
     )

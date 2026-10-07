@@ -72,3 +72,19 @@ async def test_shutdown_waits_for_the_worker_to_finish():
 
     await shutdown(queue=queue, worker=worker, supervisor=None, session=SessionState())
     assert worker.done()
+
+
+async def test_an_open_reading_is_closed_after_the_queue_settles():
+    events: list[str] = []
+    queue = RecordingQueue(events)
+    worker = asyncio.create_task(queue.run())
+    await asyncio.sleep(0)
+
+    class Narration:
+        def close(self) -> None:
+            events.append("narration closed")
+
+    await shutdown(
+        queue=queue, worker=worker, supervisor=None, session=SessionState(), narration=Narration()
+    )
+    assert events == ["stopped", "worker cancelled", "narration closed"]
