@@ -32,6 +32,7 @@ class CommandResult:
     returncode: int
     stdout: bytes
     stderr: bytes
+    timed_out: bool = False
 
 
 Runner = Callable[[Sequence[str]], Awaitable[CommandResult]]
@@ -61,7 +62,7 @@ async def run_command(argv: Sequence[str], *, timeout: float) -> CommandResult:
         process.kill()
         await process.wait()
         message = f"{argv[0]} timed out after {timeout:.0f}s"
-        return CommandResult(-1, b"", message.encode())
+        return CommandResult(-1, b"", message.encode(), timed_out=True)
     returncode = process.returncode if process.returncode is not None else -1
     return CommandResult(returncode, stdout, stderr)
 

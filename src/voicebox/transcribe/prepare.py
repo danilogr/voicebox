@@ -9,7 +9,11 @@ CONVERT_ARGS = ("-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le")
 
 
 class ConversionFailed(RuntimeError):  # noqa: N818 - reads as a state, not a failure mode
-    """ffmpeg ran but could not produce audio the model can read."""
+    """ffmpeg ran but could not produce the audio asked for."""
+
+    def __init__(self, message: str, *, timed_out: bool = False) -> None:
+        super().__init__(message)
+        self.timed_out = timed_out
 
 
 def needs_conversion(found: Probe) -> bool:
@@ -44,4 +48,6 @@ async def convert(
         raise ToolMissing("ffmpeg", FFMPEG_REMEDY) from None
     if result.returncode != 0:
         reason = result.stderr.decode(errors="replace").strip()
-        raise ConversionFailed(reason or "ffmpeg could not convert the file")
+        raise ConversionFailed(
+            reason or "ffmpeg could not convert the file", timed_out=result.timed_out
+        )

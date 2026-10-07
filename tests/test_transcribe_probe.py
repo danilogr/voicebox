@@ -116,3 +116,19 @@ async def test_convert_reports_ffmpeg_failing(tmp_path: Path) -> None:
 
     with pytest.raises(ConversionFailed, match="Output file is empty"):
         await convert(Path("in.mkv"), tmp_path / "out.wav", run=run)
+
+
+def test_a_video_stream_is_noticed_but_cover_art_is_not():
+    payload = json.dumps(
+        {
+            "format": {"duration": "10.0", "format_name": "mov,mp4,m4a"},
+            "streams": [
+                {"codec_type": "audio", "codec_name": "aac"},
+                {"codec_type": "video", "codec_name": "mjpeg", "disposition": {"attached_pic": 1}},
+            ],
+        }
+    ).encode()
+    assert parse_probe(payload, 1).has_video is False
+    with_video = json.loads(payload)
+    with_video["streams"].append({"codec_type": "video", "codec_name": "h264", "disposition": {}})
+    assert parse_probe(json.dumps(with_video).encode(), 1).has_video is True

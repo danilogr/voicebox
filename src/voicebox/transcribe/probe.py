@@ -10,7 +10,7 @@ PROBE_ARGS = (
     "-v",
     "error",
     "-show_entries",
-    "format=duration,format_name:stream=codec_type,codec_name,sample_rate,channels",
+    "format=duration,format_name:stream=codec_type,codec_name,sample_rate,channels:stream_disposition=attached_pic",
     "-of",
     "json",
 )
@@ -28,6 +28,7 @@ class Probe:
     codec: str | None
     sample_rate: int | None
     channels: int | None
+    has_video: bool = False
 
     @property
     def has_audio(self) -> bool:
@@ -45,6 +46,10 @@ def parse_probe(payload: bytes, size_bytes: int) -> Probe:
         codec=audio.get("codec_name") if audio else None,
         sample_rate=_int(audio.get("sample_rate")) if audio else None,
         channels=_int(audio.get("channels")) if audio else None,
+        has_video=any(
+            s.get("codec_type") == "video" and not (s.get("disposition") or {}).get("attached_pic")
+            for s in data.get("streams") or []
+        ),
     )
 
 

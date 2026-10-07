@@ -15,8 +15,8 @@ from speak_core.supervisor import process_is_alive
 from voicebox.config import Settings
 from voicebox.jobs.lock import job_lock
 from voicebox.jobs.store import CRASHED, FAILED, RUNNING, Job, JobStore
+from voicebox.telemetry.jobs import record_job
 from voicebox.transcribe.probe import Probe, probe
-from voicebox.transcribe.worker import Record, record_nothing
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,12 @@ WORKER_START_GRACE_S = 60.0
 
 Spawn = Callable[[Sequence[str], Path], Awaitable[int]]
 ProbeMedia = Callable[[Path], Awaitable[Probe]]
+# Called once with a job's final record, whoever ended it.
+Record = Callable[[Job], None]
+
+
+def record_nothing(job: Job) -> None:
+    """The default when nobody records finished jobs (a test, or telemetry off)."""
 
 
 @dataclass(frozen=True)
@@ -36,8 +42,10 @@ class Desk:
     # Transcription's ffprobe; here so a test can hand every job tool one fake.
     probe: ProbeMedia
     clock: Callable[[], float] = time.time
+    monotonic: Callable[[], float] = time.monotonic
     pid: int = field(default_factory=os.getpid)
-    # Called once with the final record of a job this desk could not start.
+    # Called with the final record of a job this desk ends: one it could not start, or
+    # one whose worker died.
     record: Record = record_nothing
 
 
@@ -67,6 +75,7 @@ def build_desk(settings: Settings) -> Desk:
         is_alive=process_is_alive,
         spawn=spawn_worker,
         probe=probe,
+        record=record_job,
     )
 
 
@@ -100,9 +109,18 @@ async def launch(desk: Desk, lock: ExclusiveLock, job: Job, argv: Sequence[str])
     except OSError as error:
         lock.release()
         failed = replace(
-            job, state=FAILED, finished_at=desk.clock(), error=f"could not start: {error}"
+            job,
+            state=FAILED,
+            finished_at=desk.clock(),
+            error=f"could not start: {error}",
+            reason="other",
         )
-        desk.jobs.write(failed)
+        # The row is the job's one telemetry record, so a record that cannot be
+        # written must not stop it being counted.
+        try:
+            desk.jobs.write(failed)
+        except OSError as write_error:
+            logger.debug("could not record job %s as failed: %s", job.job_id, write_error)
         desk.record(failed)
         return str(error)
     # A sidecar the tool alone writes, never the record: it makes a worker that died
@@ -133,6 +151,7 @@ def reconcile(desk: Desk, job: Job) -> Job:
     desk.jobs.write(crashed)
     # The worker's own `finally` never ran, so nothing else will reclaim what it held.
     desk.jobs.discard_artifacts(job.job_id)
+    desk.record(crashed)
     return crashed
 
 

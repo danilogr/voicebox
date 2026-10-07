@@ -40,3 +40,8 @@ async def test_run_convert_command_uses_the_conversion_ceiling(monkeypatch):
     monkeypatch.setattr(commands, "run_command", fake)
     await commands.run_convert_command(["ffmpeg"])
     assert seen["timeout"] == commands.CONVERT_TIMEOUT_S
+
+
+async def test_a_command_that_outlives_its_timeout_says_it_timed_out():
+    result = await run_command([sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.2)
+    assert result.timed_out is True and result.returncode == -1

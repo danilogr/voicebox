@@ -47,6 +47,17 @@ class Job:
     worker_pid: int | None = None
     finished_at: float | None = None
     error: str | None = None
+    # `time.monotonic()` when the tool accepted the job. That clock is system-wide, so
+    # whichever process ends the job measures `wall_ms` against it; `None` (or a reboot
+    # in between) falls back to the wall clock.
+    created_monotonic: float | None = None
+    # Where the worker is - its first stage from acceptance on - and so where a crash
+    # happened; and the telemetry reason a failure was classified as.
+    stage: str | None = None
+    reason: str | None = None
+    # {"db_path", "session_id", "install_id"} of the session that asked, or None when
+    # that session records nothing.
+    telemetry: dict[str, str] | None = None
 
     @property
     def eta_s(self) -> float:
@@ -68,6 +79,9 @@ class TranscriptionJob(Job):
     words: int | None = None
     chars: int | None = None
     asr_ms: int | None = None
+    # A video stream that is not cover art was present (the probe reads it anyway).
+    has_video: bool = False
+    convert_ms: int | None = None
 
     @property
     def eta_s(self) -> float:

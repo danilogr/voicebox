@@ -239,6 +239,7 @@ def create_server(
                             language=language,
                             translate_to=translate_to,
                         ),
+                        telemetry,
                     )
                 )
 

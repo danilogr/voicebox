@@ -18,8 +18,10 @@ from pathlib import Path
 
 from speak_core.supervisor import process_is_alive
 
+from voicebox.jobs.desk import Record
 from voicebox.jobs.lock import JobBusy, job_lock
 from voicebox.jobs.store import DONE, EMPTY, FAILED, Job, JobStore, TranscriptionJob
+from voicebox.telemetry.jobs import record_job
 from voicebox.transcribe.commands import Runner, ToolMissing, run_convert_command
 from voicebox.transcribe.output import transcript_text
 from voicebox.transcribe.prepare import ConversionFailed, convert
@@ -27,14 +29,6 @@ from voicebox.transcribe.prepare import ConversionFailed, convert
 logger = logging.getLogger(__name__)
 
 CliRunner = Callable[[Sequence[str], Path], Awaitable[int]]
-# Called once with a job's final record, whatever ended it. Telemetry plugs in here.
-Record = Callable[[Job], None]
-
-
-def record_nothing(job: Job) -> None:
-    """The default until telemetry records jobs: nothing to do."""
-
-
 NEMO_REMEDY = "run /voicebox:setup to install it"
 
 
@@ -81,7 +75,7 @@ async def run_job(
     is_alive: Callable[[int], bool] = process_is_alive,
     clock: Callable[[], float] = time.time,
     pid: int | None = None,
-    record: Record = record_nothing,
+    record: Record = record_job,
 ) -> Job | None:
     jobs = JobStore(state_dir)
     job = jobs.read(job_id)
@@ -95,7 +89,7 @@ async def run_job(
         # Refused the lock, so this job never runs. Saying so is the whole of the
         # worker's answer here: without a record it would look like a worker that
         # vanished, and the session would wait out an estimate for work nobody is doing.
-        refused = replace(job, state=FAILED, finished_at=clock(), error=str(error))
+        refused = replace(job, state=FAILED, finished_at=clock(), error=str(error), reason="busy")
         jobs.write(refused)
         record(refused)
         raise
@@ -104,7 +98,9 @@ async def run_job(
     try:
         finished = await _transcribe(jobs, job, run=run, run_cli=run_cli, clock=clock)
     except Exception as error:  # a bug here must still leave an honest record
-        finished = replace(job, state=FAILED, finished_at=clock(), error=f"worker error: {error}")
+        finished = replace(
+            job, state=FAILED, finished_at=clock(), error=f"worker error: {error}", reason="other"
+        )
         jobs.write(finished)
         record(finished)
         raise
@@ -128,21 +124,26 @@ async def _transcribe(
     audio = Path(job.source)
     if job.convert:
         audio = jobs.wav_path(job.job_id)
+        started = clock()
         try:
             await convert(Path(job.source), audio, run=run)
-        except (ToolMissing, ConversionFailed) as error:
-            return replace(job, state=FAILED, finished_at=clock(), error=str(error))
+        except ToolMissing as error:
+            return _failed(job, clock, "ffmpeg_missing", str(error))
+        except ConversionFailed as error:
+            reason = "timeout" if error.timed_out else "conversion_failed"
+            return _failed(job, clock, reason, str(error))
+        job = replace(job, convert_ms=int((clock() - started) * 1000), stage="asr")
+        jobs.write(job)
     started = clock()
     try:
         code = await run_cli(cli_argv(job, audio), jobs.log_path(job.job_id))
     except FileNotFoundError:
-        missing = ToolMissing(job.nemo_binary, NEMO_REMEDY)
-        return replace(job, state=FAILED, finished_at=clock(), error=str(missing))
+        return _failed(job, clock, "nemo_missing", str(ToolMissing(job.nemo_binary, NEMO_REMEDY)))
     asr_ms = int((clock() - started) * 1000)
     output = Path(job.output)
     if code != 0 or not output.exists():
-        reason = jobs.log_tail(job.job_id) or f"{job.nemo_binary} exited with {code}"
-        return replace(job, state=FAILED, finished_at=clock(), asr_ms=asr_ms, error=reason)
+        message = jobs.log_tail(job.job_id) or f"{job.nemo_binary} exited with {code}"
+        return _failed(replace(job, asr_ms=asr_ms), clock, "model_failed", message)
     text = transcript_text(output, job.format)
     return replace(
         job,
@@ -152,6 +153,14 @@ async def _transcribe(
         words=len(text.split()),
         chars=len(text),
     )
+
+
+def _failed(
+    job: TranscriptionJob, clock: Callable[[], float], reason: str, error: str
+) -> TranscriptionJob:
+    """A failure, with the contract reason it is recorded under; `stage` already says
+    where the worker was."""
+    return replace(job, state=FAILED, finished_at=clock(), error=error, reason=reason)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -139,7 +139,10 @@ def build(settings: Settings, env: Mapping[str, str]) -> MCPServer:
     desk = build_desk(settings)
     # A worker that died while no session was asking is found now, not at the first
     # status call, and the lock it left is freed for this session's first job.
-    sweep(desk)
+    try:
+        sweep(desk)
+    except OSError:
+        logger.debug("could not reconcile earlier jobs at start", exc_info=True)
     return create_server(
         settings=settings,
         engine=engine,
