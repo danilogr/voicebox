@@ -24,6 +24,7 @@ from voicebox.synthesize.text import (
     looks_like_markdown,
     paragraphs,
     strip_markdown,
+    unspeakable,
 )
 from voicebox.telemetry.rows import SYNTHESIS, JobFacts, iso, job_row, recorded_voice, wall_ms
 from voicebox.telemetry.session import TelemetrySession
@@ -200,6 +201,9 @@ async def _prepare(
         markdown = source.suffix.lower() in MARKDOWN_SUFFIXES
     else:
         raw = request.text or ""
+        problem = unspeakable(raw)
+        if problem is not None:
+            raise Refused("input_unsupported", f"this text cannot be spoken: {problem}", shape)
         markdown = looks_like_markdown(raw)
     input_format = "markdown" if markdown else "plain"
     shape["input_format"] = input_format

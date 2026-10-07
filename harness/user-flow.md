@@ -23,7 +23,8 @@
 
 1. `synthesize` checks, in order: exactly one of `text` and `path`, and a known format
    (answered, not recorded); the file is absolute, exists and is UTF-8 text
-   (`input_missing`, `input_unsupported`); something is left once markup is removed
+   (`input_missing`, `input_unsupported`); pasted text holds no NUL and no unpaired
+   surrogate (`input_unsupported`); something is left once markup is removed
    (`input_unsupported`); the output is absolute, does not exist, matches the format and
    its folder is writable (`output_unwritable`; pasted text must name one); ffmpeg for
    m4a and mp3 (`ffmpeg_missing`); NeMo — the server answers, or its binary resolves

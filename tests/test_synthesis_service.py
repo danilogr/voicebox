@@ -73,6 +73,14 @@ async def test_exactly_one_of_text_or_path(tmp_path, fields):
     assert "exactly one of text or path" in await reply(tmp_path, request(**fields))
 
 
+@pytest.mark.parametrize("text", ["Hello\x00there.", "Hello \ud800 there."])
+async def test_pasted_text_no_engine_can_take_is_refused_before_any_work(tmp_path, text):
+    answer = await reply(tmp_path, request(text=text, output=str(tmp_path / "o.wav")))
+    assert answer.startswith("this text cannot be spoken")
+    assert JobStore(tmp_path / "state").recent() == []
+    assert job_lock(tmp_path / "state", is_alive=lambda p: True).owner() is None
+
+
 async def test_a_relative_path_is_refused(tmp_path):
     assert "must be absolute" in await reply(tmp_path, request(path="notes.md"))
 

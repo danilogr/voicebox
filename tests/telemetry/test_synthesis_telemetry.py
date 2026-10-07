@@ -128,6 +128,7 @@ async def test_every_refusal_reason_is_a_shippable_row(tmp_path):
         ),
         (request(text="Hi.", output=str(tmp_path / "o.wav")), speech(Liveness.ABSENT, have=())),
         (request(text="Hi.", output=str(tmp_path / "o.wav"), voice="Nobody"), speech()),
+        (request(text="Hi\x00.", output=str(tmp_path / "o.wav")), speech()),
     ]
     for req, sp in cases:
         await start(desk_at(tmp_path), sp, settings(tmp_path), req, session)
@@ -139,6 +140,7 @@ async def test_every_refusal_reason_is_a_shippable_row(tmp_path):
             "output_unwritable",
             "ffmpeg_missing",
             "nemo_missing",
+            "input_unsupported",
             "input_unsupported",
         ]
     )
