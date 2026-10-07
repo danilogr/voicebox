@@ -132,6 +132,20 @@ async def test_an_empty_sentence_comes_back_as_an_error(recorder):
         assert "nothing to speak" in result.content[0].text
 
 
+async def test_a_sentence_with_a_nul_is_refused_and_reading_goes_on(recorder):
+    """A NUL handed to the player would end the queue's worker: every later sentence
+    would answer "reading" and never be heard."""
+    script, log = recorder
+    async with connected(f"{sys.executable} {script}") as session:
+        refused = await session.call_tool("read_aloud", {"text": "bad\x00text"})
+        assert refused.is_error is True
+        assert await text_of(session, "read_aloud", text="A normal sentence.") == "reading"
+        await _wait_for_lines(log, 1)
+        assert "nothing left to read" in await text_of(session, "reading_status")
+
+    assert json.loads(log.read_text().splitlines()[0]) == ["A normal sentence."]
+
+
 async def test_stop_reading_answers_even_when_nothing_is_playing(recorder):
     script, _ = recorder
     async with connected(f"{sys.executable} {script}") as session:

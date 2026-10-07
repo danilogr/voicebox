@@ -5,6 +5,8 @@ import asyncio
 from collections.abc import Sequence
 from typing import Never
 
+import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 from speak_core.queue import SpeechQueue
 from telemetry_support import INSTALL, SESSION, assert_shippable, opened
 
@@ -145,3 +147,31 @@ async def test_a_failed_narration_row_is_shippable(tmp_path):
     await asyncio.sleep(0.1)
     (row,) = assert_shippable(db)
     assert (row["status"], row["reason"], row["stage"]) == ("failed", "other", "play")
+
+
+async def test_a_sentence_with_a_nul_is_one_refused_row_and_never_reaches_the_queue(tmp_path):
+    db = tmp_path / "telemetry.db"
+    telemetry = TelemetrySession(
+        conn=opened(db), install_id=INSTALL, session_id=SESSION, db_path=db
+    )
+    narration = NarrationTracker(
+        telemetry=telemetry, engine="say", model=None, voice=None, pending=lambda: 0, idle_s=60
+    )
+    engine = FakeEngine()
+    queue = SpeechQueue(prepare=engine.prepare)
+    server = create_server(
+        settings=Settings.from_env({}, platform="darwin"),
+        engine=engine,
+        queue=queue,
+        supervisor=None,
+        narration=narration,
+    )
+    with pytest.raises(ToolError, match="NUL"):
+        await server.call_tool("read_aloud", {"text": "bad\x00text"})
+    assert queue.stats().size == 0
+    (row,) = assert_shippable(db)
+    assert (row["kind"], row["status"], row["reason"]) == (
+        "narration",
+        "refused",
+        "input_unsupported",
+    )

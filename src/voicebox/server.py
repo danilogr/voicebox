@@ -24,6 +24,7 @@ from voicebox.jobs.desk import Desk, busy_message
 from voicebox.jobs.status import job_status as describe_jobs
 from voicebox.narration import NarrationTracker
 from voicebox.synthesize import service as synthesis
+from voicebox.synthesize.text import unspeakable
 from voicebox.telemetry.notice import Notice
 from voicebox.telemetry.session import TelemetrySession
 from voicebox.transcribe import service as transcription
@@ -170,6 +171,12 @@ def create_server(
         name, version = found
         telemetry.update_harness(normalize_harness(name), version)
 
+    def refused(message: str) -> ToolError:
+        """A sentence `read_aloud` turns away, recorded as unsupported input."""
+        if narration is not None:
+            narration.refused("input_unsupported")
+        return ToolError(message)
+
     @asynccontextmanager
     async def lifespan(_: MCPServer) -> AsyncIterator[None]:
         worker = asyncio.create_task(queue.run())
@@ -198,12 +205,15 @@ def create_server(
         ctx: Context,
     ) -> str:
         note_harness(ctx)
+        # Checked before anything is queued: the queue's worker hands the sentence to a
+        # player process, and text no process can be given would end that worker.
+        problem = unspeakable(text)
+        if problem is not None:
+            raise refused(f"this text cannot be read aloud: {problem}")
         try:
             spoken = normalize(text, max_chars=settings.speech.max_chars)
         except ValueError as error:
-            if narration is not None:
-                narration.refused("input_unsupported")
-            raise ToolError(str(error)) from error
+            raise refused(str(error)) from error
         # Bookkeeping and enqueue happen with no suspension between them, so concurrent
         # calls queue in arrival order and a `stop_reading` cannot fall in between.
         if narration is not None:

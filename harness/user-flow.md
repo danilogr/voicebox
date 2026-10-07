@@ -61,7 +61,8 @@ session also reconciles running jobs when it starts.
 calls, then one `reading_status`, and starts the next round when two or fewer are left.
 
 1. `read_aloud` normalises the sentence (one line, capped at `VOICEBOX_MAX_CHARS`, 400)
-   and queues it; empty text is refused.
+   and queues it. Empty text is refused (`input_unsupported`), and so is text holding a
+   NUL or an unpaired surrogate, which no player process can be given.
 2. The queue prepares the next sentence while one plays, waits for the speaker lock
    (another process may be speaking), plays it, and reports how it ended.
 3. `stop_reading` clears the queue and stops the sentence playing, including one waiting

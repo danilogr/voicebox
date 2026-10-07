@@ -56,6 +56,16 @@ async def test_empty_text_is_refused_with_a_readable_message():
     assert queue.enqueued == []
 
 
+@pytest.mark.parametrize("text", ["bad\x00text", "half a pair \ud800 here"])
+async def test_text_no_player_can_be_handed_is_refused_before_it_is_queued(text):
+    """A NUL or an unpaired surrogate cannot be passed to a child process: queued, it
+    would end the queue's worker, and every later sentence would wait forever."""
+    server, queue = build()
+    with pytest.raises(ToolError, match="cannot be read aloud"):
+        await call(server, "read_aloud", text=text)
+    assert queue.enqueued == []
+
+
 async def test_reading_registers_with_the_supervisor_once():
     supervisor = FakeSupervisor()
     server, _ = build(supervisor=supervisor)

@@ -47,6 +47,21 @@ _FINAL = re.compile(r"[.!?\u2026][\"'\u201d\u2019)\]]*$")
 _TRAILING_CLAUSE = re.compile(r"\s*[,;:\u2014\u2013]+$")
 
 
+def unspeakable(text: str) -> str | None:
+    """What in `text` no speech engine can take, or None.
+
+    A NUL cannot travel in a child process's arguments, and an unpaired surrogate cannot
+    be encoded as UTF-8 for them, for a file or for the speech server's request.
+    """
+    if "\x00" in text:
+        return "it contains a NUL character"
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return "it contains an unpaired surrogate, which is not valid Unicode text"
+    return None
+
+
 def looks_like_markdown(text: str) -> bool:
     """Whether pasted text is markdown: a heading, a fence, a link or image, or `**`."""
     if "**" in text or _LINK.search(text) or _IMAGE.search(text):
