@@ -146,3 +146,29 @@ def test_timestamps_match_the_contracts_pattern():
         r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?Z",
         iso(1_000_000_000.25),
     )
+
+
+def test_a_voice_that_is_not_shipped_is_recorded_as_custom() -> None:
+    assert job_row(facts(SYNTHESIS), {"voice": "MyPrivateClone"})["voice"] == CUSTOM_VOICE
+    assert job_row(facts(SYNTHESIS), {"voice": "sofia\n"})["voice"] == "Sofia"
+    assert job_row(facts(NARRATION), {"voice": CUSTOM_VOICE})["voice"] == CUSTOM_VOICE
+    assert job_row(facts(NARRATION, engine="command"), {"voice": "John"})["voice"] == CUSTOM_VOICE
+
+
+@pytest.mark.parametrize("field", ["job_id", "session_id", "install_id"])
+@pytest.mark.parametrize("bad", ["", "not-a-uuid", JOB + "\n", JOB.replace("-4ccc-", "-1ccc-")])
+def test_an_id_that_is_not_a_uuid4_is_a_bug(field, bad):
+    with pytest.raises(ValueError, match="version 4 uuid"):
+        job_row(facts(**{field: bad}))
+
+
+def test_wall_ms_is_a_finite_number_rounded_to_an_integer():
+    assert job_row(facts(wall_ms=1.6))["wall_ms"] == 2
+    for bad in (True, float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="wall_ms"):
+            job_row(facts(wall_ms=bad))
+
+
+def test_non_finite_numbers_are_dropped_not_raised():
+    row = job_row(facts(), {"audio_ms": float("inf"), "asr_ms": float("nan"), "words": True})
+    assert (row["audio_ms"], row["asr_ms"], row["words"]) == (None, None, None)

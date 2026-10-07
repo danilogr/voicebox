@@ -4,8 +4,10 @@ row `job_row` builds validates once stored and projected, and a row whose sessio
 not exist is refused locally, as D1 refuses it."""
 
 import json
+import re
 import sqlite3
 import uuid
+from collections.abc import Iterator
 from operator import itemgetter
 from pathlib import Path
 
@@ -26,9 +28,21 @@ from voicebox.telemetry.rows import (
 )
 
 CONTRACT_DIR = Path(__file__).parent / "v1"
-REQUEST = jsonschema.Draft202012Validator(
-    json.loads((CONTRACT_DIR / "schema" / "ingest-request.schema.json").read_text())
+
+
+def _javascript_pattern(
+    validator: object, pattern: str, instance: object, schema: object
+) -> Iterator[jsonschema.ValidationError]:
+    """`pattern` as the server's ajv reads it: every contract pattern is `^...$`, and
+    JavaScript's `$` does not match before a trailing newline, as Python's does."""
+    if isinstance(instance, str) and not re.search(pattern.removesuffix("$") + r"\Z", instance):
+        yield jsonschema.ValidationError(f"{instance!r} does not match {pattern!r}")
+
+
+STRICT = jsonschema.validators.extend(
+    jsonschema.Draft202012Validator, {"pattern": _javascript_pattern}
 )
+REQUEST = STRICT(json.loads((CONTRACT_DIR / "schema" / "ingest-request.schema.json").read_text()))
 PING_SCHEMA = json.loads((CONTRACT_DIR / "schema" / "ping-request.schema.json").read_text())
 VALID = sorted((CONTRACT_DIR / "fixtures" / "valid").glob("*.json"))
 
@@ -254,3 +268,31 @@ def test_every_id_the_client_mints_is_a_uuid4_the_contract_accepts(tmp_path) -> 
     ).install_id
     for minted in (install_id, new_job_id(), str(uuid.uuid4())):
         assert re.fullmatch(pattern, minted), minted
+
+
+def test_the_strict_validator_rejects_what_plain_jsonschema_lets_through() -> None:
+    engine = {"type": "string", "pattern": "^[A-Za-z0-9._-]+$"}
+    assert jsonschema.Draft202012Validator(engine).is_valid("nemo\n")
+    assert not STRICT(engine).is_valid("nemo\n")
+    assert STRICT(engine).is_valid("nemo")
+
+
+def test_adversarial_values_go_through_job_row_to_a_valid_row() -> None:
+    conn = opened()
+    adversarial = [
+        (TRANSCRIPTION, "ok", {"language": "en\n", "audio_codec": "aac\n", "format": "docx"}),
+        (SYNTHESIS, "ok", {"voice": "John\n", "input_kind": "url", "input_format": "html"}),
+        (NARRATION, "ok", {"voice": "MyPrivateClone"}),
+        (SYNTHESIS, "ok", {"format": "docx"}),
+    ]
+    for kind, status, fields in adversarial:
+        store.insert_row(conn, JOBS, job_row(facts(kind, status, model="a" * 65), fields))
+    store.insert_row(
+        conn, JOBS, job_row(facts(TRANSCRIPTION, "failed", model="a" * 65, reason="cosmic_rays"))
+    )
+    sent = payload(conn)
+    errors = list(REQUEST.iter_errors(sent))
+    assert errors == [], [e.message for e in errors]
+    jobs = sent["jobs"]
+    assert all("model" not in j for j in jobs)  # type: ignore[union-attr]
+    assert [j["reason"] for j in jobs if j["status"] == "failed"] == ["other"]  # type: ignore[union-attr]

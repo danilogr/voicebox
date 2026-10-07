@@ -9,10 +9,12 @@ closed sets becomes `other` or the kind's own stage. A row asking for a field it
 does not carry, or a status its kind cannot have, is a bug in the caller and raises.
 """
 
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TypeGuard
 
 from speak_core.engines import nemo, say
 
@@ -96,6 +98,10 @@ ENUMS: dict[str, dict[str, frozenset[str]]] = {
     },
     NARRATION: {},
 }
+# The contract's uuid: version 4 only.
+UUID4 = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}"
+)
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9._-]+$")
 # The contract's timestamp, as this client writes it: UTC with a `Z` (`iso`, core's `now_iso`).
 TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?Z")
@@ -185,8 +191,18 @@ def job_row(facts: JobFacts, fields: Mapping[str, object] | None = None) -> dict
     for stamp in (facts.started_at, facts.ended_at):
         if not TIMESTAMP.fullmatch(stamp):
             raise ValueError(f"{stamp!r} is not a UTC timestamp the contract accepts")
+    for name, ident in (
+        ("job_id", facts.job_id),
+        ("session_id", facts.session_id),
+        ("install_id", facts.install_id),
+    ):
+        if not UUID4.fullmatch(ident):
+            raise ValueError(f"{name} {ident!r} is not a version 4 uuid")
     if facts.status not in STATUSES[kind]:
         raise ValueError(f"a {kind} cannot be {facts.status!r}")
+    if isinstance(facts.wall_ms, bool) or not _finite(facts.wall_ms):
+        raise ValueError(f"wall_ms {facts.wall_ms!r} is not a finite number")
+    engine = _string("engine", facts.engine) or UNKNOWN_ENGINE
     row: dict[str, object] = {
         "job_id": facts.job_id,
         "session_id": facts.session_id,
@@ -194,30 +210,33 @@ def job_row(facts: JobFacts, fields: Mapping[str, object] | None = None) -> dict
         "kind": kind,
         "started_at": facts.started_at,
         "ended_at": facts.ended_at,
-        "wall_ms": _within(facts.wall_ms, MAX_WALL_MS),
+        "wall_ms": _within(round(facts.wall_ms), MAX_WALL_MS),
         "status": facts.status,
         "reason": _reason(facts),
         "stage": _stage(facts),
-        "engine": _string("engine", facts.engine) or UNKNOWN_ENGINE,
+        "engine": engine,
         "model": _string("model", facts.model),
         "error_message": facts.error_message,
         "source_name": facts.source_name,
         "output_path": facts.output_path,
     }
     for name, value in (fields or {}).items():
-        row[name] = _field(kind, name, value)
+        row[name] = _field(kind, engine, name, value)
     return row
 
 
-def _field(kind: str, name: str, value: object) -> object:
+def _field(kind: str, engine: str, name: str, value: object) -> object:
     if name in BOOLEANS[kind]:
         return None if value is None else bool(value)
     if name in INT_CEILINGS[kind]:
-        if isinstance(value, bool) or not isinstance(value, int | float):
+        if isinstance(value, bool) or not _finite(value):
             return None
         return _within(round(value), INT_CEILINGS[kind][name])
     if name in ENUMS[kind]:
         return value if value in ENUMS[kind][name] else None
+    if name == "voice" and name in KIND_STRINGS[kind]:
+        # Free text never ships: only a name the engine ships is recorded as itself.
+        return _string(name, recorded_voice(engine, _string(name, value)))
     if name in KIND_STRINGS[kind]:
         return _string(name, value)
     raise ValueError(f"a {kind} row does not carry {name!r}")
@@ -248,6 +267,10 @@ def _string(name: str, value: object) -> str | None:
     if len(value) > longest or not pattern.fullmatch(value):
         return None
     return value
+
+
+def _finite(value: object) -> TypeGuard[int | float]:
+    return isinstance(value, int | float) and math.isfinite(value)
 
 
 def _within(value: int, ceiling: int) -> int:
