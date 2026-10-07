@@ -96,7 +96,7 @@ Environment variables, read when the server starts:
 |---|---|---|
 | `VOICEBOX_VOICE` | `John` | voice for reading aloud and for voice-overs |
 | `VOICEBOX_ENGINE` | `nemo` | reading-aloud engine: `nemo`, `say` (macOS) or `command` |
-| `VOICEBOX_COMMAND` | unset | the command the `command` engine runs |
+| `VOICEBOX_COMMAND` | unset | the command the `command` engine runs; without one, `nemo` is used and a warning logged |
 | `VOICEBOX_RATE` | engine default | reading-aloud rate, for engines that take one |
 | `VOICEBOX_MAX_CHARS` | `400` | longest sentence `read_aloud` accepts; the rest is cut |
 | `VOICEBOX_TRANSCRIBE_DIR` | the input's folder | where transcripts go |

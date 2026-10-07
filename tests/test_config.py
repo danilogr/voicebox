@@ -49,3 +49,15 @@ def test_transcription_settings_are_read_under_voicebox():
         {"VOICEBOX_TRANSCRIBE_DIR": "/out", "VOICEBOX_TRANSCRIBE_TIMEOUT": "120"}
     )
     assert (settings.transcribe_dir, settings.transcribe_timeout) == (Path("/out"), 120.0)
+
+
+def test_the_command_engine_without_a_command_falls_back_to_the_default_engine(caplog):
+    with caplog.at_level("WARNING"):
+        settings = Settings.from_env({"VOICEBOX_ENGINE": "command", "VOICEBOX_COMMAND": "  "})
+    assert settings.speech.engine == DEFAULT_ENGINE
+    assert "VOICEBOX_COMMAND" in caplog.text and "VOICEBOX_ENGINE=command" in caplog.text
+
+
+def test_the_command_engine_keeps_its_command():
+    settings = Settings.from_env({"VOICEBOX_ENGINE": "command", "VOICEBOX_COMMAND": "espeak"})
+    assert (settings.speech.engine, settings.speech.command) == ("command", "espeak")

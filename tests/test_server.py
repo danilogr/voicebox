@@ -146,6 +146,12 @@ async def test_a_sentence_with_a_nul_is_refused_and_reading_goes_on(recorder):
     assert json.loads(log.read_text().splitlines()[0]) == ["A normal sentence."]
 
 
+async def test_the_command_engine_without_a_command_still_serves(tmp_path):
+    """A setting that names no command is a warning, not a server that never starts."""
+    async with connected("", {"VOICEBOX_COMMAND": ""}) as session:
+        assert "nothing left to read" in await text_of(session, "reading_status")
+
+
 async def test_stop_reading_answers_even_when_nothing_is_playing(recorder):
     script, _ = recorder
     async with connected(f"{sys.executable} {script}") as session:
