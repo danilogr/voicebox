@@ -167,3 +167,91 @@ async def test_an_unwritable_state_directory_never_fails_a_sentence_already_enqu
     assert await call(server, "read_aloud", text="Two.") == "reading"
     assert [text for text, _, _ in queue.enqueued] == ["One.", "Two."]
     assert "read-only file system" in caplog.text
+
+
+class Exited:
+    """A player that has already finished."""
+
+    def terminate(self) -> None:
+        return None
+
+    async def wait(self) -> int:
+        return 0
+
+
+def failing_first_player(played: list[str]):
+    """A spawn whose first call raises an error the queue does not expect from a player.
+    speak-core's queue worker ends on it, as it does on a NUL in a player's arguments."""
+    calls = 0
+
+    async def spawn(command: str, args) -> Exited:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ValueError("embedded null byte")
+        played.append(args[-1])
+        return Exited()
+
+    return spawn
+
+
+async def until(condition, timeout: float = 2.0) -> None:
+    import asyncio
+
+    deadline = asyncio.get_running_loop().time() + timeout
+    while not condition():
+        assert asyncio.get_running_loop().time() < deadline, "timed out"
+        await asyncio.sleep(0.01)
+
+
+async def test_a_queue_worker_that_died_is_reported_and_restarted_by_reading_status():
+    import asyncio
+
+    from speak_core.queue import SpeechQueue
+
+    played: list[str] = []
+    engine = FakeEngine()
+    queue = SpeechQueue(prepare=engine.prepare, spawn=failing_first_player(played))
+    server = create_server(
+        settings=Settings.from_env({}, platform="darwin"),
+        engine=engine,
+        queue=queue,
+        supervisor=None,
+    )
+    async with server.settings.lifespan(server):
+        assert await call(server, "read_aloud", text="One.") == "reading"
+        await until(lambda: engine.prepared and queue.stats().size == 0)
+        await asyncio.sleep(0.05)
+        queue.enqueue("Stranded.", voice=None, rate=None)  # nobody left to read it
+        status = await call(server, "reading_status")
+        assert status.startswith("nothing left to read")
+        assert "stopped after an error and was restarted" in status
+        assert "1 sentence it held was dropped" in status
+        assert await call(server, "read_aloud", text="Two.") == "reading"
+        await until(lambda: played == ["Two."])
+        assert "restarted" not in await call(server, "reading_status")
+    leftover = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    assert all(task.done() for task in leftover)
+
+
+async def test_a_queue_worker_that_died_is_restarted_by_the_next_sentence():
+    from speak_core.queue import SpeechQueue
+
+    played: list[str] = []
+    engine = FakeEngine()
+    queue = SpeechQueue(prepare=engine.prepare, spawn=failing_first_player(played))
+    server = create_server(
+        settings=Settings.from_env({}, platform="darwin"),
+        engine=engine,
+        queue=queue,
+        supervisor=None,
+    )
+    async with server.settings.lifespan(server):
+        await call(server, "read_aloud", text="One.")
+        await until(lambda: engine.prepared and queue.stats().size == 0)
+        import asyncio
+
+        await asyncio.sleep(0.05)
+        reply = await call(server, "read_aloud", text="Two.")
+        assert reply.startswith("reading (") and "restarted" in reply
+        await until(lambda: played == ["Two."])

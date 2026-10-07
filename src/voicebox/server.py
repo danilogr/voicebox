@@ -64,6 +64,9 @@ class SessionState:
     """What this connection has done that its shutdown must undo. Never written to disk."""
 
     registered: bool = False
+    # The task draining the speech queue, from the lifespan's start; replaced when it ends
+    # early (`revive_reader`).
+    worker: asyncio.Task[None] | None = None
     # Set once the first tool call has looked for the MCP client's own `client_info`,
     # whether or not it found one: there is nothing more to learn by asking again.
     harness_checked: bool = False
@@ -112,7 +115,7 @@ def split_frontmatter(text: str) -> tuple[str, str]:
 async def shutdown(
     *,
     queue: Queue,
-    worker: asyncio.Task[None],
+    worker: asyncio.Task[None] | None,
     supervisor: "Supervisor | None",
     session: SessionState,
     narration: NarrationTracker | None = None,
@@ -125,8 +128,9 @@ async def shutdown(
     the machine talking after the session is gone.
     """
     await queue.stop()
-    worker.cancel()
-    await asyncio.gather(worker, return_exceptions=True)
+    if worker is not None:
+        worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)
     if narration is not None:
         # The queue has settled, so an open reading is counted as it really ended.
         narration.close()
@@ -177,9 +181,31 @@ def create_server(
             narration.refused("input_unsupported")
         return ToolError(message)
 
+    async def revive_reader() -> str | None:
+        """Start the queue's worker again if it has ended, and say what that cost.
+
+        speak-core's worker ends on an error it does not expect from a player, and from
+        then on nothing reads the queue: every sentence would be answered and never
+        heard, and `reading_status` would count it as still to read forever. What the
+        queue still holds is dropped, and the reply says how much, so the caller can send
+        it again. Never suspends while the worker is alive.
+        """
+        worker = session.worker
+        if worker is None or not worker.done():
+            return None
+        error = None if worker.cancelled() else worker.exception()
+        logger.error("the reading queue stopped; starting it again", exc_info=error)
+        dropped = await queue.stop()
+        session.worker = asyncio.create_task(queue.run())
+        held = "it held was" if dropped == 1 else "it held were"
+        return (
+            "reading had stopped after an error and was restarted; "
+            f"{dropped} sentence{_plural(dropped)} {held} dropped"
+        )
+
     @asynccontextmanager
     async def lifespan(_: MCPServer) -> AsyncIterator[None]:
-        worker = asyncio.create_task(queue.run())
+        session.worker = asyncio.create_task(queue.run())
         if on_session_start is not None:
             # Only here is a loop guaranteed to be running: `build()` calls this factory
             # before `server.run()` starts one.
@@ -189,7 +215,7 @@ def create_server(
         finally:
             await shutdown(
                 queue=queue,
-                worker=worker,
+                worker=session.worker,
                 supervisor=supervisor,
                 session=session,
                 narration=narration,
@@ -214,6 +240,7 @@ def create_server(
             spoken = normalize(text, max_chars=settings.speech.max_chars)
         except ValueError as error:
             raise refused(str(error)) from error
+        revived = await revive_reader()
         # Bookkeeping and enqueue happen with no suspension between them, so concurrent
         # calls queue in arrival order and a `stop_reading` cannot fall in between.
         if narration is not None:
@@ -230,19 +257,22 @@ def create_server(
                 # caller retry it and be read twice. Without the registration the shared
                 # speech server may stop under this session; the reading itself goes on.
                 logger.warning("could not register with the speech server: %s", error)
-        if ahead == 0:
-            return reply("reading")
-        return reply(f"queued behind {ahead} sentence{_plural(ahead)}")
+        answer = "reading" if ahead == 0 else f"queued behind {ahead} sentence{_plural(ahead)}"
+        return reply(answer if revived is None else f"{answer} ({revived})")
 
     @server.tool(name="reading_status", description=tools.READING_STATUS)
     async def reading_status(*, ctx: Context) -> str:
         note_harness(ctx)
+        revived = await revive_reader()
         stats = queue.stats()
         if stats.size == 0:
-            return reply(f"nothing left to read; {stats.finished} read so far")
-        return reply(
-            f"{stats.size} still to read ({describe_queue(stats)}); {stats.finished} read so far"
-        )
+            answer = f"nothing left to read; {stats.finished} read so far"
+        else:
+            answer = (
+                f"{stats.size} still to read ({describe_queue(stats)}); "
+                f"{stats.finished} read so far"
+            )
+        return reply(answer if revived is None else f"{answer} ({revived})")
 
     @server.tool(name="stop_reading", description=tools.STOP_READING)
     async def stop_reading(*, ctx: Context) -> str:

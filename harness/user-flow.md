@@ -67,6 +67,9 @@ calls, then one `reading_status`, and starts the next round when two or fewer ar
    (another process may be speaking), plays it, and reports how it ended.
 3. `stop_reading` clears the queue and stops the sentence playing, including one waiting
    for the speakers.
+4. If the queue's worker has ended on an error, the next `read_aloud` or `reading_status`
+   drops what the queue held, starts a new worker, and its reply says how many sentences
+   were dropped so they can be sent again.
 
 A **reading-aloud run** is one telemetry row: it opens with the first sentence after the
 queue was idle and closes after 30 s with nothing queued (`ok`, or `failed` if nothing

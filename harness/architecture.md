@@ -156,6 +156,13 @@ their design is in its `harness/architecture.md`. This document covers voicebox.
   wait for the speakers at once. `read_aloud` returns at once; `/voicebox:narrate` paces
   itself in rounds checked with `reading_status`, so a "stop" loses seconds.
 
+- **voicebox restarts the queue's worker when it has ended.** speak-core 0.3.0's worker
+  ends on an error it does not expect from a player (a `ValueError` from a NUL in the
+  player's arguments is one), and nothing reads the queue after that. `read_aloud`
+  refuses the text known to cause it; for anything else, the next `read_aloud` or
+  `reading_status` finds the worker done, drops what the queue held, starts a new
+  worker and says so in its reply.
+
 - **`/voicebox:narrate` is also an MCP prompt.** Claude Code reads `commands/*.md`; every
   other MCP client sees only what the server offers. Serving the same file keeps one copy
   of the instruction.
