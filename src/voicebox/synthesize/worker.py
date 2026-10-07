@@ -39,7 +39,12 @@ from voicebox.synthesize.audio import (
     concatenate,
 )
 from voicebox.synthesize.encode import encode as encode_audio
-from voicebox.synthesize.limits import CHUNK_CHARS, request_timeout_s
+from voicebox.synthesize.limits import (
+    CHUNK_CHARS,
+    PACE_MIN_CHARS,
+    WARMUP_TIMEOUT_S,
+    request_timeout_s,
+)
 from voicebox.synthesize.text import chunk_text
 from voicebox.telemetry.jobs import record_job
 
@@ -50,8 +55,6 @@ logger = logging.getLogger(__name__)
 CHUNK_GAP_MS = 250
 PARAGRAPH_GAP_MS = 700
 
-# A cold start takes about 7 s (performance.md); this bounds one that never finishes.
-WARMUP_TIMEOUT_S = 60.0
 WARMUP_POLL_S = 0.5
 
 # The worker bounds each request itself (`request_timeout_s`); the HTTP client's own
@@ -119,6 +122,8 @@ def place(
         try:
             # mkstemp makes the file private; the output gets the mode a new file would.
             os.fchmod(descriptor, 0o666 & ~_umask())
+        except OSError as error:  # a FAT mount has no modes to set
+            logger.info("could not set the mode of %s: %s", partial, error)
         finally:
             os.close(descriptor)
         on_partial(partial)
@@ -303,7 +308,7 @@ async def _synthesize(
     pieces: list[Piece] = []
     for index, chunk in enumerate(chunks):
         which = f"chunk {index + 1} of {len(chunks)}"
-        timeout = request_timeout_s(len(chunk.text), job.chars_per_s)
+        timeout = request_timeout_s(len(chunk.text), job.slowest_chars_per_s)
         started = monotonic()
         try:
             audio = await within(
@@ -319,12 +324,16 @@ async def _synthesize(
         path = work / f"{index:06d}.wav"
         path.write_bytes(audio)
         pieces.append(Piece(path, chunk.paragraph_end))
-        pace = len(chunk.text) / max(seconds, MIN_REQUEST_S)
+        slowest = job.slowest_chars_per_s
+        if len(chunk.text) >= PACE_MIN_CHARS:
+            pace = len(chunk.text) / max(seconds, MIN_REQUEST_S)
+            slowest = pace if slowest is None else min(slowest, pace)
         job = replace(
             job,
             chunks_done=index + 1,
+            chars_done=job.chars_done + len(chunk.text),
             synth_ms=job.synth_ms + round(seconds * 1000),
-            chars_per_s=pace if job.chars_per_s is None else min(job.chars_per_s, pace),
+            slowest_chars_per_s=slowest,
         )
         jobs.write(job)
 

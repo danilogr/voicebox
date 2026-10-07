@@ -35,7 +35,18 @@ def test_the_first_request_is_bounded_and_never_under_the_measured_timeout():
     assert limits.request_timeout_s(10, None) == limits.REQUEST_TIMEOUT_S
 
 
-def test_later_requests_wait_four_times_the_slowest_observed_pace():
-    assert limits.request_timeout_s(1500, 1.0) == 6000
-    assert limits.request_timeout_s(1500, 0.5) == 12000  # no ceiling once measured
+def test_later_requests_wait_four_times_the_slowest_full_pace_seen():
+    assert limits.request_timeout_s(1500, 10.0) == 600
     assert limits.request_timeout_s(100, 29.5) == limits.REQUEST_TIMEOUT_S
+
+
+@pytest.mark.parametrize("pace", [0.01, 0.3, 1.0])
+@pytest.mark.parametrize("chars", [200, 750, 1500])
+def test_a_pace_slower_than_the_cpu_backend_never_stretches_a_timeout_past_it(chars, pace):
+    timeout = limits.request_timeout_s(chars, pace)
+    assert timeout <= max(limits.REQUEST_TIMEOUT_S, 4 * chars / limits.CPU_CHARS_PER_S)
+    assert timeout <= limits.FIRST_REQUEST_CEILING_S
+
+
+def test_short_requests_do_not_count_towards_the_pace():
+    assert 100 <= limits.PACE_MIN_CHARS <= 300

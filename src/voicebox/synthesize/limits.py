@@ -21,23 +21,32 @@ COLD_START_S = 10.0
 # realtime, so a full chunk (about 90 s of audio) takes about 21 minutes.
 CPU_CHARS_PER_S = 1.2
 
-# The most a job's first request waits, before any pace has been seen: 45 minutes, about
-# twice what a full chunk takes on the CPU backend.
+# The most any request waits: 45 minutes, about twice what a full chunk takes on the CPU
+# backend.
 FIRST_REQUEST_CEILING_S = 2700.0
+
+# Requests shorter than this never set the pace later timeouts follow: a heading's request
+# is mostly fixed cost, and a short one sent while another session holds the server is
+# mostly waiting, so either would read as a machine many times slower than it is.
+PACE_MIN_CHARS = 200
+
+# How long the worker waits for a speech server it started to answer /health. A cold
+# start takes about 7 s (performance.md); this bounds one that never finishes.
+WARMUP_TIMEOUT_S = 60.0
 
 
 def request_timeout_s(chars: int, slowest_chars_per_s: float | None) -> float:
     """How long one request of `chars` characters may take.
 
-    Four times what the slowest pace this job's server has shown would need, and never
-    under `REQUEST_TIMEOUT_S`. Before any request has finished nothing is known about the
-    machine, so the first request is given four times the CPU backend's pace, capped at
-    `FIRST_REQUEST_CEILING_S`: a CPU-only machine finishes it, and a server that never
-    answers fails the job within 45 minutes. The speech server works through requests
-    one at a time and finishes one its client gave up on, so a timed-out request is
-    never retried: the job fails.
+    Four times what the slowest pace this job has shown on a request of at least
+    `PACE_MIN_CHARS` would need, and never under `REQUEST_TIMEOUT_S`. Before such a
+    request has finished the pace is the CPU backend's, so a CPU-only machine finishes its
+    first full chunk. The CPU backend's pace also bounds every timeout - a pace slower
+    than it is a server busy with someone else's work, not this machine's speed - and so
+    does `FIRST_REQUEST_CEILING_S`, so a server that never answers fails the job within
+    45 minutes. The speech server works through requests one at a time and finishes one
+    its client gave up on, so a timed-out request is never retried: the job fails.
     """
-    if slowest_chars_per_s is None:
-        first = min(FIRST_REQUEST_CEILING_S, 4 * chars / CPU_CHARS_PER_S)
-        return max(REQUEST_TIMEOUT_S, first)
-    return max(REQUEST_TIMEOUT_S, 4 * chars / slowest_chars_per_s)
+    on_cpu = 4 * chars / CPU_CHARS_PER_S
+    shown = on_cpu if slowest_chars_per_s is None else 4 * chars / slowest_chars_per_s
+    return max(REQUEST_TIMEOUT_S, min(FIRST_REQUEST_CEILING_S, on_cpu, shown))

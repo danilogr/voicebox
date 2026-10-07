@@ -102,11 +102,15 @@ use and holds up every other session using the server.
 So a request's timeout follows the machine instead (`request_timeout_s` in
 `synthesize/limits.py`). The 199 s figure assumes Metal. On the CPU backend, at about
 0.07x realtime ("Metal against CPU" below), a 1500-character request of about 90 s of
-audio takes around 21 minutes. The first request of a job, before any pace has been
-seen, may take four times what the CPU backend would need (about 1.2 characters a
-second), capped at 45 minutes. Each later request may take four times what the slowest
-pace this job has shown would need. No request waits less than 199 s. A request that
-times out fails the job with reason `timeout`, and is not retried.
+audio takes around 21 minutes. A request may take four times what the slowest pace this
+job has shown would need, counting only requests of at least 200 characters: a short
+request is mostly fixed cost (a 6-character heading runs at about 8 characters a
+second) or, sent while another session holds the server, mostly waiting. Before such a
+request has finished, the pace is the CPU backend's, about 1.2 characters a second. No
+request waits longer than the CPU backend's pace would need or 45 minutes, and none less
+than 199 s. A request that times out fails the job with reason `timeout`, and is not
+retried. The time left that `job_status` reports is the characters still to speak at
+the job's overall throughput so far.
 
 ## Resident memory
 

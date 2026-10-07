@@ -298,8 +298,10 @@ def test_a_synthesis_jobs_staged_text_and_chunks_are_artifacts(tmp_path):
 def test_a_synthesis_estimate_follows_the_pace_it_has_shown(tmp_path):
     from voicebox.synthesize.limits import COLD_START_S
 
-    assert synthesis_at(tmp_path, chars_per_s=10.0).eta_s == pytest.approx(300)
-    cold = synthesis_at(tmp_path, chars_per_s=10.0, cold_start=True)
+    # 500 characters spoken in 50 s of synthesis: 10 a second, overall
+    shown = {"chars_done": 500, "synth_ms": 50_000, "slowest_chars_per_s": 2.0}
+    assert synthesis_at(tmp_path, **shown).eta_s == pytest.approx(300)
+    cold = synthesis_at(tmp_path, cold_start=True, **shown)
     assert cold.eta_s == pytest.approx(300 + COLD_START_S)
 
 
@@ -311,3 +313,4 @@ def test_a_synthesis_partial_output_on_the_record_is_an_artifact(tmp_path):
     store.write(job)
     store.discard_artifacts(job.job_id)
     assert not partial.exists()
+    assert store.read(job.job_id).partial is None

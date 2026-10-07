@@ -10,7 +10,7 @@ import shutil
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
 from voicebox.synthesize.limits import COLD_START_S, SYNTH_CHARS_PER_S
@@ -113,17 +113,27 @@ class SynthesisJob(Job):
     audio_ms: int | None = None
     output_bytes: int | None = None
     server_warm: bool | None = None
-    # The slowest pace, in characters a second, of this job's finished requests: what
-    # its estimate and its request timeouts follow once one request has finished.
-    chars_per_s: float | None = None
+    # Characters of the requests that have finished; with `synth_ms`, the throughput the
+    # estimate follows once one has.
+    chars_done: int = 0
+    # The slowest pace, in characters a second, of this job's finished requests of at
+    # least `PACE_MIN_CHARS`: what later request timeouts follow.
+    slowest_chars_per_s: float | None = None
     # The hidden file beside the output that the worker writes before linking it into
     # place; on the record only while it exists, so a crash there can be cleaned up.
     partial: str | None = None
 
     @property
+    def chars_per_s(self) -> float:
+        """Characters spoken per second of synthesis so far, or the measured rate before
+        any request has finished."""
+        if self.chars_done and self.synth_ms:
+            return self.chars_done / (self.synth_ms / 1000)
+        return SYNTH_CHARS_PER_S
+
+    @property
     def eta_s(self) -> float:
-        rate = self.chars_per_s or SYNTH_CHARS_PER_S
-        return self.chars / rate + (COLD_START_S if self.cold_start else 0.0)
+        return self.chars / self.chars_per_s + (COLD_START_S if self.cold_start else 0.0)
 
 
 # Every kind a record may hold, by the `kind` it is written with.
@@ -230,10 +240,27 @@ class JobStore:
             self.text_path(job_id).unlink(missing_ok=True)
             job = self.read(job_id)
             if isinstance(job, SynthesisJob) and job.partial:
-                Path(job.partial).unlink(missing_ok=True)
+                self._discard_partial(job, job.partial)
         except OSError as error:
             logger.debug("could not discard the artifacts of job %s: %s", job_id, error)
         shutil.rmtree(self.work_dir(job_id), ignore_errors=True)
+
+    def _discard_partial(self, job: SynthesisJob, recorded: str) -> None:
+        """Delete the hidden file a synthesis was writing its output to, and take it off
+        the record. Only a name the worker would have made is deleted: the path comes
+        from a file on disk, and must never reach anything else of the user's."""
+        partial, output = Path(recorded), Path(job.output)
+        prefix = f".{output.name}."
+        if (
+            partial.parent == output.parent
+            and partial.name.startswith(prefix)
+            and partial.name.endswith(".partial")
+            and len(partial.name) > len(prefix) + len(".partial")
+        ):
+            partial.unlink(missing_ok=True)
+        else:
+            logger.warning("not deleting %s: not a partial output of %s", partial, output)
+        self.write(replace(job, partial=None))
 
     def _prune(self) -> None:
         """Reclaim what a finished job no longer needs.

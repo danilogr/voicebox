@@ -27,7 +27,13 @@ from voicebox.jobs.lock import JobBusy, job_lock
 from voicebox.jobs.store import CRASHED, DONE, FAILED, JobStore
 from voicebox.programs import ConversionFailed, ToolMissing
 from voicebox.synthesize.audio import OutputTooLargeError
-from voicebox.synthesize.limits import CHUNK_CHARS, REQUEST_TIMEOUT_S, request_timeout_s
+from voicebox.synthesize.limits import (
+    CHUNK_CHARS,
+    CPU_CHARS_PER_S,
+    FIRST_REQUEST_CEILING_S,
+    REQUEST_TIMEOUT_S,
+    request_timeout_s,
+)
 from voicebox.synthesize.worker import WorkerSpeech, place, run_job
 
 READY = Liveness.READY
@@ -274,24 +280,39 @@ def test_a_missing_record_is_nothing_to_do(tmp_path):
     assert asyncio.run(run_job(tmp_path, JOB_ID, speech=speech)) is None
 
 
-# A request's timeout follows the pace this job's server has shown (ruling Q39): a slow
-# machine finishes, and a server that stops answering fails the job after one request.
+# A request's timeout follows the pace this job's server has shown on full-sized
+# requests, bounded by the CPU backend's (rulings Q39, Q41): a slow machine finishes, a
+# server that stops answering fails the job after one request, and neither a heading's
+# short request nor a wait behind another session stretches later timeouts.
 
 
 class PacedServer(FakeSynthesizer):
-    """A speech server on a fake clock: a request takes `len(text) / rate` seconds, and
-    the request numbered `hang_at` never answers."""
+    """A speech server on a fake clock: a request takes `overhead + len(text) / rate`
+    seconds, plus `queued[n]` for request number n, and request `hang_at` never answers."""
 
-    def __init__(self, rate: float, *, hang_at: int | None = None) -> None:
+    def __init__(
+        self,
+        rate: float,
+        *,
+        overhead: float = 0.0,
+        queued: dict[int, float] | None = None,
+        hang_at: int | None = None,
+    ) -> None:
         super().__init__()
         self.now = 0.0
         self.timeouts: list[float] = []
         self._rate = rate
+        self._overhead = overhead
+        self._queued = queued or {}
         self._hang_at = hang_at
 
     async def synthesize(self, text, *, voice) -> bytes:
         audio = await super().synthesize(text, voice=voice)
-        self.now += 1e9 if len(self.texts) == self._hang_at else len(text) / self._rate
+        n = len(self.texts)
+        if n == self._hang_at:
+            self.now += 1e9
+        else:
+            self.now += self._queued.get(n, 0.0) + self._overhead + len(text) / self._rate
         return audio
 
     def monotonic(self) -> float:
@@ -320,36 +341,73 @@ async def paced(state_dir: Path, server: PacedServer):
     )
 
 
-# Three paragraphs of about 1,350 characters: three full chunks.
-LONG = "\n\n".join([" ".join(["This sentence is here to fill the chunk up."] * 31)] * 3)
+# A paragraph of 1,364 characters: one full chunk.
+FULL = " ".join(["This sentence is here to fill the chunk up."] * 31)
+LONG = "\n\n".join([FULL] * 3)
+WITH_HEADINGS = "\n\n".join(["Intro", FULL, "Next", FULL, "End", FULL])
 
 
-async def test_a_cpu_only_machine_finishes_as_timeouts_follow_its_pace(tmp_path):
+async def test_a_cpu_only_machine_finishes_its_full_chunks(tmp_path):
     staged(tmp_path, LONG)
-    server = PacedServer(rate=1.2)  # about 0.07x realtime
+    server = PacedServer(rate=1.2)  # about 0.07x realtime: 19 minutes a chunk
     finished = await paced(tmp_path, server)
     assert finished.state == DONE and finished.chunks_done == 3
-    sizes = [len(text) for text in server.texts]
-    assert server.timeouts == [
-        request_timeout_s(sizes[0], None),
-        request_timeout_s(sizes[1], 1.2),
-        request_timeout_s(sizes[2], 1.2),
+    assert server.timeouts == [request_timeout_s(len(FULL), None)] + 2 * [
+        request_timeout_s(len(FULL), 1.2)
     ]
-    assert server.timeouts[1] > server.timeouts[0] > REQUEST_TIMEOUT_S
-    assert finished.chars_per_s == pytest.approx(1.2)
+    assert all(len(FULL) / 1.2 < timeout for timeout in server.timeouts)
+    assert finished.slowest_chars_per_s == pytest.approx(1.2)
 
 
-async def test_the_slowest_pace_seen_sets_the_next_timeout(tmp_path):
-    staged(tmp_path, THREE_PARAGRAPHS)
+async def test_the_slowest_full_request_sets_later_timeouts(tmp_path):
+    staged(tmp_path, LONG)
 
     class Slowing(PacedServer):
         async def synthesize(self, text, *, voice) -> bytes:
-            self._rate = 10.0 if len(self.texts) == 0 else 20.0
+            self._rate = 10.0 if len(self.texts) == 1 else 30.0
             return await super().synthesize(text, voice=voice)
 
-    server = Slowing(rate=10.0)
+    server = Slowing(rate=30.0)
     finished = await paced(tmp_path, server)
-    assert finished.chars_per_s == pytest.approx(10.0)
+    assert finished.slowest_chars_per_s == pytest.approx(10.0)
+    assert server.timeouts == [
+        request_timeout_s(len(FULL), None),
+        request_timeout_s(len(FULL), 30.0),
+        request_timeout_s(len(FULL), 10.0),
+    ]
+    assert server.timeouts[2] == pytest.approx(4 * len(FULL) / 10.0)
+
+
+async def test_short_requests_do_not_skew_the_pace(tmp_path):
+    staged(tmp_path, WITH_HEADINGS)
+    # each request costs 0.7 s before its text: a 6-character heading runs at ~8 chars/s
+    server = PacedServer(rate=45.0, overhead=0.7)
+    finished = await paced(tmp_path, server)
+    full_pace = len(FULL) / (0.7 + len(FULL) / 45.0)
+    assert finished.slowest_chars_per_s == pytest.approx(full_pace)
+    assert server.timeouts[-1] == REQUEST_TIMEOUT_S  # 4 x 31 s is under the floor
+    # the estimate counts every character over all the time spent: about 43 chars/s,
+    # where the headings' own pace (~8 chars/s) would make it five times longer
+    assert finished.eta_s < finished.chars / 40
+
+
+async def test_a_short_first_request_stuck_behind_other_work_does_not_skew_the_pace(tmp_path):
+    staged(tmp_path, WITH_HEADINGS)
+    server = PacedServer(rate=45.0, queued={1: 19.9})  # "Intro." at about 0.3 chars/s
+    finished = await paced(tmp_path, server)
+    assert finished.state == DONE
+    assert finished.slowest_chars_per_s == pytest.approx(45.0)
+    assert server.timeouts[-1] == REQUEST_TIMEOUT_S
+
+
+async def test_a_full_request_stuck_behind_other_work_is_bounded_by_the_cpu_pace(tmp_path):
+    staged(tmp_path, LONG)
+    server = PacedServer(rate=45.0, queued={1: 2000.0})  # about 0.68 chars/s
+    finished = await paced(tmp_path, server)
+    assert finished.state == DONE
+    assert server.timeouts[1:] == 2 * [
+        min(FIRST_REQUEST_CEILING_S, 4 * len(FULL) / CPU_CHARS_PER_S)
+    ]
 
 
 async def test_a_server_that_stops_answering_fails_the_job_after_one_request(tmp_path):
@@ -361,6 +419,7 @@ async def test_a_server_that_stops_answering_fails_the_job_after_one_request(tmp
     assert len(server.texts) == 2  # no retry
     # only the request that succeeded is counted
     assert finished.synth_ms == round(len(server.texts[0]) / 29.5 * 1000)
+    assert finished.chars_done == len(server.texts[0])
     assert not (tmp_path / "out.wav").exists()
 
 
@@ -391,10 +450,19 @@ async def test_the_output_gets_the_usual_permissions(tmp_path):
     assert stat.S_IMODE((tmp_path / "out.wav").stat().st_mode) == 0o666 & ~umask
 
 
-def test_a_synthesis_that_crashed_while_writing_leaves_no_partial_file(tmp_path):
+async def test_a_filesystem_that_refuses_a_mode_still_gets_the_file(tmp_path, monkeypatch):
+    def refused(descriptor, mode) -> None:
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr("voicebox.synthesize.worker.os.fchmod", refused)
+    staged(tmp_path, "One chunk.")
+    finished = await work(tmp_path)
+    assert finished.state == DONE and (tmp_path / "out.wav").exists()
+
+
+def crashed_while_writing(tmp_path: Path, partial: Path):
+    """Reconcile a job whose worker died at stage write, with `partial` on its record."""
     job = staged(tmp_path, "One chunk.", worker_pid=9999)
-    partial = tmp_path / ".out.wav.abc123.partial"
-    partial.write_bytes(b"half")
     jobs = JobStore(tmp_path)
     jobs.write(replace(job, stage="write", chunks=1, chunks_done=1, partial=str(partial)))
     desk = Desk(
@@ -406,7 +474,26 @@ def test_a_synthesis_that_crashed_while_writing_leaves_no_partial_file(tmp_path)
         pid=CLAIMER,
     )
     assert reconcile(desk, jobs.read(JOB_ID)).state == CRASHED
-    assert not partial.exists()
+    return jobs.read(JOB_ID)
+
+
+def test_a_synthesis_that_crashed_while_writing_leaves_no_partial_file(tmp_path):
+    partial = tmp_path / ".out.wav.abc123.partial"
+    partial.write_bytes(b"half")
+    record = crashed_while_writing(tmp_path, partial)
+    assert not partial.exists() and record.partial is None
+
+
+@pytest.mark.parametrize(
+    "where",
+    ["elsewhere/.out.wav.abc123.partial", "notes.txt", ".other.wav.abc123.partial", ".out.wav"],
+)
+def test_a_recorded_partial_that_is_not_ours_is_never_deleted(tmp_path, where):
+    path = tmp_path / where
+    path.parent.mkdir(exist_ok=True)
+    path.write_bytes(b"theirs")
+    record = crashed_while_writing(tmp_path, path)
+    assert path.read_bytes() == b"theirs" and record.partial is None
 
 
 async def test_a_file_that_appeared_at_the_output_is_never_replaced(tmp_path):
