@@ -4,8 +4,8 @@
 
 ## Directory overview
 
-    .claude-plugin/     plugin manifest and the voicebox-marketplace listing
-    assets/             art: voicebox, transcribe and narrate icons and heroes; favicons
+    .claude-plugin/     plugin manifest and the voicebox-marketplace listing (voicebox, walkie)
+    assets/             art: voicebox, transcribe and narrate icons and heroes; walkie icon (for the README note); favicons
     commands/           /voicebox:narrate, :setup, :telemetry, :stats
     harness/            architecture, user flow, performance, design guidelines, this file
     scripts/            the MCP launcher and the local-install helper
@@ -21,7 +21,7 @@
 | `AGENTS.md` | Operating rules for coding agents in this repo |
 | `pyproject.toml`, `uv.lock` | Package, console scripts (`voicebox-mcp`, `voicebox-telemetry`, `voicebox-stats`), tool settings, the pinned lock |
 | `.mcp.json` | Launches the `voicebox` MCP server through `scripts/voicebox-mcp` |
-| `.claude-plugin/plugin.json`, `marketplace.json` | The plugin, and the marketplace listing it |
+| `.claude-plugin/plugin.json`, `marketplace.json` | The plugin, and the marketplace listing voicebox (`./`) and walkie (GitHub `danilogr/walkie`) |
 | `favicon.ico`, `favicon.png`, `assets/favicon.*` | Icons; no code reads them |
 | `scripts/voicebox-mcp` | Finds `uv` and runs `voicebox-mcp` |
 | `scripts/install-local.sh` | Copies this tree into Claude Code's plugin cache for a non-local install |

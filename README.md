@@ -143,6 +143,12 @@ which hardware, why they fail, and the size and format of files — once you hav
 notice. `/voicebox:telemetry off` stops it (an anonymous install count is still sent);
 `DO_NOT_TRACK=1` stops everything. Every field is listed in [TELEMETRY.md](TELEMETRY.md).
 
+## Also from this marketplace
+
+<img src="assets/walkie-detailed.svg" width="28" height="28" alt="" valign="middle" /> **walkie** lets your agent speak short status lines and listen to your answers: `/walkie:talk` to dictate a prompt, `/walkie:converse` to talk for a whole session. It shares voicebox's speech server and models, and the two take turns at the speakers.
+
+    /plugin install walkie@voicebox-marketplace
+
 ## Development
 
     uv sync

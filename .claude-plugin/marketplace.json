@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "voicebox-marketplace",
   "version": "1.0.0",
-  "description": "voicebox: local speech for coding agents, on NVIDIA NeMo-Speech.cpp",
+  "description": "voicebox and walkie: local speech for coding agents, on NVIDIA NeMo-Speech.cpp",
   "owner": {
     "name": "Danilo Gasques"
   },
@@ -11,6 +11,15 @@
       "name": "voicebox",
       "description": "Offline transcription, voice-overs and read-aloud, on your machine.",
       "source": "./",
+      "category": "productivity"
+    },
+    {
+      "name": "walkie",
+      "description": "Talk with your agent: spoken status lines, listening, dictation and conversation, on your machine.",
+      "source": {
+        "source": "github",
+        "repo": "danilogr/walkie"
+      },
       "category": "productivity"
     }
   ]

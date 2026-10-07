@@ -16,11 +16,13 @@ def test_plugin_json_pyproject_and_the_server_agree_on_1_0_0():
     assert plugin["version"] == project["version"] == VERSION == "1.0.0"
 
 
-def test_the_marketplace_lists_voicebox_alone():
+def test_the_marketplace_lists_voicebox_first_and_walkie_from_github():
     market = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
     assert market["name"] == "voicebox-marketplace"
-    [voicebox] = market["plugins"]
+    voicebox, walkie = market["plugins"]
     assert (voicebox["name"], voicebox["source"]) == ("voicebox", "./")
+    assert walkie["name"] == "walkie"
+    assert walkie["source"] == {"source": "github", "repo": "danilogr/walkie"}
 
 
 def test_the_mcp_server_is_named_voicebox_and_launched_by_its_script():
