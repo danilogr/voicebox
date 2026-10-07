@@ -12,6 +12,7 @@ from typing import Protocol
 from mcp.server.mcpserver import MCPServer
 from speak_core.engines import build_engine
 from speak_core.engines.asr import Liveness, NemoTranscriber
+from speak_core.engines.nemo import NemoSynthesizer
 from speak_core.queue import SpeechQueue, UtteranceOutcome
 from speak_core.runtime import configure_logging, supervisor_for
 from speak_core.speaker import SpeakerLock
@@ -27,6 +28,7 @@ from voicebox.config import PLUGIN, Settings
 from voicebox.jobs.desk import build_desk, sweep
 from voicebox.narration import NarrationTracker
 from voicebox.server import VERSION, create_server
+from voicebox.synthesize.service import Speech
 from voicebox.telemetry import compose as telemetry_compose
 from voicebox.telemetry.contract import IDENTITY, SCHEMA, db_path
 from voicebox.telemetry.notice import Notice
@@ -138,6 +140,15 @@ def build(settings: Settings, env: Mapping[str, str]) -> MCPServer:
     # whether it is up, which is what `server_warm` records.
     probe = NemoTranscriber(base_url=settings.server.url, api_key=settings.server.api_key)
 
+    speech = Speech(
+        liveness=probe.liveness,
+        voices=NemoSynthesizer(
+            base_url=settings.server.url,
+            api_key=settings.server.api_key,
+            model=settings.server.tts_model,
+        ).list_voices,
+    )
+
     async def server_ready() -> bool:
         return await probe.liveness() is Liveness.READY
 
@@ -171,6 +182,7 @@ def build(settings: Settings, env: Mapping[str, str]) -> MCPServer:
         queue=queue,
         supervisor=supervisor,
         desk=desk,
+        speech=speech,
         telemetry=telemetry,
         narration=narration,
         notice=notice,

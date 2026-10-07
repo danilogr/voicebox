@@ -101,3 +101,42 @@ def test_a_dead_synthesis_worker_is_crashed_once_and_cleaned_up(tmp_path):
     assert (row["status"], row["stage"], row["chunks_done"]) == ("crashed", "synthesize", 2)
     assert not jobs.text_path(JOB_ID).exists() and not jobs.work_dir(JOB_ID).exists()
     assert job_lock(tmp_path, is_alive=lambda p: False).owner() is None
+
+
+async def test_every_refusal_reason_is_a_shippable_row(tmp_path):
+    from telemetry_support import INSTALL, SESSION
+
+    from synthesis_support import desk_at, request, settings, speech
+    from voicebox.synthesize.service import start
+    from voicebox.telemetry.session import TelemetrySession
+
+    db = tmp_path / "telemetry.db"
+    session = TelemetrySession(conn=opened(db), install_id=INSTALL, session_id=SESSION, db_path=db)
+    taken = tmp_path / "taken.wav"
+    taken.write_bytes(b"x")
+    binary = tmp_path / "bin.txt"
+    binary.write_bytes(b"\x00")
+    cases = [
+        (request(path=str(tmp_path / "gone.md")), speech()),
+        (request(path=str(binary)), speech()),
+        (request(text="Hi.", output=str(taken)), speech()),
+        (
+            request(text="Hi.", output=str(tmp_path / "o.m4a"), format="m4a"),
+            speech(have=("nemo-speech",)),
+        ),
+        (request(text="Hi.", output=str(tmp_path / "o.wav")), speech(Liveness.ABSENT, have=())),
+        (request(text="Hi.", output=str(tmp_path / "o.wav"), voice="Nobody"), speech()),
+    ]
+    for req, sp in cases:
+        await start(desk_at(tmp_path), sp, settings(tmp_path), req, session)
+    reasons = [row["reason"] for row in assert_shippable(db)]
+    assert sorted(reasons) == sorted(
+        [
+            "input_missing",
+            "input_unsupported",
+            "output_unwritable",
+            "ffmpeg_missing",
+            "nemo_missing",
+            "input_unsupported",
+        ]
+    )

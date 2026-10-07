@@ -5,12 +5,17 @@ import io
 import wave
 from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
+from typing import Never
 
+from speak_core.config import ServerSettings
 from speak_core.engines.asr import Liveness
 from speak_core.engines.nemo import SynthesisFailed
 
+from voicebox.config import Settings
+from voicebox.jobs.desk import Desk
 from voicebox.jobs.lock import job_lock
 from voicebox.jobs.store import RUNNING, JobStore, SynthesisJob
+from voicebox.synthesize.service import Speech, SynthesizeRequest
 
 JOB_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 CLAIMER, WORKER = 100, 200
@@ -110,3 +115,53 @@ def staged(state_dir: Path, text: str, **overrides: object) -> SynthesisJob:
     jobs.text_path(JOB_ID).write_text(text, encoding="utf-8")
     job_lock(state_dir, is_alive=lambda pid: True, pid=CLAIMER).acquire()
     return job
+
+
+# The synthesize tool's own fakes (tests/test_synthesis_service.py).
+ME, OTHER = 100, 300
+
+
+def desk_at(tmp_path: Path, spawned: list | None = None, alive=(ME,)) -> Desk:
+    async def spawn(argv, log) -> int:
+        if spawned is not None:
+            spawned.append(list(argv))
+        return 4242
+
+    async def probe(path: Path) -> Never:
+        raise AssertionError("synthesize never probes media")
+
+    state = tmp_path / "state"
+    return Desk(
+        jobs=JobStore(state),
+        lock=lambda: job_lock(state, is_alive=lambda p: p in alive, pid=ME),
+        is_alive=lambda p: p in alive,
+        spawn=spawn,
+        probe=probe,
+        clock=lambda: 1000.0,
+        pid=ME,
+    )
+
+
+def speech(
+    state=Liveness.READY, voices=("John", "Sofia"), have=("ffmpeg", "nemo-speech")
+) -> Speech:
+    async def liveness() -> Liveness:
+        return state
+
+    async def listed() -> list[str]:
+        return list(voices)
+
+    return Speech(
+        liveness=liveness,
+        voices=listed,
+        which=lambda name: f"/usr/bin/{name}" if name in have else None,
+    )
+
+
+def settings(tmp_path: Path, **server: object) -> Settings:
+    return Settings(state_dir=tmp_path / "state", server=ServerSettings(**server))
+
+
+def request(**fields: object) -> SynthesizeRequest:
+    base = dict(text=None, path=None, voice=None, output=None, format="wav")
+    return SynthesizeRequest(**{**base, **fields})

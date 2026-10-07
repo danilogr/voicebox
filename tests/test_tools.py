@@ -1,4 +1,5 @@
 import asyncio
+from typing import Never
 
 from fakes import FakeEngine, FakeQueue
 from voicebox.config import Settings
@@ -149,3 +150,30 @@ async def test_job_status_answers_for_an_empty_store(tmp_path):
     served = server(build_desk(settings))
     result = await served.call_tool("job_status", {})
     assert result.content[0].text == "no jobs yet"
+
+
+async def test_synthesize_exists_with_a_speech_server_and_takes_its_formats(tmp_path):
+    from voicebox.synthesize.service import Speech
+
+    async def liveness() -> Never:
+        raise AssertionError("not called while listing tools")
+
+    async def voices() -> list[str]:
+        return []
+
+    settings = Settings.from_env({"VOICEBOX_STATE_DIR": str(tmp_path)}, platform="darwin")
+    served = create_server(
+        settings=settings,
+        engine=FakeEngine(),
+        queue=FakeQueue(),
+        supervisor=None,
+        desk=build_desk(settings),
+        speech=Speech(liveness=liveness, voices=voices),
+    )
+    by_name = {tool.name: tool for tool in await served.list_tools()}
+    assert set(by_name) == SPEECH_TOOLS | {"transcribe", "job_status", "synthesize"}
+    schema = by_name["synthesize"].input_schema
+    assert schema.get("required", []) == []
+    assert set(schema["properties"]["format"]["enum"]) == {"wav", "m4a", "mp3"}
+    assert schema["properties"]["format"]["default"] == "wav"
+    assert "never overwritten" in by_name["synthesize"].description

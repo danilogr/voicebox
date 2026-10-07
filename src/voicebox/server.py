@@ -23,6 +23,7 @@ from voicebox.config import Settings
 from voicebox.jobs.desk import Desk, busy_message
 from voicebox.jobs.status import job_status as describe_jobs
 from voicebox.narration import NarrationTracker
+from voicebox.synthesize import service as synthesis
 from voicebox.telemetry.notice import Notice
 from voicebox.telemetry.session import TelemetrySession
 from voicebox.transcribe import service as transcription
@@ -142,6 +143,7 @@ def create_server(
     queue: Queue,
     supervisor: Supervisor | None,
     desk: Desk | None = None,
+    speech: synthesis.Speech | None = None,
     telemetry: TelemetrySession | None = None,
     narration: NarrationTracker | None = None,
     notice: Notice | None = None,
@@ -288,6 +290,36 @@ def create_server(
                         telemetry,
                     )
                 )
+
+        if speech is not None:
+
+            @server.tool(name="synthesize", description=tools.SYNTHESIZE)
+            async def synthesize(
+                text: Annotated[str | None, Field(description=tools.SYNTHESIZE_TEXT)] = None,
+                path: Annotated[str | None, Field(description=tools.SYNTHESIZE_PATH)] = None,
+                voice: Annotated[str | None, Field(description=tools.SYNTHESIZE_VOICE)] = None,
+                output: Annotated[str | None, Field(description=tools.SYNTHESIZE_OUTPUT)] = None,
+                format: Annotated[
+                    tools.AudioFormat, Field(description=tools.SYNTHESIZE_FORMAT)
+                ] = "wav",
+                *,
+                ctx: Context,
+            ) -> str:
+                note_harness(ctx)
+                if starting.locked():
+                    return reply(busy_message(desk))
+                async with starting:
+                    return reply(
+                        await synthesis.start(
+                            desk,
+                            speech,
+                            settings,
+                            synthesis.SynthesizeRequest(
+                                text=text, path=path, voice=voice, output=output, format=format
+                            ),
+                            telemetry,
+                        )
+                    )
 
         @server.tool(name="job_status", description=tools.JOB_STATUS)
         async def job_status(
