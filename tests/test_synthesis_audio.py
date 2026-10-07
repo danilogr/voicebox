@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from voicebox.synthesize.audio import FormatMismatchError, Piece, concatenate
+from voicebox.synthesize import audio
+from voicebox.synthesize.audio import FormatMismatchError, OutputTooLargeError, Piece, concatenate
 
 
 def wav(path: Path, frames: int, *, rate: int = 22050, width: int = 2, channels: int = 1) -> Path:
@@ -71,3 +72,21 @@ def test_a_piece_that_is_not_a_wav_raises_a_wave_error(tmp_path):
 def test_nothing_to_join_is_an_error(tmp_path):
     with pytest.raises(ValueError, match="no audio"):
         concatenate([], tmp_path / "joined.wav", gap_ms=1, paragraph_gap_ms=1)
+
+
+def test_output_over_the_wav_size_limit_is_refused_before_anything_is_written(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(audio, "MAX_DATA_BYTES", 1000)
+    pieces = [Piece(wav(tmp_path / f"{i}.wav", 300), False) for i in range(2)]  # 1200 bytes
+    out = tmp_path / "joined.wav"
+    with pytest.raises(OutputTooLargeError, match="do not fit"):
+        concatenate(pieces, out, gap_ms=0, paragraph_gap_ms=0)
+    assert not out.exists()
+
+
+def test_the_pauses_count_toward_the_size_limit(tmp_path, monkeypatch):
+    monkeypatch.setattr(audio, "MAX_DATA_BYTES", 1000)
+    pieces = [Piece(wav(tmp_path / f"{i}.wav", 200, rate=1000), False) for i in range(2)]  # 800
+    with pytest.raises(OutputTooLargeError):
+        concatenate(pieces, tmp_path / "joined.wav", gap_ms=300, paragraph_gap_ms=300)

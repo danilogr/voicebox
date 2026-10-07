@@ -25,6 +25,8 @@ ENCODE_TIMEOUT_S = 30 * 60.0
 
 
 def encode_argv(source: Path, dest: Path, fmt: str, *, ffmpeg: str = "ffmpeg") -> list[str]:
+    if fmt not in CODECS:
+        raise ValueError(f"ffmpeg encodes {', '.join(CODECS)}, not {fmt!r}; wav needs no encoding")
     return [
         ffmpeg,
         "-nostdin",
@@ -40,6 +42,7 @@ def encode_argv(source: Path, dest: Path, fmt: str, *, ffmpeg: str = "ffmpeg") -
 
 
 async def run_encode_command(argv: Sequence[str]) -> CommandResult:
+    """`run_command` bound to the encode ceiling - the default `Runner` for `encode()`."""
     return await run_command(argv, timeout=ENCODE_TIMEOUT_S)
 
 

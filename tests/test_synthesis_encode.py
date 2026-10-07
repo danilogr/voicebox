@@ -25,6 +25,12 @@ def test_each_format_has_its_codec(fmt, codec):
     assert argv[7:] == ["-vn", *codec, f"/w/out.{fmt}"]
 
 
+def test_wav_and_unknown_formats_are_refused_clearly():
+    for fmt in ("wav", "flac"):
+        with pytest.raises(ValueError, match="ffmpeg encodes"):
+            encode_argv(Path("/w/in.wav"), Path("/w/out"), fmt)
+
+
 async def test_a_missing_ffmpeg_is_named_with_its_remedy(tmp_path):
     async def missing(argv) -> CommandResult:
         raise FileNotFoundError(argv[0])

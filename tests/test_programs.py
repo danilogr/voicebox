@@ -1,6 +1,6 @@
 import sys
 
-from voicebox import programs as commands
+from voicebox import programs
 from voicebox.programs import CommandResult, run_command
 
 
@@ -25,9 +25,9 @@ async def test_run_probe_command_uses_the_probe_ceiling(monkeypatch):
         seen["timeout"] = timeout
         return CommandResult(0, b"", b"")
 
-    monkeypatch.setattr(commands, "run_command", fake)
-    await commands.run_probe_command(["ffprobe"])
-    assert seen["timeout"] == commands.PROBE_TIMEOUT_S
+    monkeypatch.setattr(programs, "run_command", fake)
+    await programs.run_probe_command(["ffprobe"])
+    assert seen["timeout"] == programs.PROBE_TIMEOUT_S
 
 
 async def test_run_convert_command_uses_the_conversion_ceiling(monkeypatch):
@@ -37,9 +37,9 @@ async def test_run_convert_command_uses_the_conversion_ceiling(monkeypatch):
         seen["timeout"] = timeout
         return CommandResult(0, b"", b"")
 
-    monkeypatch.setattr(commands, "run_command", fake)
-    await commands.run_convert_command(["ffmpeg"])
-    assert seen["timeout"] == commands.CONVERT_TIMEOUT_S
+    monkeypatch.setattr(programs, "run_command", fake)
+    await programs.run_convert_command(["ffmpeg"])
+    assert seen["timeout"] == programs.CONVERT_TIMEOUT_S
 
 
 async def test_a_command_that_outlives_its_timeout_says_it_timed_out():

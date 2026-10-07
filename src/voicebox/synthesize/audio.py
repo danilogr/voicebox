@@ -14,6 +14,14 @@ class FormatMismatchError(ValueError):
     """A chunk's sample format differs from the first chunk's."""
 
 
+class OutputTooLargeError(ValueError):
+    """The joined audio is larger than a WAV file can hold."""
+
+
+# A RIFF chunk size is 32 bits and the header takes 36 bytes of it.
+MAX_DATA_BYTES = 2**32 - 36
+
+
 @dataclass(frozen=True, slots=True)
 class Piece:
     path: Path
@@ -47,34 +55,46 @@ def concatenate(
 ) -> int:
     """Write `pieces` into `destination` in order and return its length in milliseconds.
 
+    Every header is read, and the total size checked, before `destination` is created.
+
     Raises:
         FormatMismatchError: a piece's channels, width, rate or compression differ.
+        OutputTooLargeError: the joined audio would not fit a WAV file's 4 GiB limit.
         ValueError: there is nothing to join.
         wave.Error, EOFError: a piece is not a WAV file.
     """
     if not pieces:
         raise ValueError("no audio to join")
-    with wave.open(str(pieces[0].path), "rb") as head:
-        first = _shape(head)
+    counts: list[int] = []
+    first: Shape | None = None
+    for index, piece in enumerate(pieces):
+        with wave.open(str(piece.path), "rb") as source:
+            shape = _shape(source)
+            first = first or shape
+            if shape != first:
+                raise FormatMismatchError(
+                    f"chunk {index + 1} is {_describe(shape)}; the first was {_describe(first)}"
+                )
+            counts.append(source.getnframes())
+    assert first is not None
     channels, width, rate, _ = first
-    frames = 0
+    silences = [
+        rate * (paragraph_gap_ms if piece.paragraph_end else gap_ms) // 1000
+        for piece in pieces[:-1]
+    ]
+    frames = sum(counts) + sum(silences)
+    if frames * width * channels > MAX_DATA_BYTES:
+        raise OutputTooLargeError(
+            f"{frames * width * channels} bytes of audio do not fit one WAV file "
+            f"(at most {MAX_DATA_BYTES})"
+        )
     with wave.open(str(destination), "wb") as out:
         out.setnchannels(channels)
         out.setsampwidth(width)
         out.setframerate(rate)
         for index, piece in enumerate(pieces):
             with wave.open(str(piece.path), "rb") as source:
-                shape = _shape(source)
-                if shape != first:
-                    raise FormatMismatchError(
-                        f"chunk {index + 1} is {_describe(shape)}; the first was {_describe(first)}"
-                    )
-                count = source.getnframes()
-                out.writeframes(source.readframes(count))
-                frames += count
-            if index < len(pieces) - 1:
-                pause = paragraph_gap_ms if piece.paragraph_end else gap_ms
-                silent = rate * pause // 1000
-                out.writeframes(_silence(silent, width, channels))
-                frames += silent
+                out.writeframes(source.readframes(counts[index]))
+            if index < len(silences):
+                out.writeframes(_silence(silences[index], width, channels))
     return round(frames / rate * 1000)

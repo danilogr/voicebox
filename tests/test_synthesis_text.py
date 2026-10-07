@@ -14,12 +14,13 @@ from voicebox.synthesize.text import (
 
 
 def letters(text: str) -> str:
-    """Only the word characters: the full stops chunking adds are not the reader's."""
-    return "".join(re.findall(r"\w+", text))
+    """The text without whitespace or the marks chunking may change (a closing full
+    stop, a trailing clause mark)."""
+    return "".join(words(text))
 
 
 def words(text: str) -> list[str]:
-    return re.findall(r"\w+", text)
+    return re.sub(r"[.,;:\u2014\u2013]", "", text).split()
 
 
 @pytest.mark.parametrize(
@@ -215,3 +216,80 @@ def test_a_limit_too_small_for_a_character_and_its_full_stop_is_refused():
 
 def test_an_empty_text_has_no_chunks():
     assert chunk_text(" \n\n ", max_chars=100) == []
+
+
+@pytest.mark.parametrize(
+    ("source", "spoken"),
+    [
+        ("[Warning]: do not run this on production.", "[Warning]: do not run this on production."),
+        ('[1]: https://example.com "Title"\n\nAfter.', "After."),
+        (
+            "The `<Button>` component renders `<div>` tags.",
+            "The <Button> component renders <div> tags.",
+        ),
+        (
+            "Use `<!--` to open.\n\nMore prose here.\n\nAnd here -->tail.",
+            "Use <!-- to open. More prose here. And here -->tail.",
+        ),
+        ("Born in\n1984. He later moved.", "Born in 1984. He later moved."),
+        (
+            "Call `__init__.py` or `*args, **kwargs` in `src/**/*.py`.",
+            "Call __init__.py or *args, **kwargs in src/**/*.py.",
+        ),
+        ("Visit https://example.com. Then rest.", "Visit. Then rest."),
+        ("See (https://x.y) for more.", "See for more."),
+    ],
+)
+def test_visible_prose_survives_stripping(source, spoken):
+    assert " ".join(paragraphs(strip_markdown(source))) == spoken
+
+
+def test_a_reference_definition_is_dropped_but_a_prose_line_in_brackets_is_not():
+    spoken = paragraphs(strip_markdown("[Warning]: do not run this.\n[1]: https://x.y 'T'\n"))
+    assert spoken == ["[Warning]: do not run this."]
+
+
+def test_tags_in_code_spans_are_read_and_tags_outside_are_not():
+    spoken = paragraphs(strip_markdown("The `<Button>` and <b>bold</b>."))
+    assert spoken == ["The <Button> and bold."]
+
+
+def test_a_comment_marker_inside_code_does_not_swallow_the_prose_after_it():
+    source = "Use `<!--` to open.\n\nMore prose here.\n\nAnd here -->tail."
+    assert paragraphs(strip_markdown(source)) == [
+        "Use <!-- to open.",
+        "More prose here.",
+        "And here -->tail.",
+    ]
+
+
+def test_a_real_comment_is_dropped_across_lines():
+    assert paragraphs(strip_markdown("Before <!-- a\nb --> after.")) == ["Before after."]
+
+
+def test_a_year_at_the_start_of_a_wrapped_line_is_not_a_list_marker():
+    assert paragraphs(strip_markdown("Born in\n1984. He later moved.")) == [
+        "Born in 1984. He later moved."
+    ]
+    assert paragraphs(strip_markdown("Steps:\n\n1. first\n2. second")) == ["Steps:", "first second"]
+
+
+def test_a_url_keeps_the_punctuation_that_ended_the_sentence():
+    assert paragraphs(strip_markdown("Visit https://example.com. Then rest.")) == [
+        "Visit. Then rest."
+    ]
+
+
+def test_text_without_a_word_makes_no_chunk():
+    for text in ("| | |", "\u2014", "(https://x.y)", "...", "- - -"):
+        assert chunk_text(strip_markdown(text), max_chars=100) == []
+
+
+def test_a_wordless_piece_between_words_is_not_sent_alone():
+    chunks = chunk_text("Hello \u2014, world", max_chars=8)
+    assert chunks
+    assert all(re.search(r"\w", c.text) for c in chunks)
+
+
+def test_the_stop_replaces_the_space_before_a_clause_mark():
+    assert [c.text for c in chunk_text("end of the line ,", max_chars=100)] == ["end of the line."]
