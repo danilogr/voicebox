@@ -87,11 +87,12 @@ def test_a_build_that_is_not_a_release_collects_but_never_sends(tmp_path, captur
     assert served["telemetry"] is not None
 
 
-def test_a_corrupt_store_does_not_stop_the_server_from_being_built(tmp_path, captured):
+def test_a_store_that_cannot_be_opened_does_not_stop_the_server_from_being_built(
+    tmp_path, captured
+):
     env = env_for(tmp_path, DO_NOT_TRACK="")
     mark_notice_shown(env)
-    (tmp_path / "state").mkdir()
-    (tmp_path / "state" / "telemetry.db").write_bytes(b"junk" * 1000)
+    (tmp_path / "state" / "telemetry.db").mkdir(parents=True)
     spawned, served = run_build(captured, env)
     assert served["telemetry"] is None
     assert "_ship_backlog" not in spawned

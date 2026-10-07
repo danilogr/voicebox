@@ -112,7 +112,9 @@ This is a property of the design, not a promise. voicebox keeps a richer local d
 holds each job's error message, its source file's name and its output path, so that
 `/voicebox:stats` can show you your own failures. What uploads is that table **with those
 columns removed**: the server's schema is derived from the local one by stripping every
-column tagged `-- LOCAL`, and a test fails if the two drift apart.
+column tagged `-- LOCAL`, and a test fails if the two drift apart. If that database is
+ever damaged, the next session renames it to `telemetry.db.corrupt` and starts a new
+one; what it held and had not yet uploaded is not sent.
 `VOICEBOX_TELEMETRY_DEBUG=1` prints exactly what would be sent, the install count
 included, instead of sending it.
 

@@ -36,6 +36,28 @@ def test_stats_without_a_store_prints_a_plain_message(tmp_path, monkeypatch, cap
     assert "No telemetry recorded yet." in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    ("make", "says"),
+    [
+        (lambda db: db.write_bytes(b"this is not a database" * 500), "moves it aside"),
+        (lambda db: db.mkdir(), "cannot be read right now"),
+    ],
+    ids=["corrupt", "unopenable"],
+)
+def test_stats_on_a_store_it_cannot_read_says_so_plainly(tmp_path, monkeypatch, capsys, make, says):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("VOICEBOX_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    (tmp_path / "state").mkdir()
+    make(tmp_path / "state" / "telemetry.db")
+    with pytest.raises(SystemExit) as stop:
+        commands.stats_main()
+    assert stop.value.code == 1
+    printed = capsys.readouterr()
+    assert printed.out == "" and says in printed.err
+    assert str(tmp_path / "state" / "telemetry.db") in printed.err
+
+
 def test_the_consent_command_saves_a_mode(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))

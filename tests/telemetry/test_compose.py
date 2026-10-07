@@ -117,11 +117,35 @@ def test_this_release_ships():
     assert compose.versions_shippable(VERSION)
 
 
-def test_a_corrupt_store_collects_nothing_and_does_not_raise(tmp_path):
+def test_a_corrupt_store_is_moved_aside_and_collection_starts_again(tmp_path):
     state = tmp_path / "state"
     state.mkdir()
-    (state / "telemetry.db").write_bytes(b"this is not a database" * 500)
+    garbage = b"this is not a database" * 500
+    (state / "telemetry.db").write_bytes(garbage)
+    session = built(tmp_path)
+    assert session is not None
+    assert (state / "telemetry.db.corrupt").read_bytes() == garbage
+    assert len(store.sessions_by_id(session.conn, [session.session_id])) == 1
+
+
+def test_a_damaged_store_is_set_aside_with_its_sidecars(tmp_path):
+    """A journal left beside a new store under the old name would be replayed into it."""
+    db = tmp_path / "telemetry.db"
+    for name in ("telemetry.db", "telemetry.db-journal", "telemetry.db.corrupt"):
+        (tmp_path / name).write_text(name)
+    compose.set_aside(db)
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "telemetry.db.corrupt",
+        "telemetry.db.corrupt-journal",
+    ]
+    assert (tmp_path / "telemetry.db.corrupt").read_text() == "telemetry.db"
+
+
+def test_a_store_that_cannot_be_opened_collects_nothing_and_is_left_alone(tmp_path):
+    unopenable = tmp_path / "state" / "telemetry.db"
+    unopenable.mkdir(parents=True)  # a directory: sqlite cannot open it, but it is not corrupt
     assert built(tmp_path) is None
+    assert unopenable.is_dir() and not (tmp_path / "state" / "telemetry.db.corrupt").exists()
 
 
 def test_non_utf8_output_from_the_binary_is_no_version():

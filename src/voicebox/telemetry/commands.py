@@ -5,14 +5,17 @@ takes them as arguments.
 """
 
 import os
+import sqlite3
 import sys
 from collections.abc import Mapping
+from pathlib import Path
 from typing import TextIO
 
 from speak_core.telemetry import cli, consent, report
 from speak_core.telemetry import notice as core_notice
 
 from voicebox.config import Settings
+from voicebox.telemetry.compose import CORRUPT_SUFFIX, is_corrupt
 from voicebox.telemetry.contract import IDENTITY, SCHEMA, db_path
 from voicebox.telemetry.notice import TEXT
 from voicebox.telemetry.stats import render
@@ -48,14 +51,29 @@ def telemetry_main() -> None:
 
 def stats_main() -> None:
     env = dict(os.environ)
-    raise SystemExit(
-        report.run(
+    path = db_path(Settings.from_env(env).state_dir)
+    try:
+        code = report.run(
             IDENTITY,
             env,
             host_platform=sys.platform,
             schema=SCHEMA,
-            db_path=db_path(Settings.from_env(env).state_dir),
+            db_path=path,
             render=render,
             out=sys.stdout,
         )
-    )
+    except sqlite3.Error as error:
+        sys.stderr.write(unreadable(path, error) + "\n")
+        code = 1
+    raise SystemExit(code)
+
+
+def unreadable(path: Path, error: sqlite3.Error) -> str:
+    """What `/voicebox:stats` says about a store it cannot read."""
+    if is_corrupt(error):
+        return (
+            f"The telemetry store {path} is damaged and cannot be read ({error}). The next "
+            f"voicebox session moves it aside to {path.name}{CORRUPT_SUFFIX} and starts a "
+            "new one; the jobs recorded in it are not shown."
+        )
+    return f"The telemetry store {path} cannot be read right now ({error}); try again."

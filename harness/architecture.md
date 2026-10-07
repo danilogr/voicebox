@@ -60,7 +60,10 @@ their design is in its `harness/architecture.md`. This document covers voicebox.
     and while a job runs, `.wav` (transcription's converted audio), `.txt` (synthesis's
     staged text) and `.d/` (synthesis's chunk WAVs). Records outlive their job by two
     weeks.
-  - `telemetry.db` — the local telemetry store.
+  - `telemetry.db` — the local telemetry store. A session that finds it damaged (SQLite
+    says it is not a database, or is malformed) renames it, with its journal, to
+    `telemetry.db.corrupt*` and starts an empty one; its unshipped rows are lost. A store
+    that is only locked or unreachable is left alone and that session collects nothing.
 - **Consent** in `<config>/voicebox/` (`~/Library/Application Support/voicebox`):
   `telemetry.json`, `ping.json`, `notice.json`.
 - **Shared state** in `<cache>/speak-core/`: the speech server's lock, pid record and

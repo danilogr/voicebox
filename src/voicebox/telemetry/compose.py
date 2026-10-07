@@ -11,6 +11,7 @@ import subprocess
 import sys
 import uuid
 from collections.abc import Callable, Mapping
+from pathlib import Path
 
 from speak_core.telemetry import store, wiring
 
@@ -34,6 +35,33 @@ STRICT_SEMVER = re.compile(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,6}")
 NEMO_VERSION_TIMEOUT_S = 2.0
 
 Run = Callable[..., "subprocess.CompletedProcess[str]"]
+
+# SQLite's answers for a file that is not, or no longer, a database: the store is
+# damaged, not busy or out of reach.
+_CORRUPT = frozenset({sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB})
+# What a damaged store is renamed to, beside it, with SQLite's own sidecar files.
+CORRUPT_SUFFIX = ".corrupt"
+_SIDECARS = ("", "-journal", "-wal", "-shm")
+
+
+def is_corrupt(error: sqlite3.Error) -> bool:
+    """Whether `error` says the store's file is damaged."""
+    code = getattr(error, "sqlite_errorcode", None)
+    # The extended code carries the primary one in its low byte.
+    return isinstance(code, int) and code & 0xFF in _CORRUPT
+
+
+def set_aside(path: Path) -> None:
+    """Rename a damaged store and its sidecars to `<name>.corrupt*`, replacing an earlier
+    one, so the next connection starts an empty store.
+
+    Raises:
+        OSError: a file could not be renamed.
+    """
+    for sidecar in _SIDECARS:
+        found = path.with_name(path.name + sidecar)
+        if found.exists():
+            found.replace(path.with_name(path.name + CORRUPT_SUFFIX + sidecar))
 
 
 def semver_or_none(value: str | None) -> str | None:
@@ -98,8 +126,9 @@ def build(
     """The telemetry session for one process, or `None` when telemetry does not collect."""
     platform_name = host_platform if host_platform is not None else sys.platform
     path = db_path(settings.state_dir)
-    try:
-        install = wiring.start_install(
+
+    def start() -> wiring.Install | None:
+        return wiring.start_install(
             env,
             IDENTITY,
             SCHEMA,
@@ -107,8 +136,25 @@ def build(
             plugin_version=plugin_version,
             host_platform=platform_name,
         )
+
+    try:
+        try:
+            install = start()
+        except sqlite3.Error as error:
+            if not is_corrupt(error):
+                raise
+            # Damaged for good: left in place, it would stop collection in every session
+            # from now on. Its unshipped rows are lost with it.
+            set_aside(path)
+            logger.warning(
+                "telemetry: the local store was damaged (%s); moved to %s%s, starting anew",
+                error,
+                path.name,
+                CORRUPT_SUFFIX,
+            )
+            install = start()
     except (OSError, sqlite3.Error) as error:
-        # A corrupt or locked store must not stop the server: telemetry is optional.
+        # A locked or unreachable store must not stop the server: telemetry is optional.
         logger.warning("telemetry: the local store is unusable; collecting nothing: %s", error)
         return None
     if install is None:
