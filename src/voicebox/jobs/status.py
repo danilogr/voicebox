@@ -4,7 +4,15 @@ from pathlib import Path
 
 from voicebox.config import Settings
 from voicebox.jobs.desk import Desk, duration, reconcile, release_if_idle
-from voicebox.jobs.store import CRASHED, DONE, EMPTY, FAILED, Job, TranscriptionJob
+from voicebox.jobs.store import (
+    CRASHED,
+    DONE,
+    EMPTY,
+    FAILED,
+    Job,
+    SynthesisJob,
+    TranscriptionJob,
+)
 from voicebox.transcribe.output import transcript_text
 
 # Below this a job is never called wedged, however short its estimate.
@@ -37,10 +45,15 @@ def _summary(job: Job) -> str:
 
 def _describe(desk: Desk, settings: Settings, job: Job) -> str:
     if job.state in (FAILED, CRASHED):
+        detail = job.error or ""
+        if isinstance(job, SynthesisJob) and job.state == CRASHED and job.chunks:
+            detail += f" (after chunk {job.chunks_done} of {job.chunks})"
         tail = desk.jobs.log_tail(job.job_id)
-        return f"{job.state}: {_name(job)}: {job.error or ''}" + (f"\n{tail}" if tail else "")
+        return f"{job.state}: {_name(job)}: {detail}" + (f"\n{tail}" if tail else "")
     if isinstance(job, TranscriptionJob):
         return _transcription(desk, settings, job)
+    if isinstance(job, SynthesisJob):
+        return _synthesis(desk, job)
     return f"{job.state}: {_name(job)}"
 
 
@@ -57,6 +70,30 @@ def _transcription(desk: Desk, settings: Settings, job: TranscriptionJob) -> str
     if job.state == EMPTY:
         return f"finished, but no speech was detected in {name}; output: {job.output}"
     return _running(desk, job, settings.transcribe_timeout, name)
+
+
+def _synthesis(desk: Desk, job: SynthesisJob) -> str:
+    name = _name(job)
+    if job.state == DONE:
+        seconds = (job.audio_ms or 0) / 1000
+        size = (job.output_bytes or 0) / 1_000_000
+        return f"done: {name} -> {job.output} ({duration(seconds)} of audio, {size:.1f} MB)"
+    elapsed = desk.clock() - job.created_at
+    if elapsed > max(MIN_TIMEOUT_S, 4 * job.eta_s):
+        return (
+            f"running: {name} for {duration(elapsed)}, well past the "
+            f"{duration(job.eta_s)} estimate - it may be wedged"
+        )
+    if job.chunks is None:
+        return f"running: {name}, preparing the text, {duration(elapsed)} elapsed"
+    if job.chunks_done:
+        left = elapsed / job.chunks_done * (job.chunks - job.chunks_done)
+    else:
+        left = max(0.0, job.eta_s - elapsed)
+    return (
+        f"running: {name}, chunk {job.chunks_done} of {job.chunks} done, "
+        f"{duration(elapsed)} elapsed, about {duration(left)} left"
+    )
 
 
 def _running(desk: Desk, job: Job, configured: float | None, what: str) -> str:

@@ -7,6 +7,7 @@ import pytest
 from voicebox.synthesize.text import (
     Chunk,
     chunk_text,
+    halve,
     looks_like_markdown,
     paragraphs,
     strip_markdown,
@@ -335,3 +336,36 @@ def test_a_continuation_line_does_not_end_the_list():
 
 def test_whitespace_only_lines_are_blank_lines():
     assert paragraphs(strip_markdown("one\n   \n2. two")) == ["one", "two"]
+
+
+@pytest.mark.parametrize(
+    ("text", "halves"),
+    [
+        ("One. Two. Three. Four.", ("One. Two.", "Three. Four.")),
+        ("One. Two. Three.", ("One. Two.", "Three.")),
+        ("Alpha beta gamma, delta epsilon zeta.", ("Alpha beta gamma.", "delta epsilon zeta.")),
+        ("Alpha beta; gamma delta.", ("Alpha beta.", "gamma delta.")),
+        # a sentence end is preferred to a clause break nearer the middle
+        (
+            "A b c d e f g, h i j k l m n o p q r s. T u.",
+            ("A b c d e f g, h i j k l m n o p q r s.", "T u."),
+        ),
+        # a chunk cut from an overlong sentence, closed with a stop it did not have
+        ("first part, second part.", ("first part.", "second part.")),
+    ],
+)
+def test_a_timed_out_chunk_halves_at_a_sentence_or_clause(text, halves):
+    assert halve(text) == halves
+
+
+@pytest.mark.parametrize("text", ["Just one sentence.", "word", "Costs 1.5 or 2.5 now.", ", tail."])
+def test_a_chunk_with_no_cut_leaving_words_on_both_sides_is_not_halved(text):
+    assert halve(text) is None
+
+
+def test_halving_keeps_every_word():
+    text = " ".join(f"Sentence number {i} has, a clause." for i in range(40))
+    first, second = halve(text)
+    assert words(f"{first} {second}") == words(text)
+    assert first.endswith(".") and second.endswith(".")
+    assert abs(len(first) - len(second)) < 40

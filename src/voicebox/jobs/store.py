@@ -6,11 +6,14 @@ later version, so status reads a state rather than inferring one from a pid and 
 
 import json
 import logging
+import shutil
 import time
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
+
+from voicebox.synthesize.limits import COLD_START_S, SYNTH_CHARS_PER_S
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +24,7 @@ FAILED = "failed"
 CRASHED = "crashed"  # the worker died without writing an outcome
 
 TRANSCRIPTION = "transcription"
+SYNTHESIS = "synthesis"
 
 # Realtime multiples measured on an M5, cold, including model load (performance.md).
 REALTIME_RATIO_DIARIZED = 6.9
@@ -88,8 +92,35 @@ class TranscriptionJob(Job):
         return eta_seconds(self.duration_s, self.diarize)
 
 
+@dataclass(frozen=True, kw_only=True)
+class SynthesisJob(Job):
+    kind: str = SYNTHESIS
+    voice: str
+    tts_model: str
+    input_kind: str  # text | file
+    input_format: str  # plain | markdown
+    # The spoken text's size, after markup was removed: what the estimate rests on.
+    chars: int
+    words: int
+    paragraphs: int
+    # The speech server was not answering when the job was accepted, so the estimate
+    # includes starting it.
+    cold_start: bool
+    chunks: int | None = None  # set by the worker once the text is split
+    chunks_done: int = 0
+    synth_ms: int = 0
+    encode_ms: int | None = None
+    audio_ms: int | None = None
+    output_bytes: int | None = None
+    server_warm: bool | None = None
+
+    @property
+    def eta_s(self) -> float:
+        return self.chars / SYNTH_CHARS_PER_S + (COLD_START_S if self.cold_start else 0.0)
+
+
 # Every kind a record may hold, by the `kind` it is written with.
-JOB_TYPES: dict[str, type[Job]] = {TRANSCRIPTION: TranscriptionJob}
+JOB_TYPES: dict[str, type[Job]] = {TRANSCRIPTION: TranscriptionJob, SYNTHESIS: SynthesisJob}
 
 
 def eta_seconds(duration_s: float, diarize: bool) -> float:
@@ -118,6 +149,14 @@ class JobStore:
 
     def pid_path(self, job_id: str) -> Path:
         return self._dir / f"{job_id}.pid"
+
+    def text_path(self, job_id: str) -> Path:
+        """The text a synthesis speaks, staged by the tool for its worker."""
+        return self._dir / f"{job_id}.txt"
+
+    def work_dir(self, job_id: str) -> Path:
+        """Where a synthesis keeps its chunk WAVs until they are joined."""
+        return self._dir / f"{job_id}.d"
 
     def write(self, job: Job) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
@@ -177,12 +216,14 @@ class JobStore:
         return sorted(jobs, key=lambda j: j.created_at, reverse=True)[:limit]
 
     def discard_artifacts(self, job_id: str) -> None:
-        """Delete what a job holds only while it runs (converted audio), never its record
-        or log. Never raises."""
+        """Delete what a job holds only while it runs - converted audio, staged text,
+        chunk WAVs - never its record or log. Never raises."""
         try:
             self.wav_path(job_id).unlink(missing_ok=True)
+            self.text_path(job_id).unlink(missing_ok=True)
         except OSError as error:
             logger.debug("could not discard the artifacts of job %s: %s", job_id, error)
+        shutil.rmtree(self.work_dir(job_id), ignore_errors=True)
 
     def _prune(self) -> None:
         """Reclaim what a finished job no longer needs.

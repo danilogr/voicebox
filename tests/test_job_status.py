@@ -235,3 +235,63 @@ async def test_the_session_start_sweep_crashes_a_dead_worker_and_frees_the_lock(
     sweep(s)
     assert s.jobs.read(job.job_id).state == CRASHED
     assert s.lock().owner() is None
+
+
+def synthesis(tmp_path, **overrides: object):
+    from voicebox.jobs.store import SynthesisJob
+
+    fields = dict(
+        job_id="cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        state=RUNNING,
+        source=str(tmp_path / "notes.md"),
+        output=str(tmp_path / "notes.m4a"),
+        format="m4a",
+        nemo_binary="nemo-speech",
+        claimed_by=ME,
+        created_at=1000.0,
+        worker_pid=WORKER,
+        voice="John",
+        tts_model="magpie",
+        input_kind="file",
+        input_format="markdown",
+        chars=6000,
+        words=1000,
+        paragraphs=10,
+        cold_start=False,
+        chunks=10,
+        chunks_done=4,
+    )
+    return SynthesisJob(**{**fields, **overrides})
+
+
+def test_a_running_synthesis_reports_its_chunks(tmp_path):
+    s = replace(scribe(tmp_path, alive=(ME, WORKER)), clock=lambda: 1040.0)
+    s.jobs.write(synthesis(tmp_path))
+    reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+    assert reply == "running: notes.md, chunk 4 of 10 done, 40 s elapsed, about 60 s left"
+
+
+def test_pasted_text_is_named_as_such(tmp_path):
+    s = replace(scribe(tmp_path, alive=(ME, WORKER)), clock=lambda: 1040.0)
+    s.jobs.write(synthesis(tmp_path, source="", chunks=None, chunks_done=0))
+    reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+    assert reply.startswith("running: pasted text, preparing the text")
+
+
+def test_a_finished_synthesis_names_its_file_length_and_size(tmp_path):
+    s = scribe(tmp_path)
+    s.jobs.write(
+        synthesis(
+            tmp_path, state=DONE, audio_ms=754_000, output_bytes=12_400_000, finished_at=2000.0
+        )
+    )
+    reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+    assert reply == f"done: notes.md -> {tmp_path / 'notes.m4a'} (13 min of audio, 12.4 MB)"
+
+
+def test_a_crashed_synthesis_says_how_far_it_got(tmp_path):
+    s = scribe(tmp_path)  # WORKER is not alive here
+    s.jobs.write(synthesis(tmp_path))
+    reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+    assert reply.startswith("crashed: notes.md: the worker stopped without recording an outcome")
+    assert "(after chunk 4 of 10)" in reply

@@ -9,9 +9,17 @@ import logging
 import time
 from pathlib import Path
 
-from voicebox.jobs.store import CRASHED, DONE, EMPTY, FAILED, Job, TranscriptionJob
+from voicebox.jobs.store import (
+    CRASHED,
+    DONE,
+    EMPTY,
+    FAILED,
+    Job,
+    SynthesisJob,
+    TranscriptionJob,
+)
 from voicebox.telemetry.record import insert_at
-from voicebox.telemetry.rows import JobFacts, iso, job_row, wall_ms
+from voicebox.telemetry.rows import JobFacts, iso, job_row, recorded_voice, wall_ms
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +51,31 @@ def transcription_fields(job: TranscriptionJob, *, ran: bool) -> dict[str, objec
     }
 
 
+def synthesis_fields(job: SynthesisJob) -> dict[str, object]:
+    return {
+        "server_warm": job.server_warm,
+        "input_kind": job.input_kind,
+        "input_format": job.input_format,
+        "chars": job.chars,
+        "words": job.words,
+        "paragraphs": job.paragraphs,
+        "chunks": job.chunks,
+        "chunks_done": job.chunks_done,
+        "voice": recorded_voice(NEMO, job.voice),
+        "synth_ms": job.synth_ms,
+        "encode_ms": job.encode_ms,
+        "audio_ms": job.audio_ms,
+        "format": job.format,
+        "output_bytes": job.output_bytes,
+    }
+
+
 def _kind_fields(job: Job, *, ran: bool) -> tuple[str | None, dict[str, object]]:
     """The model a kind ran and its own fields."""
     if isinstance(job, TranscriptionJob):
         return job.asr_model, transcription_fields(job, ran=ran)
+    if isinstance(job, SynthesisJob):
+        return job.tts_model, synthesis_fields(job)
     raise TypeError(f"no telemetry fields for a {job.kind} job")
 
 

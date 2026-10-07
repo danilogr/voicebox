@@ -237,3 +237,59 @@ def test_discarding_artifacts_leaves_the_record_and_log(tmp_path):
     store.discard_artifacts(record.job_id)
     assert not store.wav_path(record.job_id).exists()
     assert store.read(record.job_id) is not None and store.log_path(record.job_id).exists()
+
+
+def synthesis_at(tmp_path, **overrides: object):
+    from voicebox.jobs.store import SynthesisJob
+
+    fields = dict(
+        job_id=new_job_id(),
+        state=RUNNING,
+        source="",
+        output=str(tmp_path / "out.wav"),
+        format="wav",
+        nemo_binary="nemo-speech",
+        claimed_by=1,
+        created_at=1000.0,
+        voice="John",
+        tts_model="magpie",
+        input_kind="text",
+        input_format="plain",
+        chars=3000,
+        words=500,
+        paragraphs=4,
+        cold_start=False,
+    )
+    return SynthesisJob(**{**fields, **overrides})
+
+
+def test_a_synthesis_job_round_trips_as_its_own_kind(tmp_path):
+    from voicebox.jobs.store import SYNTHESIS, SynthesisJob
+
+    store = JobStore(tmp_path)
+    job = synthesis_at(tmp_path, chunks=6, chunks_done=2)
+    store.write(job)
+    read = store.read(job.job_id)
+    assert isinstance(read, SynthesisJob) and read.kind == SYNTHESIS and read == job
+
+
+def test_a_synthesis_estimate_counts_characters_and_a_cold_start(tmp_path):
+    from voicebox.synthesize.limits import COLD_START_S, SYNTH_CHARS_PER_S
+
+    warm = synthesis_at(tmp_path)
+    cold = synthesis_at(tmp_path, cold_start=True)
+    assert warm.eta_s == pytest.approx(3000 / SYNTH_CHARS_PER_S)
+    assert cold.eta_s == pytest.approx(warm.eta_s + COLD_START_S)
+
+
+def test_a_synthesis_jobs_staged_text_and_chunks_are_artifacts(tmp_path):
+    store = JobStore(tmp_path)
+    job = synthesis_at(tmp_path)
+    store.write(job)
+    store.text_path(job.job_id).write_text("hello")
+    store.work_dir(job.job_id).mkdir()
+    (store.work_dir(job.job_id) / "000000.wav").write_bytes(b"RIFF")
+    store.discard_artifacts(job.job_id)
+    assert not store.text_path(job.job_id).exists()
+    assert not store.work_dir(job.job_id).exists()
+    assert store.read(job.job_id) is not None
