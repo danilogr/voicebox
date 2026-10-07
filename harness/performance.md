@@ -43,6 +43,39 @@ Concurrent synthesis does not help: the speech server handles one request at a t
 three requests fired together finished at 3.4 s, 7.3 s and 10.6 s for a wall clock of
 10.6 s against 11.1 s serially — a 1.05x difference, and a loss of ordering.
 
+## Synthesis chunk size
+
+`synthesize` sends a long text to the speech server in chunks, because one request has
+to finish inside its timeout and a long input may read worse. Three passages of plain
+prose were synthesized at each request size with MagpieTTS (voice `John`, the plugin's
+server flags, NeMo-Speech.cpp 0.2.0 on Metal, server warm), then transcribed back with
+the same server's Nemotron 3.5 and scored against the input:
+
+| Request size | Synthesis (median / slowest) | Audio | Realtime factor | Word error rate (worst) |
+|---|---|---|---|---|
+| ~120 chars | 1.4 s / 2.1 s | 2.7 s | 0.50x | 12.5% |
+| ~500 chars | 12.8 s / 16.5 s | 24.3 s | 0.52x | 9.7% |
+| ~1000 chars | 33.4 s / 34.7 s | 63.9 s | 0.52x | 8.1% |
+| ~1500 chars | 46.9 s / 49.7 s | 89.5 s | 0.52x | 8.4% |
+
+The word error rate includes the recogniser's own mistakes, so the one-sentence rows are
+the baseline. The rule: the largest size whose worst passage stays within 5 points of the
+baseline's worst, and whose audio length per character stays within ±25 % of the
+baseline (a skipped or repeated passage moves both). That is 1500 characters per
+request. A request's own timeout is four times the slowest request at that size, at
+least a minute: 199 s. The estimate `synthesize` returns uses the median throughput at
+that size, 29.5 characters a second, plus 10 s when the server has to start first.
+
+The one-sentence baseline's worst is a single spelling difference in an eight-word
+sentence (`harbour` heard as `harbor`), so it sets a loose bar. Above one sentence the
+transcripts show short false starts and stray syllables at a few sentence joins (`peda`
+before `people`, `than a dad` before `the first lesson`) and a word heard twice
+(`reasons reasons`). Every size from 500 up shares them, because each passage's longer
+readings start with its shorter ones, and the error rate does not grow with length. The
+~500 row fails the pace test on one passage, whose 282-character reading runs 41 % longer
+per character than the baseline: a 2.1 s pause near its start, which every longer reading
+of that passage also holds, weighs more in a short reading.
+
 ## Resident memory
 
 | Server | Once `/health` answers |
