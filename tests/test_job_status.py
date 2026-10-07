@@ -338,3 +338,12 @@ def test_time_left_never_reads_zero_while_the_job_runs(tmp_path):
     s.jobs.write(synthesis(tmp_path, chunks_done=10, chars_done=6000, synth_ms=1_100_000))
     reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
     assert reply.endswith("about 1 s left")
+
+
+def test_a_job_with_only_short_requests_finished_is_judged_by_the_first_request_limit(tmp_path):
+    # A heading's 6 characters in 0.2 s says nothing about the pace; the first long
+    # request may still take its whole timeout, so 25 min in is not wedged.
+    s = replace(scribe(tmp_path, alive=(ME, WORKER)), clock=lambda: 1000.0 + 1500)
+    s.jobs.write(synthesis(tmp_path, chunks_done=1, chars_done=6, synth_ms=200))
+    reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+    assert reply.startswith("running: notes.md, chunk 1 of 10 done, 25 min elapsed")

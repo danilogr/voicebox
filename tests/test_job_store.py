@@ -314,3 +314,27 @@ def test_a_synthesis_partial_output_on_the_record_is_an_artifact(tmp_path):
     store.discard_artifacts(job.job_id)
     assert not partial.exists()
     assert store.read(job.job_id).partial is None
+
+
+def test_the_estimate_ignores_the_pace_of_requests_too_short_to_measure_it(tmp_path):
+    from voicebox.synthesize.limits import PACE_MIN_CHARS, SYNTH_CHARS_PER_S
+
+    # a heading's request: mostly fixed cost, so 6 characters in 0.8 s says nothing
+    short = synthesis_at(tmp_path, chars=3000, chars_done=PACE_MIN_CHARS - 1, synth_ms=800)
+    assert short.chars_per_s == SYNTH_CHARS_PER_S
+    enough = synthesis_at(tmp_path, chars=3000, chars_done=PACE_MIN_CHARS, synth_ms=20_000)
+    assert enough.chars_per_s == pytest.approx(PACE_MIN_CHARS / 20)
+
+
+def test_a_malformed_partial_on_the_record_does_not_stop_the_rest_being_discarded(tmp_path):
+    store = JobStore(tmp_path)
+    job = synthesis_at(tmp_path)
+    store.write(job)
+    path = store.record_path(job.job_id)
+    data = json.loads(path.read_text())
+    data["partial"] = 12345
+    path.write_text(json.dumps(data))
+    store.work_dir(job.job_id).mkdir()
+    (store.work_dir(job.job_id) / "000000.wav").write_bytes(b"RIFF")
+    store.discard_artifacts(job.job_id)
+    assert not store.work_dir(job.job_id).exists()

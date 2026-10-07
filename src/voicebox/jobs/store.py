@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
-from voicebox.synthesize.limits import COLD_START_S, SYNTH_CHARS_PER_S
+from voicebox.synthesize.limits import COLD_START_S, PACE_MIN_CHARS, SYNTH_CHARS_PER_S
 
 logger = logging.getLogger(__name__)
 
@@ -125,9 +125,10 @@ class SynthesisJob(Job):
 
     @property
     def chars_per_s(self) -> float:
-        """Characters spoken per second of synthesis so far, or the measured rate before
-        any request has finished."""
-        if self.chars_done and self.synth_ms:
+        """Characters spoken per second of synthesis so far, or the measured rate until
+        `PACE_MIN_CHARS` have been spoken: a few short requests are mostly fixed cost and
+        say nothing about the machine's pace."""
+        if self.chars_done >= PACE_MIN_CHARS and self.synth_ms:
             return self.chars_done / (self.synth_ms / 1000)
         return SYNTH_CHARS_PER_S
 
@@ -241,7 +242,8 @@ class JobStore:
             job = self.read(job_id)
             if isinstance(job, SynthesisJob) and job.partial:
                 self._discard_partial(job, job.partial)
-        except OSError as error:
+        except (OSError, TypeError) as error:
+            # TypeError: a hand-edited record whose `partial` is not a path.
             logger.debug("could not discard the artifacts of job %s: %s", job_id, error)
         shutil.rmtree(self.work_dir(job_id), ignore_errors=True)
 

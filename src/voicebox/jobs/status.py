@@ -81,9 +81,10 @@ def _synthesis(desk: Desk, job: SynthesisJob) -> str:
         return f"done: {name} -> {job.output} ({duration(seconds)} of audio, {size:.1f} MB)"
     elapsed = desk.clock() - job.created_at
     limit = max(MIN_TIMEOUT_S, 4 * job.eta_s)
-    if not job.chars_done:
-        # Nothing spoken yet: on a slow machine a cold start and the first request alone
-        # may take this long before the worker's own timeouts would end them.
+    if job.slowest_chars_per_s is None:
+        # No request long enough to show a pace has finished: on a slow machine a cold
+        # start and the first such request alone may take this long before the worker's
+        # own timeouts would end them.
         limit = max(limit, COLD_START_S + WARMUP_TIMEOUT_S + FIRST_REQUEST_CEILING_S)
     if elapsed > limit:
         return (
