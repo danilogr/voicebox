@@ -4,6 +4,7 @@ worker is started, and how a worker that died is recognised."""
 import asyncio
 import logging
 import os
+import shutil
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
@@ -41,6 +42,8 @@ class Desk:
     spawn: Spawn
     # Transcription's ffprobe; here so a test can hand every job tool one fake.
     probe: ProbeMedia
+    # Finds a program on `PATH`, as a worker would: here so a test can say what is installed.
+    which: Callable[[str], str | None] = shutil.which
     clock: Callable[[], float] = time.time
     monotonic: Callable[[], float] = time.monotonic
     pid: int = field(default_factory=os.getpid)

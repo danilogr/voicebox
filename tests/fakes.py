@@ -6,6 +6,11 @@ from speak_core.engines.base import Utterance
 from speak_core.queue import QueueStats
 
 
+def installed(name: str) -> str:
+    """`shutil.which` on a machine with every program voicebox runs."""
+    return f"/usr/local/bin/{name}"
+
+
 class FakeEngine:
     name = "fake"
 

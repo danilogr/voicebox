@@ -3,6 +3,7 @@ import sys
 from dataclasses import replace
 from typing import Never
 
+from fakes import installed
 from voicebox.config import Settings
 from voicebox.jobs.desk import Desk, spawn_worker
 from voicebox.jobs.lock import job_lock
@@ -45,6 +46,7 @@ def scribe(tmp_path, found=AUDIO, alive=(ME,), spawned=None, now=1000.0, pid=ME)
         is_alive=lambda p: p in alive,
         spawn=spawn,
         probe=probe,
+        which=installed,
         clock=lambda: now,
         pid=pid,
     )
@@ -105,6 +107,33 @@ async def test_an_unwritable_destination_is_refused_before_the_job_starts(tmp_pa
     finally:
         locked.chmod(0o700)
     assert "cannot write" in reply
+
+
+async def test_a_missing_nemo_speech_is_refused_before_the_job_starts(tmp_path):
+    spawned = []
+    s = replace(scribe(tmp_path, spawned=spawned), which=lambda name: None)
+    reply = await start(s, settings(tmp_path), request(media(tmp_path)))
+    assert "NeMo-Speech.cpp" in reply and "/voicebox:setup" in reply
+    assert spawned == [] and s.jobs.recent() == [] and s.lock().owner() is None
+
+
+async def test_a_relative_output_directory_is_refused(tmp_path):
+    spawned = []
+    s = scribe(tmp_path, spawned=spawned)
+    reply = await start(s, settings(tmp_path), request(media(tmp_path), output_dir="out"))
+    assert "must be an absolute path" in reply
+    assert spawned == []
+
+
+async def test_a_home_that_cannot_be_found_is_refused_not_raised(tmp_path):
+    s = scribe(tmp_path)
+    reply = await start(s, settings(tmp_path), request("~no-such-user-voicebox/a.m4a"))
+    assert reply.startswith("cannot resolve the path")
+    reply = await start(
+        s, settings(tmp_path), request(media(tmp_path), output_dir="~no-such-user-voicebox/o")
+    )
+    assert reply.startswith("cannot resolve the output directory")
+    assert s.jobs.recent() == []
 
 
 async def test_a_started_job_spawns_the_worker_and_keeps_the_lock(tmp_path):
@@ -185,6 +214,7 @@ async def test_a_terminal_record_the_worker_wrote_is_never_reverted_by_the_tool(
         is_alive=lambda p: p in (ME, WORKER),
         spawn=spawn,
         probe=probe,
+        which=installed,
         clock=lambda: 1000.0,
         pid=ME,
     )

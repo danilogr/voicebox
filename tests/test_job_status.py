@@ -1,6 +1,7 @@
 from dataclasses import replace
 from pathlib import Path
 
+from fakes import installed
 from voicebox.config import Settings
 from voicebox.jobs.desk import Desk
 from voicebox.jobs.lock import job_lock
@@ -44,6 +45,7 @@ def scribe(tmp_path, found=AUDIO, alive=(ME,), spawned=None, now=1000.0, pid=ME)
         is_alive=lambda p: p in alive,
         spawn=spawn,
         probe=probe,
+        which=installed,
         clock=lambda: now,
         pid=pid,
     )

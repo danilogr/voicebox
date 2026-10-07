@@ -17,6 +17,11 @@ from voicebox.transcribe.output import FORMATS, output_path
 from voicebox.transcribe.prepare import needs_conversion
 from voicebox.transcribe.probe import Probe, ProbeFailed
 
+NO_NEMO = (
+    "transcribe needs NVIDIA NeMo-Speech.cpp, and it is not installed. Run /voicebox:setup, "
+    "or set NEMO_BIN if it is installed somewhere else."
+)
+
 
 @dataclass(frozen=True)
 class TranscribeRequest:
@@ -39,7 +44,7 @@ class _Refusal:
     began: float
     began_monotonic: float
 
-    def record(self, reason: str, source: Path, found: Probe | None = None) -> None:
+    def record(self, reason: str, source: Path | None, found: Probe | None = None) -> None:
         if self.telemetry is None:
             return
         now = self.desk.clock()
@@ -62,7 +67,7 @@ class _Refusal:
                     reason=reason,
                     engine="nemo",
                     model=self.settings.server.asr_model,
-                    source_name=source.name,
+                    source_name=source.name if source is not None else None,
                 ),
                 {
                     "source_bytes": found.size_bytes if found is not None else None,
@@ -88,7 +93,11 @@ async def start(
     telemetry: TelemetrySession | None = None,
 ) -> str:
     refusal = _Refusal(desk, settings, request, telemetry, desk.clock(), desk.monotonic())
-    source = Path(request.path).expanduser()
+    try:
+        source = _expanded(request.path)
+    except RuntimeError as error:
+        refusal.record("input_missing", None)
+        return f"cannot resolve the path {request.path}: {error}"
     if not source.is_file():
         refusal.record("input_missing", source)
         return f"no such file: {source}"
@@ -108,10 +117,27 @@ async def start(
             f"{source.name} has no audio stream - it is video only, "
             "so there is nothing to transcribe"
         )
-    directory = _destination(request.output_dir, settings.transcribe_dir, source)
+    if request.output_dir:
+        try:
+            directory = _expanded(request.output_dir)
+        except RuntimeError as error:
+            refusal.record("output_unwritable", source, found)
+            return f"cannot resolve the output directory {request.output_dir}: {error}"
+        if not directory.is_absolute():
+            refusal.record("output_unwritable", source, found)
+            return (
+                f"output_dir must be an absolute path: {directory} (this server runs from "
+                "the plugin's own directory, not the project)"
+            )
+    else:
+        directory = settings.transcribe_dir or source.parent
     if not directory.is_dir() or not os.access(directory, os.W_OK):
         refusal.record("output_unwritable", source, found)
         return f"cannot write transcripts to {directory}"
+    if desk.which(settings.server.binary) is None:
+        # The worker runs it; finding it missing there would cost a job the user waited on.
+        refusal.record("nemo_missing", source, found)
+        return NO_NEMO
     try:
         lock = claim(desk)
     except BUSY:
@@ -153,7 +179,6 @@ async def start(
     )
 
 
-def _destination(argument: str | None, configured: Path | None, source: Path) -> Path:
-    if argument:
-        return Path(argument).expanduser()
-    return configured if configured is not None else source.parent
+def _expanded(raw: str) -> Path:
+    """`~` and `~user` expanded; raises RuntimeError for a home that cannot be found."""
+    return Path(raw).expanduser()

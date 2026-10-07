@@ -1,7 +1,7 @@
 import asyncio
 from typing import Never
 
-from fakes import FakeEngine, FakeQueue
+from fakes import FakeEngine, FakeQueue, installed
 from voicebox.config import Settings
 from voicebox.jobs.desk import Desk, build_desk
 from voicebox.jobs.lock import job_lock
@@ -84,6 +84,7 @@ async def test_two_transcribe_calls_never_run_together(tmp_path):
             is_alive=lambda pid: True,
             spawn=spawn,
             probe=probe,
+            which=installed,
         ),
     )
 
@@ -128,6 +129,7 @@ async def test_a_second_transcribe_call_is_refused_without_waiting_for_the_first
             is_alive=lambda pid: True,
             spawn=spawn,
             probe=probe,
+            which=installed,
         ),
     )
 

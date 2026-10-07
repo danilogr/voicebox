@@ -7,10 +7,12 @@
 ## Transcribing a file
 
 1. `transcribe(path, …)` checks, in order, and each refusal is one `refused` row: the file
-   exists (`input_missing`); ffprobe is installed (`ffmpeg_missing`) and can read it and
-   finds audio (`input_unsupported`); the destination is writable (`output_unwritable`);
-   no other voicebox job runs (`busy`, naming the running job). An unknown format is
-   answered and not recorded.
+   exists (`input_missing`, also for a `~user` whose home cannot be found); ffprobe is
+   installed (`ffmpeg_missing`) and can read it and finds audio (`input_unsupported`);
+   the destination - `output_dir`, which must be absolute, else `VOICEBOX_TRANSCRIBE_DIR`,
+   else the file's folder - is writable (`output_unwritable`); `nemo-speech` resolves
+   (`nemo_missing`); no other voicebox job runs (`busy`, naming the running job). An
+   unknown format is answered and not recorded.
 2. It claims the job lock, writes the record (`stage`: `convert` or `asr`) and spawns
    `python -m voicebox.transcribe.worker`, then answers with the output path and an
    estimate.

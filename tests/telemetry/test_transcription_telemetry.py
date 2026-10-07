@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from telemetry_support import INSTALL, SESSION, assert_shippable, opened, ref, stored_rows
 
+from fakes import installed
 from voicebox.config import Settings
 from voicebox.jobs.desk import Desk, claim, reconcile
 from voicebox.jobs.lock import JobBusy, job_lock
@@ -295,6 +296,7 @@ def desk_for(tmp_path: Path, found: Probe | Exception = AUDIO, alive=(CLAIMER,))
         is_alive=lambda p: p in alive,
         spawn=spawn,
         probe=probe,
+        which=installed,
         pid=CLAIMER,
     )
 
@@ -349,6 +351,27 @@ async def test_missing_ffprobe_is_refused_ffmpeg_missing(tmp_path):
     media.write_bytes(b"x")
     row = await refused(tmp_path, desk_for(tmp_path, ToolMissing("ffprobe", "x")), request(media))
     assert row["reason"] == "ffmpeg_missing"
+
+
+async def test_a_missing_nemo_speech_is_refused_nemo_missing(tmp_path):
+    media = tmp_path / "a.m4a"
+    media.write_bytes(b"x")
+    desk = replace(desk_for(tmp_path), which=lambda name: None)
+    row = await refused(tmp_path, desk, request(media))
+    assert (row["reason"], row["source_bytes"]) == ("nemo_missing", AUDIO.size_bytes)
+
+
+async def test_a_relative_output_directory_is_refused_output_unwritable(tmp_path):
+    media = tmp_path / "a.m4a"
+    media.write_bytes(b"x")
+    row = await refused(tmp_path, desk_for(tmp_path), request(media, output_dir="out"))
+    assert row["reason"] == "output_unwritable"
+
+
+async def test_a_path_whose_home_cannot_be_found_is_refused_input_missing(tmp_path):
+    req = request(Path("~no-such-user-voicebox/a.m4a"))
+    row = await refused(tmp_path, desk_for(tmp_path), req)
+    assert row["reason"] == "input_missing"
 
 
 async def test_a_busy_lock_is_refused_busy_and_a_huge_file_is_clamped(tmp_path):
