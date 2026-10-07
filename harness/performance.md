@@ -65,8 +65,8 @@ The word error rate includes the recogniser's own mistakes, so the one-sentence 
 the baseline. The rule: the largest size whose worst passage stays within 5 points of the
 baseline's worst, and whose audio length per character stays within ±25 % of the
 baseline (a skipped or repeated passage moves both). That is 1500 characters per
-request. A request's own timeout is four times the slowest request at that size, at
-least a minute: 199 s. The estimate `synthesize` returns uses the median throughput at
+request. Four times the slowest request at that size, at least a minute, is 199 s: the
+least any request waits (below). The estimate `synthesize` returns uses the median throughput at
 that size, 29.5 characters a second, plus 10 s when the server has to start first.
 
 "Reads cleanly" here means no measurable regression against a noisy baseline, judged
@@ -93,11 +93,20 @@ readings only, `yet` missing. The error rate does not grow
 with length: these defects sit where the text sits, so a smaller chunk would not remove
 them, and it would add request ends for the echo to land on.
 
-The 199 s timeout assumes Metal. On the CPU backend, at about 0.07x realtime ("Metal
-against CPU" below), a 1500-character request of about 90 s of audio would take around
-20 minutes and exceed it. The synthesis worker splits a chunk whose request times out
-in half, at a sentence or clause boundary and down to one sentence, and retries each
-half once before failing the job with reason `timeout`.
+The speech server finishes a request its client has given up on. On the M5 against the
+running server, a short request took 0.73 s alone and 19.9 s when sent right after
+aborting a request of about 770 characters: it waited behind the abandoned one. Retrying
+after a timeout, whole or in smaller pieces, therefore queues behind work nobody will
+use and holds up every other session using the server.
+
+So a request's timeout follows the machine instead (`request_timeout_s` in
+`synthesize/limits.py`). The 199 s figure assumes Metal. On the CPU backend, at about
+0.07x realtime ("Metal against CPU" below), a 1500-character request of about 90 s of
+audio takes around 21 minutes. The first request of a job, before any pace has been
+seen, may take four times what the CPU backend would need (about 1.2 characters a
+second), capped at 45 minutes. Each later request may take four times what the slowest
+pace this job has shown would need. No request waits less than 199 s. A request that
+times out fails the job with reason `timeout`, and is not retried.
 
 ## Resident memory
 

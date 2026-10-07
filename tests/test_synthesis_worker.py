@@ -2,7 +2,10 @@
 recorded once, and nothing of the job left behind."""
 
 import errno
+import os
+import stat
 import wave
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -19,11 +22,12 @@ from synthesis_support import (
     staged,
     wav_bytes,
 )
+from voicebox.jobs.desk import Desk, reconcile
 from voicebox.jobs.lock import JobBusy, job_lock
-from voicebox.jobs.store import DONE, FAILED, JobStore
+from voicebox.jobs.store import CRASHED, DONE, FAILED, JobStore
 from voicebox.programs import ConversionFailed, ToolMissing
 from voicebox.synthesize.audio import OutputTooLargeError
-from voicebox.synthesize.limits import CHUNK_CHARS
+from voicebox.synthesize.limits import CHUNK_CHARS, REQUEST_TIMEOUT_S, request_timeout_s
 from voicebox.synthesize.worker import WorkerSpeech, place, run_job
 
 READY = Liveness.READY
@@ -270,75 +274,139 @@ def test_a_missing_record_is_nothing_to_do(tmp_path):
     assert asyncio.run(run_job(tmp_path, JOB_ID, speech=speech)) is None
 
 
-# A request that times out is split and retried (ruling Q32), so a slow machine still
-# finishes: pieces are cut at sentence ends, or clause breaks inside one sentence.
+# A request's timeout follows the pace this job's server has shown (ruling Q39): a slow
+# machine finishes, and a server that stops answering fails the job after one request.
 
 
-class SlowAbove(FakeSynthesizer):
-    """A server that times out on any request longer than `limit` characters."""
+class PacedServer(FakeSynthesizer):
+    """A speech server on a fake clock: a request takes `len(text) / rate` seconds, and
+    the request numbered `hang_at` never answers."""
 
-    def __init__(self, limit: int) -> None:
+    def __init__(self, rate: float, *, hang_at: int | None = None) -> None:
         super().__init__()
-        self._limit = limit
+        self.now = 0.0
+        self.timeouts: list[float] = []
+        self._rate = rate
+        self._hang_at = hang_at
 
-    async def synthesize(self, text, *, voice):
-        await super().synthesize(text, voice=voice)
-        if len(text) > self._limit:
-            raise SynthesisFailed("no answer", kind=SynthesisFailed.TIMEOUT)
-        return wav_bytes()
+    async def synthesize(self, text, *, voice) -> bytes:
+        audio = await super().synthesize(text, voice=voice)
+        self.now += 1e9 if len(self.texts) == self._hang_at else len(text) / self._rate
+        return audio
+
+    def monotonic(self) -> float:
+        return self.now
+
+    async def within(self, request, timeout: float) -> bytes:
+        self.timeouts.append(timeout)
+        started = self.now
+        audio = await request
+        if self.now - started > timeout:
+            raise TimeoutError
+        return audio
 
 
-async def test_a_timed_out_chunk_is_spoken_in_two_halves(tmp_path):
-    staged(tmp_path, "First sentence here. Second sentence here.")
-    synthesizer = FakeSynthesizer(fail_at=1)
-    finished = await work(tmp_path, synthesizer=synthesizer)
-    assert synthesizer.texts == [
-        "First sentence here. Second sentence here.",
-        "First sentence here.",
-        "Second sentence here.",
+async def paced(state_dir: Path, server: PacedServer):
+    return await run_job(
+        state_dir,
+        JOB_ID,
+        speech=WorkerSpeech(server, Liveliness((READY,)), None),
+        is_alive=lambda pid: pid in (CLAIMER, WORKER),
+        monotonic=server.monotonic,
+        within=server.within,
+        sleep=no_sleep,
+        pid=WORKER,
+        record=lambda job: None,
+    )
+
+
+# Three paragraphs of about 1,350 characters: three full chunks.
+LONG = "\n\n".join([" ".join(["This sentence is here to fill the chunk up."] * 31)] * 3)
+
+
+async def test_a_cpu_only_machine_finishes_as_timeouts_follow_its_pace(tmp_path):
+    staged(tmp_path, LONG)
+    server = PacedServer(rate=1.2)  # about 0.07x realtime
+    finished = await paced(tmp_path, server)
+    assert finished.state == DONE and finished.chunks_done == 3
+    sizes = [len(text) for text in server.texts]
+    assert server.timeouts == [
+        request_timeout_s(sizes[0], None),
+        request_timeout_s(sizes[1], 1.2),
+        request_timeout_s(sizes[2], 1.2),
     ]
-    assert (finished.state, finished.chunks, finished.chunks_done) == (DONE, 1, 1)
-    # two 100 ms halves and the 250 ms pause inside a paragraph
-    assert finished.audio_ms == 450
+    assert server.timeouts[1] > server.timeouts[0] > REQUEST_TIMEOUT_S
+    assert finished.chars_per_s == pytest.approx(1.2)
 
 
-async def test_a_half_that_times_out_is_split_again_down_to_one_sentence(tmp_path):
-    sentences = ["Alpha one.", "Bravo two.", "Charlie three.", "Delta four."]
-    staged(tmp_path, " ".join(sentences))
-    synthesizer = SlowAbove(limit=15)
-    finished = await work(tmp_path, synthesizer=synthesizer)
-    assert finished.state == DONE
-    spoken = [text for text in synthesizer.texts if len(text) <= 15]
-    assert spoken == sentences
+async def test_the_slowest_pace_seen_sets_the_next_timeout(tmp_path):
+    staged(tmp_path, THREE_PARAGRAPHS)
+
+    class Slowing(PacedServer):
+        async def synthesize(self, text, *, voice) -> bytes:
+            self._rate = 10.0 if len(self.texts) == 0 else 20.0
+            return await super().synthesize(text, voice=voice)
+
+    server = Slowing(rate=10.0)
+    finished = await paced(tmp_path, server)
+    assert finished.chars_per_s == pytest.approx(10.0)
 
 
-async def test_one_sentence_that_times_out_is_split_at_a_clause(tmp_path):
-    staged(tmp_path, "Alpha beta gamma, delta epsilon zeta.")
-    synthesizer = FakeSynthesizer(fail_at=1)
-    finished = await work(tmp_path, synthesizer=synthesizer)
-    assert finished.state == DONE
-    # every request ends a sentence, the first half included (ruling Q34)
-    assert synthesizer.texts[1:] == ["Alpha beta gamma.", "delta epsilon zeta."]
-
-
-async def test_a_piece_that_cannot_be_split_fails_the_job_with_timeout(tmp_path):
-    staged(tmp_path, "First sentence here. Second sentence here.")
-    synthesizer = SlowAbove(limit=0)
-    finished = await work(tmp_path, synthesizer=synthesizer)
+async def test_a_server_that_stops_answering_fails_the_job_after_one_request(tmp_path):
+    staged(tmp_path, THREE_PARAGRAPHS)
+    server = PacedServer(rate=29.5, hang_at=2)
+    finished = await paced(tmp_path, server)
     assert (finished.state, finished.reason, finished.stage) == (FAILED, "timeout", "synthesize")
-    assert finished.error.startswith("chunk 1 of 1:")
-    # the whole chunk, then its first half, which cannot be cut again
-    assert synthesizer.texts == [
-        "First sentence here. Second sentence here.",
-        "First sentence here.",
-    ]
+    assert finished.error.startswith("chunk 2 of 3:")
+    assert len(server.texts) == 2  # no retry
+    # only the request that succeeded is counted
+    assert finished.synth_ms == round(len(server.texts[0]) / 29.5 * 1000)
+    assert not (tmp_path / "out.wav").exists()
 
 
-async def test_only_a_timeout_is_split(tmp_path):
-    staged(tmp_path, "First sentence here. Second sentence here.")
-    synthesizer = FakeSynthesizer(fail_at=1, kind=SynthesisFailed.REFUSED)
-    finished = await work(tmp_path, synthesizer=synthesizer)
-    assert finished.reason == "model_failed" and len(synthesizer.texts) == 1
+async def test_the_partial_file_is_on_the_record_while_it_is_written(tmp_path, monkeypatch):
+    staged(tmp_path, "One chunk.")
+    seen = []
+    link = os.link
+
+    def spying(src, dst) -> None:
+        job = JobStore(tmp_path).read(JOB_ID)
+        seen.append((job.stage, job.partial, str(src)))
+        link(src, dst)
+
+    monkeypatch.setattr("voicebox.synthesize.worker.os.link", spying)
+    finished = await work(tmp_path)
+    ((stage, partial, src),) = seen
+    assert stage == "write" and partial == src
+    assert Path(partial).parent == tmp_path and Path(partial).name.startswith(".out.wav.")
+    assert partial.endswith(".partial") and not Path(partial).exists()
+    assert finished.state == DONE and finished.partial is None
+
+
+async def test_the_output_gets_the_usual_permissions(tmp_path):
+    staged(tmp_path, "One chunk.")
+    await work(tmp_path)
+    umask = os.umask(0)
+    os.umask(umask)
+    assert stat.S_IMODE((tmp_path / "out.wav").stat().st_mode) == 0o666 & ~umask
+
+
+def test_a_synthesis_that_crashed_while_writing_leaves_no_partial_file(tmp_path):
+    job = staged(tmp_path, "One chunk.", worker_pid=9999)
+    partial = tmp_path / ".out.wav.abc123.partial"
+    partial.write_bytes(b"half")
+    jobs = JobStore(tmp_path)
+    jobs.write(replace(job, stage="write", chunks=1, chunks_done=1, partial=str(partial)))
+    desk = Desk(
+        jobs=jobs,
+        lock=lambda: job_lock(tmp_path, is_alive=lambda p: False, pid=CLAIMER),
+        is_alive=lambda p: False,
+        spawn=None,  # type: ignore[arg-type]
+        probe=None,  # type: ignore[arg-type]
+        pid=CLAIMER,
+    )
+    assert reconcile(desk, jobs.read(JOB_ID)).state == CRASHED
+    assert not partial.exists()
 
 
 async def test_a_file_that_appeared_at_the_output_is_never_replaced(tmp_path):

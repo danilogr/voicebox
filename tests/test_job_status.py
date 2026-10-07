@@ -266,7 +266,7 @@ def synthesis(tmp_path, **overrides: object):
 
 def test_a_running_synthesis_reports_its_chunks(tmp_path):
     s = replace(scribe(tmp_path, alive=(ME, WORKER)), clock=lambda: 1040.0)
-    s.jobs.write(synthesis(tmp_path))
+    s.jobs.write(synthesis(tmp_path, chars_per_s=60.0))  # 100 s for 6,000 characters
     reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
     assert reply == "running: notes.md, chunk 4 of 10 done, 40 s elapsed, about 60 s left"
 
@@ -295,3 +295,27 @@ def test_a_crashed_synthesis_says_how_far_it_got(tmp_path):
     reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
     assert reply.startswith("crashed: notes.md: the worker stopped without recording an outcome")
     assert "(after chunk 4 of 10)" in reply
+
+
+def test_a_slow_machines_synthesis_is_judged_by_the_pace_it_has_shown(tmp_path):
+    # 6,000 characters at 1 a second: 100 min, so 30 min in is on time...
+    s = replace(scribe(tmp_path, alive=(ME, WORKER)), clock=lambda: 1000.0 + 1800)
+    s.jobs.write(synthesis(tmp_path, chars_per_s=1.0))
+    reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+    assert reply == "running: notes.md, chunk 4 of 10 done, 30 min elapsed, about 70 min left"
+    # ...and four times the estimate is not
+    s = replace(s, clock=lambda: 1000.0 + 4 * 6000 + 60)
+    reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+    assert "it may be wedged" in reply
+
+
+def test_a_first_request_is_not_called_wedged_before_its_own_timeout(tmp_path):
+    from voicebox.synthesize.limits import FIRST_REQUEST_CEILING_S
+
+    s = replace(scribe(tmp_path, alive=(ME, WORKER)), clock=lambda: 1000.0 + 1500)
+    s.jobs.write(synthesis(tmp_path, chunks_done=0))
+    reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+    assert reply.startswith("running: notes.md, chunk 0 of 10 done, 25 min elapsed")
+    s = replace(s, clock=lambda: 1000.0 + FIRST_REQUEST_CEILING_S + 60)
+    reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+    assert "it may be wedged" in reply

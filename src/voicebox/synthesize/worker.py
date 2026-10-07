@@ -14,6 +14,7 @@ import logging
 import os
 import shutil
 import sys
+import tempfile
 import time
 import wave
 from collections.abc import Awaitable, Callable, Sequence
@@ -38,8 +39,8 @@ from voicebox.synthesize.audio import (
     concatenate,
 )
 from voicebox.synthesize.encode import encode as encode_audio
-from voicebox.synthesize.limits import CHUNK_CHARS, REQUEST_TIMEOUT_S
-from voicebox.synthesize.text import chunk_text, halve
+from voicebox.synthesize.limits import CHUNK_CHARS, request_timeout_s
+from voicebox.synthesize.text import chunk_text
 from voicebox.telemetry.jobs import record_job
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,13 @@ PARAGRAPH_GAP_MS = 700
 WARMUP_TIMEOUT_S = 60.0
 WARMUP_POLL_S = 0.5
 
+# The worker bounds each request itself (`request_timeout_s`); the HTTP client's own
+# limit is only a backstop, and a request that reaches it fails as a timeout too.
+CLIENT_TIMEOUT_S = 24 * 60 * 60.0
+
+# A request shorter than this is timed as this long, so a pace is never infinite.
+MIN_REQUEST_S = 0.001
+
 REASON_OF_FAILURE = {
     SynthesisFailed.UNREACHABLE: "server_unavailable",
     SynthesisFailed.TIMEOUT: "timeout",
@@ -60,6 +68,8 @@ REASON_OF_FAILURE = {
 }
 
 Encode = Callable[[Path, Path, str], Awaitable[None]]
+# Awaits a request for at most a number of seconds, raising TimeoutError past it.
+Within = Callable[[Awaitable[bytes], float], Awaitable[bytes]]
 CheckLiveness = Callable[[], Awaitable[Liveness]]
 
 
@@ -85,22 +95,33 @@ class WorkerSpeech:
     supervisor: Supervisor | None
 
 
-def place(source: Path, destination: Path) -> None:
+def place(
+    source: Path, destination: Path, *, on_partial: Callable[[Path], None] = lambda path: None
+) -> None:
     """Put a copy of `source` at `destination`, whole, and only if nothing is there.
 
-    The bytes go to a hidden partial file beside `destination` first, so nobody ever
-    finds half a file at the path they were promised, and that file is then hard-linked
-    into place, which fails when `destination` exists: a file that appeared there while
-    the job ran is never replaced. On a filesystem without hard links (FAT and exFAT have
-    none) an empty file is created exclusively at `destination` and the partial renamed
-    over it.
+    The bytes go to a new hidden file beside `destination` first, so nobody ever finds
+    half a file at the path they were promised; `on_partial` is told its path before
+    anything is written to it. That file is then hard-linked into place, which fails
+    when `destination` exists: a file that appeared there while the job ran is never
+    replaced. On a filesystem without hard links (FAT and exFAT have none) an empty file
+    is created exclusively at `destination` and the hidden file renamed over it.
 
     Raises:
         FileExistsError: something is already at `destination`.
         OSError: the file could not be written there.
     """
-    partial = destination.with_name(f".{destination.name}.partial")
+    descriptor, name = tempfile.mkstemp(
+        dir=destination.parent, prefix=f".{destination.name}.", suffix=".partial"
+    )
+    partial = Path(name)
     try:
+        try:
+            # mkstemp makes the file private; the output gets the mode a new file would.
+            os.fchmod(descriptor, 0o666 & ~_umask())
+        finally:
+            os.close(descriptor)
+        on_partial(partial)
         shutil.copyfile(source, partial)
         try:
             os.link(partial, destination)
@@ -111,6 +132,14 @@ def place(source: Path, destination: Path) -> None:
             _rename_exclusively(partial, destination)
     finally:
         partial.unlink(missing_ok=True)
+
+
+def _umask() -> int:
+    """The process umask, which can only be read by setting it (the worker is single
+    threaded, so nothing creates a file in between)."""
+    mask = os.umask(0)
+    os.umask(mask)
+    return mask
 
 
 def _rename_exclusively(partial: Path, destination: Path) -> None:
@@ -150,28 +179,6 @@ async def _ready(
         await sleep(WARMUP_POLL_S)
 
 
-async def _spoken(synthesizer: Synthesizer, text: str, voice: str) -> list[bytes]:
-    """`text`'s audio, in as many WAVs as it took.
-
-    `REQUEST_TIMEOUT_S` assumes Metal, so a request that times out is cut in half and
-    each half tried the same way: a slower machine still finishes, in shorter requests.
-    A piece that cannot be cut again fails with the timeout, as does any other failure
-    at once.
-    """
-    try:
-        return [await synthesizer.synthesize(text, voice=voice)]
-    except SynthesisFailed as error:
-        halves = halve(text) if error.kind == SynthesisFailed.TIMEOUT else None
-        if halves is None:
-            raise
-        logger.info("a %d-character request timed out; sending it in two halves", len(text))
-        first, second = halves
-        return [
-            *await _spoken(synthesizer, first, voice),
-            *await _spoken(synthesizer, second, voice),
-        ]
-
-
 async def run_job(
     state_dir: Path,
     job_id: str,
@@ -182,6 +189,7 @@ async def run_job(
     clock: Callable[[], float] = time.time,
     monotonic: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    within: Within = asyncio.wait_for,
     pid: int | None = None,
     record: Record = record_job,
 ) -> Job | None:
@@ -209,7 +217,14 @@ async def run_job(
             await speech.supervisor.register()
             registered = True
         finished = await _synthesize(
-            jobs, job, speech=speech, encode=encode, clock=clock, monotonic=monotonic, sleep=sleep
+            jobs,
+            job,
+            speech=speech,
+            encode=encode,
+            clock=clock,
+            monotonic=monotonic,
+            sleep=sleep,
+            within=within,
         )
     except Exception as error:  # a bug here must still leave an honest record
         latest = jobs.read(job_id)  # how far it got is on the record
@@ -242,6 +257,7 @@ async def _synthesize(
     clock: Callable[[], float],
     monotonic: Callable[[], float],
     sleep: Callable[[float], Awaitable[None]],
+    within: Within,
 ) -> SynthesisJob:
     try:
         text = jobs.text_path(job.job_id).read_text(encoding="utf-8")
@@ -286,20 +302,30 @@ async def _synthesize(
     work.mkdir(parents=True, exist_ok=True)
     pieces: list[Piece] = []
     for index, chunk in enumerate(chunks):
+        which = f"chunk {index + 1} of {len(chunks)}"
+        timeout = request_timeout_s(len(chunk.text), job.chars_per_s)
         started = monotonic()
         try:
-            audios = await _spoken(speech.synthesizer, chunk.text, job.voice)
+            audio = await within(
+                speech.synthesizer.synthesize(chunk.text, voice=job.voice), timeout
+            )
+        except TimeoutError:
+            message = f"the speech server did not answer within {timeout:.0f} s"
+            return _failed(job, clock, "timeout", f"{which}: {message}")
         except SynthesisFailed as error:
             reason = REASON_OF_FAILURE.get(error.kind, "other")
-            return _failed(job, clock, reason, f"chunk {index + 1} of {len(chunks)}: {error}")
-        for part, audio in enumerate(audios):
-            path = work / f"{index:06d}-{part:06d}.wav"
-            path.write_bytes(audio)
-            # Only a chunk's last piece ends its paragraph; halves of one chunk get the
-            # pause between chunks.
-            pieces.append(Piece(path, chunk.paragraph_end and part == len(audios) - 1))
-        elapsed_ms = round((monotonic() - started) * 1000)
-        job = replace(job, chunks_done=index + 1, synth_ms=job.synth_ms + elapsed_ms)
+            return _failed(job, clock, reason, f"{which}: {error}")
+        seconds = monotonic() - started
+        path = work / f"{index:06d}.wav"
+        path.write_bytes(audio)
+        pieces.append(Piece(path, chunk.paragraph_end))
+        pace = len(chunk.text) / max(seconds, MIN_REQUEST_S)
+        job = replace(
+            job,
+            chunks_done=index + 1,
+            synth_ms=job.synth_ms + round(seconds * 1000),
+            chars_per_s=pace if job.chars_per_s is None else min(job.chars_per_s, pace),
+        )
         jobs.write(job)
 
     job = replace(job, stage="encode")
@@ -334,8 +360,12 @@ async def _synthesize(
 
     output = Path(job.output)
     size = encoded.stat().st_size
+
+    def on_partial(partial: Path) -> None:
+        jobs.write(replace(job, partial=str(partial)))
+
     try:
-        place(encoded, output)
+        place(encoded, output, on_partial=on_partial)
     except FileExistsError:
         return _failed(
             job,
@@ -364,7 +394,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             base_url=server.url,
             api_key=server.api_key,
             model=server.tts_model,
-            timeout=REQUEST_TIMEOUT_S,
+            timeout=CLIENT_TIMEOUT_S,
         ),
         liveness=NemoTranscriber(base_url=server.url, api_key=server.api_key).liveness,
         supervisor=supervisor_for(server) if server.autostart else None,

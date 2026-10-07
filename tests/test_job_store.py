@@ -293,3 +293,21 @@ def test_a_synthesis_jobs_staged_text_and_chunks_are_artifacts(tmp_path):
     assert not store.text_path(job.job_id).exists()
     assert not store.work_dir(job.job_id).exists()
     assert store.read(job.job_id) is not None
+
+
+def test_a_synthesis_estimate_follows_the_pace_it_has_shown(tmp_path):
+    from voicebox.synthesize.limits import COLD_START_S
+
+    assert synthesis_at(tmp_path, chars_per_s=10.0).eta_s == pytest.approx(300)
+    cold = synthesis_at(tmp_path, chars_per_s=10.0, cold_start=True)
+    assert cold.eta_s == pytest.approx(300 + COLD_START_S)
+
+
+def test_a_synthesis_partial_output_on_the_record_is_an_artifact(tmp_path):
+    store = JobStore(tmp_path)
+    partial = tmp_path / ".out.wav.x1y2.partial"
+    partial.write_bytes(b"half")
+    job = synthesis_at(tmp_path, partial=str(partial))
+    store.write(job)
+    store.discard_artifacts(job.job_id)
+    assert not partial.exists()

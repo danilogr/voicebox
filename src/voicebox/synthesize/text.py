@@ -197,26 +197,6 @@ def chunk_text(text: str, *, max_chars: int) -> list[Chunk]:
     return chunks
 
 
-def halve(text: str) -> tuple[str, str] | None:
-    """A chunk cut in two for a server too slow to speak it whole in one request.
-
-    The cut is the sentence end nearest the middle or, in a chunk with no sentence end
-    inside, the clause break nearest it. Both halves end in sentence-final punctuation,
-    as every chunk does. None when no such cut leaves a word on each side.
-    """
-    middle = len(text) / 2
-    for boundary in (_SENTENCE_END, _CLAUSE_END):
-        cuts = [
-            match
-            for match in boundary.finditer(text)
-            if _WORD.search(text[: match.start(1)]) and _WORD.search(text[match.end(1) :])
-        ]
-        if cuts:
-            cut = min(cuts, key=lambda match: abs(match.start(1) - middle))
-            return _close(text[: cut.start(1)]), _close(text[cut.end(1) :])
-    return None
-
-
 def _close(piece: str) -> str:
     if _FINAL.search(piece):
         return piece

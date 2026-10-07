@@ -113,10 +113,17 @@ class SynthesisJob(Job):
     audio_ms: int | None = None
     output_bytes: int | None = None
     server_warm: bool | None = None
+    # The slowest pace, in characters a second, of this job's finished requests: what
+    # its estimate and its request timeouts follow once one request has finished.
+    chars_per_s: float | None = None
+    # The hidden file beside the output that the worker writes before linking it into
+    # place; on the record only while it exists, so a crash there can be cleaned up.
+    partial: str | None = None
 
     @property
     def eta_s(self) -> float:
-        return self.chars / SYNTH_CHARS_PER_S + (COLD_START_S if self.cold_start else 0.0)
+        rate = self.chars_per_s or SYNTH_CHARS_PER_S
+        return self.chars / rate + (COLD_START_S if self.cold_start else 0.0)
 
 
 # Every kind a record may hold, by the `kind` it is written with.
@@ -217,10 +224,13 @@ class JobStore:
 
     def discard_artifacts(self, job_id: str) -> None:
         """Delete what a job holds only while it runs - converted audio, staged text,
-        chunk WAVs - never its record or log. Never raises."""
+        chunk WAVs, a partly written output - never its record or log. Never raises."""
         try:
             self.wav_path(job_id).unlink(missing_ok=True)
             self.text_path(job_id).unlink(missing_ok=True)
+            job = self.read(job_id)
+            if isinstance(job, SynthesisJob) and job.partial:
+                Path(job.partial).unlink(missing_ok=True)
         except OSError as error:
             logger.debug("could not discard the artifacts of job %s: %s", job_id, error)
         shutil.rmtree(self.work_dir(job_id), ignore_errors=True)

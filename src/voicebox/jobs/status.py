@@ -13,6 +13,7 @@ from voicebox.jobs.store import (
     SynthesisJob,
     TranscriptionJob,
 )
+from voicebox.synthesize.limits import COLD_START_S, FIRST_REQUEST_CEILING_S
 from voicebox.transcribe.output import transcript_text
 
 # Below this a job is never called wedged, however short its estimate.
@@ -79,17 +80,19 @@ def _synthesis(desk: Desk, job: SynthesisJob) -> str:
         size = (job.output_bytes or 0) / 1_000_000
         return f"done: {name} -> {job.output} ({duration(seconds)} of audio, {size:.1f} MB)"
     elapsed = desk.clock() - job.created_at
-    if elapsed > max(MIN_TIMEOUT_S, 4 * job.eta_s):
+    limit = max(MIN_TIMEOUT_S, 4 * job.eta_s)
+    if job.chars_per_s is None:
+        # No pace seen yet: on a slow machine the first request alone may take this long
+        # before the worker's own timeout would end it.
+        limit = max(limit, COLD_START_S + FIRST_REQUEST_CEILING_S)
+    if elapsed > limit:
         return (
             f"running: {name} for {duration(elapsed)}, well past the "
             f"{duration(job.eta_s)} estimate - it may be wedged"
         )
     if job.chunks is None:
         return f"running: {name}, preparing the text, {duration(elapsed)} elapsed"
-    if job.chunks_done:
-        left = elapsed / job.chunks_done * (job.chunks - job.chunks_done)
-    else:
-        left = max(0.0, job.eta_s - elapsed)
+    left = max(0.0, job.eta_s - elapsed)
     return (
         f"running: {name}, chunk {job.chunks_done} of {job.chunks} done, "
         f"{duration(elapsed)} elapsed, about {duration(left)} left"
