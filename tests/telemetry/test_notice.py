@@ -39,3 +39,10 @@ async def test_only_the_first_tool_reply_carries_it():
     second = (await served.call_tool("speech_status", {})).content[0].text
     assert TEXT in first
     assert TEXT not in second
+
+
+def test_a_notice_shown_out_of_band_since_startup_is_not_handed_out_again():
+    marked = []
+    notice = Notice(pending=True, mark_shown=lambda: marked.append(1), still_due=lambda: False)
+    assert notice.take() is None
+    assert marked == []

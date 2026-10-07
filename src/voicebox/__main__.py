@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import signal
+import sqlite3
 import sys
 from collections.abc import Coroutine, Mapping
 from typing import Protocol
@@ -49,7 +50,7 @@ async def _ship_backlog(env: Mapping[str, str], settings: Settings) -> None:
         return
     try:
         conn = telemetry_store.connect(db_path(settings.state_dir), SCHEMA)
-    except OSError as error:
+    except (OSError, sqlite3.Error) as error:
         logger.debug("telemetry: could not open the local store to ship: %s", error)
         return
     try:
@@ -124,6 +125,7 @@ def build(settings: Settings, env: Mapping[str, str]) -> MCPServer:
     notice = Notice(
         pending=notice_due,
         mark_shown=lambda: telemetry_notice.mark_shown(env, IDENTITY, host_platform=sys.platform),
+        still_due=lambda: telemetry_notice.due(env, IDENTITY, host_platform=sys.platform),
     )
 
     def schedule_sends() -> None:

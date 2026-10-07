@@ -71,7 +71,7 @@ def test_totals_kinds_and_statuses():
     add(conn, 2, TRANSCRIPTION, "ok")
     add(conn, 3, SYNTHESIS, "refused", reason="busy")
     text = render(conn)
-    assert text.splitlines()[0] == "3 jobs across 1 sessions; 3 unshipped."
+    assert text.splitlines()[0] == "3 jobs across 1 session; 3 unshipped."
     assert "transcription  ok       2" in text
     assert "synthesis      refused  1" in text
 

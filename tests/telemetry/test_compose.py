@@ -115,3 +115,18 @@ def test_this_release_ships():
     from voicebox.server import VERSION
 
     assert compose.versions_shippable(VERSION)
+
+
+def test_a_corrupt_store_collects_nothing_and_does_not_raise(tmp_path):
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "telemetry.db").write_bytes(b"this is not a database" * 500)
+    assert built(tmp_path) is None
+
+
+def test_non_utf8_output_from_the_binary_is_no_version():
+    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad")
+
+    assert compose.read_nemo_version("nemo", run=run) is None
+    assert compose.read_nemo_version("nemo", run=run_printing("nemo-speech 0.2.0\ufffd\n")) is None

@@ -3,8 +3,10 @@
 `__main__` passes the environment in."""
 
 import importlib.metadata
+import logging
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import uuid
@@ -15,6 +17,8 @@ from speak_core.telemetry import store, wiring
 from voicebox.config import Settings
 from voicebox.telemetry.contract import IDENTITY, SCHEMA, db_path
 from voicebox.telemetry.session import TelemetrySession
+
+logger = logging.getLogger(__name__)
 
 # The contract's `semver` pattern and length: a value outside it would cost every chunk
 # its session travels in, so it is omitted (nemo) or replaced (core) instead.
@@ -70,10 +74,11 @@ def read_nemo_version(binary: str, *, run: Run = subprocess.run) -> str | None:
             [binary, "--version"],
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=NEMO_VERSION_TIMEOUT_S,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, ValueError, subprocess.TimeoutExpired):
         return None
     if result.returncode != 0:
         return None
@@ -93,33 +98,43 @@ def build(
     """The telemetry session for one process, or `None` when telemetry does not collect."""
     platform_name = host_platform if host_platform is not None else sys.platform
     path = db_path(settings.state_dir)
-    install = wiring.start_install(
-        env,
-        IDENTITY,
-        SCHEMA,
-        db_path=path,
-        plugin_version=plugin_version,
-        host_platform=platform_name,
-    )
+    try:
+        install = wiring.start_install(
+            env,
+            IDENTITY,
+            SCHEMA,
+            db_path=path,
+            plugin_version=plugin_version,
+            host_platform=platform_name,
+        )
+    except (OSError, sqlite3.Error) as error:
+        # A corrupt or locked store must not stop the server: telemetry is optional.
+        logger.warning("telemetry: the local store is unusable; collecting nothing: %s", error)
+        return None
     if install is None:
         return None
     harness, harness_version = wiring.detect_harness(env, IDENTITY)
     session_id = str(uuid.uuid4())
-    store.insert_session(
-        install.conn,
-        SCHEMA,
-        {
-            "session_id": session_id,
-            "install_id": install.consent.install_id,
-            "started_at": store.now_iso(),
-            "plugin_version": plugin_version,
-            "core_version": core_version(),
-            "nemo_version": nemo_version(settings.server.binary),
-            "harness": harness,
-            "harness_version": harness_version,
-            "ffmpeg_present": which("ffmpeg") is not None and which("ffprobe") is not None,
-        },
-    )
+    try:
+        store.insert_session(
+            install.conn,
+            SCHEMA,
+            {
+                "session_id": session_id,
+                "install_id": install.consent.install_id,
+                "started_at": store.now_iso(),
+                "plugin_version": plugin_version,
+                "core_version": core_version(),
+                "nemo_version": nemo_version(settings.server.binary),
+                "harness": harness,
+                "harness_version": harness_version,
+                "ffmpeg_present": which("ffmpeg") is not None and which("ffprobe") is not None,
+            },
+        )
+    except sqlite3.Error as error:
+        logger.warning("telemetry: could not record the session; collecting nothing: %s", error)
+        install.conn.close()
+        return None
     return TelemetrySession(
         conn=install.conn,
         install_id=install.consent.install_id,

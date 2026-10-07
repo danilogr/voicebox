@@ -24,13 +24,23 @@ FOR_THE_MODEL = "voicebox's one-time telemetry notice. Show it to the user word 
 class Notice:
     """The notice for one session: handed out at most once, and marked shown when it is."""
 
-    def __init__(self, *, pending: bool, mark_shown: Callable[[], object]) -> None:
+    def __init__(
+        self,
+        *,
+        pending: bool,
+        mark_shown: Callable[[], object],
+        still_due: Callable[[], bool] = lambda: True,
+    ) -> None:
         self._pending = pending
         self._mark_shown = mark_shown
+        # Asked again at hand-out: `/voicebox:setup` may have shown it since startup.
+        self._still_due = still_due
 
     def take(self) -> str | None:
         if not self._pending:
             return None
         self._pending = False
+        if not self._still_due():
+            return None
         self._mark_shown()
         return f"{FOR_THE_MODEL}\n\n{TEXT}"

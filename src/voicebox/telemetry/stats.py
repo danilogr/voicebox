@@ -15,6 +15,10 @@ def _count(conn: sqlite3.Connection, sql: str) -> int:
     return int(value)
 
 
+def _plural(count: int) -> str:
+    return "" if count == 1 else "s"
+
+
 def render(conn: sqlite3.Connection) -> str:
     total = _count(conn, "SELECT COUNT(*) FROM jobs")
     if total == 0:
@@ -22,7 +26,10 @@ def render(conn: sqlite3.Connection) -> str:
     unshipped = _count(conn, f"SELECT COUNT(*) FROM jobs WHERE {store.BACKLOG}")
     rejected = _count(conn, "SELECT COUNT(*) FROM jobs WHERE rejected_at IS NOT NULL")
     sessions = _count(conn, "SELECT COUNT(*) FROM sessions")
-    summary = f"{total} jobs across {sessions} sessions; {unshipped} unshipped"
+    summary = (
+        f"{total} job{_plural(total)} across {sessions} session{_plural(sessions)}; "
+        f"{unshipped} unshipped"
+    )
     # Refused by the server and never resent: shown so a rejection is visible.
     lines = [summary + (f", {rejected} rejected by the server." if rejected else ".")]
 
