@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
+from voicebox.jobs.lock import JobBusy, job_lock
+from voicebox.jobs.store import DONE, EMPTY, FAILED, RUNNING, JobStore, TranscriptionJob
 from voicebox.transcribe.commands import CommandResult
-from voicebox.transcribe.jobs import DONE, EMPTY, FAILED, RUNNING, Job, JobStore
-from voicebox.transcribe.lock import TranscriptionBusy, transcription_lock
 from voicebox.transcribe.worker import cli_argv, run_job
 
 CLAIMER, WORKER, OTHER = 100, 200, 300
@@ -14,7 +14,7 @@ def alive(pid: int) -> bool:
     return pid in (CLAIMER, WORKER, OTHER)
 
 
-def start(tmp_path: Path, **overrides: object) -> tuple[JobStore, Job]:
+def start(tmp_path: Path, **overrides: object) -> tuple[JobStore, TranscriptionJob]:
     source = tmp_path / "meeting.wav"
     source.write_bytes(b"RIFF")
     fields = dict(
@@ -35,10 +35,10 @@ def start(tmp_path: Path, **overrides: object) -> tuple[JobStore, Job]:
         claimed_by=CLAIMER,
         created_at=1000.0,
     )
-    job = Job(**{**fields, **overrides})
+    job = TranscriptionJob(**{**fields, **overrides})
     store = JobStore(tmp_path)
     store.write(job)
-    transcription_lock(tmp_path, is_alive=alive, pid=CLAIMER).acquire()
+    job_lock(tmp_path, is_alive=alive, pid=CLAIMER).acquire()
     return store, job
 
 
@@ -105,25 +105,25 @@ async def test_the_worker_takes_the_lock_over_and_releases_it(tmp_path):
     start(tmp_path)
     run_cli, _ = cli_writing("words")
     await run(tmp_path, run_cli, [])
-    assert transcription_lock(tmp_path, is_alive=alive).owner() is None
+    assert job_lock(tmp_path, is_alive=alive).owner() is None
 
 
 async def test_a_worker_refused_the_lock_records_the_failure_rather_than_dying_quietly(tmp_path):
     """Its stderr is the job log and nobody waits on its exit code, so a worker that
     cannot have the lock has to leave the answer on the record itself."""
     store, _ = start(tmp_path)
-    transcription_lock(tmp_path, is_alive=alive, pid=OTHER).take_over(CLAIMER)
+    job_lock(tmp_path, is_alive=alive, pid=OTHER).take_over(CLAIMER)
     run_cli, calls = cli_writing("words")
     recorded = []
 
-    with pytest.raises(TranscriptionBusy):
+    with pytest.raises(JobBusy):
         await run(tmp_path, run_cli, recorded)
 
     refused = store.read("j1")
-    assert refused.state == FAILED and "only one runs at a time" in refused.error
+    assert refused.state == FAILED and "one job at a time" in refused.error
     assert [job.state for job in recorded] == [FAILED]
     assert calls == []
-    assert transcription_lock(tmp_path, is_alive=alive).owner() == OTHER
+    assert job_lock(tmp_path, is_alive=alive).owner() == OTHER
 
 
 async def test_conversion_runs_first_and_its_wav_is_deleted(tmp_path):
@@ -166,7 +166,7 @@ async def test_the_outcome_is_recorded_before_the_lock_is_freed(tmp_path):
     def record(job) -> None:
         seen.append(
             (
-                transcription_lock(tmp_path, is_alive=alive).owner(),
+                job_lock(tmp_path, is_alive=alive).owner(),
                 store.read("j1").state,
             )
         )
@@ -182,7 +182,7 @@ async def test_the_outcome_is_recorded_before_the_lock_is_freed(tmp_path):
         record=record,
     )
     assert seen == [(WORKER, DONE)]
-    assert transcription_lock(tmp_path, is_alive=alive).owner() is None
+    assert job_lock(tmp_path, is_alive=alive).owner() is None
 
 
 def test_the_cli_is_asked_for_everything_the_caller_chose(tmp_path):

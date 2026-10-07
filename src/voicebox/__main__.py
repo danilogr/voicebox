@@ -14,8 +14,8 @@ from speak_core.speaker import SpeakerLock
 from speak_core.supervisor import NemoSupervisor
 
 from voicebox.config import PLUGIN, Settings
+from voicebox.jobs.desk import build_desk, sweep
 from voicebox.server import create_server
-from voicebox.transcribe.service import build_scribe
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +46,16 @@ def build(settings: Settings) -> MCPServer:
         prepare=engine.prepare,
         speaker=SpeakerLock(shared_dir=settings.server.shared_dir),
     )
+    desk = build_desk(settings)
+    # A worker that died while no session was asking is found now, not at the first
+    # status call, and the lock it left is freed for this session's first job.
+    sweep(desk)
     return create_server(
         settings=settings,
         engine=engine,
         queue=queue,
         supervisor=supervisor,
-        scribe=build_scribe(settings),
+        desk=desk,
     )
 
 

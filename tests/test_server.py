@@ -99,7 +99,7 @@ async def test_initializes_and_reports_its_name(recorder):
             "stop_speaking",
             "speech_status",
             "transcribe",
-            "transcription_status",
+            "job_status",
         }
 
 

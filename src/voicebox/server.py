@@ -17,6 +17,8 @@ from speak_core.text import normalize
 
 from voicebox import tools
 from voicebox.config import Settings
+from voicebox.jobs.desk import Desk, busy_message
+from voicebox.jobs.status import job_status as describe_jobs
 from voicebox.transcribe import service as transcription
 
 logger = logging.getLogger(__name__)
@@ -98,7 +100,7 @@ def create_server(
     engine: Engine,
     queue: Queue,
     supervisor: Supervisor | None,
-    scribe: "transcription.Scribe | None" = None,
+    desk: Desk | None = None,
     on_session_start: Callable[[], None] | None = None,
 ) -> MCPServer:
     session = SessionState()
@@ -153,12 +155,13 @@ def create_server(
             return f"nothing queued; {stats.finished} spoken so far"
         return f"{describe_queue(stats)}; {stats.finished} spoken so far"
 
-    if scribe is not None:
-        # The job lock is claimed for a worker that does not exist yet, so between this
-        # call returning and that worker taking the lock over, the record still names
-        # this process; without this second gate a concurrent pair would interleave in
-        # that window. Refusing rather than queueing keeps the answer immediate.
-        transcribing = asyncio.Lock()
+    if desk is not None:
+        # The job lock is claimed for a worker that does not exist yet, so between a job
+        # tool returning and that worker taking the lock over, the record still names
+        # this process; without this second gate two calls in one turn would interleave
+        # in that window. One gate for every job tool, because voicebox runs one job at a
+        # time whatever its kind. Refusing rather than queueing keeps the answer immediate.
+        starting = asyncio.Lock()
 
         @server.tool(name="transcribe", description=tools.TRANSCRIBE)
         async def transcribe(
@@ -175,11 +178,11 @@ def create_server(
                 str | None, Field(description=tools.TRANSCRIBE_TRANSLATE)
             ] = None,
         ) -> str:
-            if transcribing.locked():
-                return transcription.busy_message(scribe)
-            async with transcribing:
+            if starting.locked():
+                return busy_message(desk)
+            async with starting:
                 return await transcription.start(
-                    scribe,
+                    desk,
                     settings,
                     transcription.TranscribeRequest(
                         path=path,
@@ -191,10 +194,10 @@ def create_server(
                     ),
                 )
 
-        @server.tool(name="transcription_status", description=tools.TRANSCRIPTION_STATUS)
-        async def transcription_status(
-            job_id: Annotated[str | None, Field(description=tools.TRANSCRIPTION_JOB_ID)] = None,
+        @server.tool(name="job_status", description=tools.JOB_STATUS)
+        async def job_status(
+            job_id: Annotated[str | None, Field(description=tools.JOB_ID)] = None,
         ) -> str:
-            return transcription.status(scribe, settings, job_id)
+            return describe_jobs(desk, settings, job_id)
 
     return server

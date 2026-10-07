@@ -18,9 +18,9 @@ from pathlib import Path
 
 from speak_core.supervisor import process_is_alive
 
+from voicebox.jobs.lock import JobBusy, job_lock
+from voicebox.jobs.store import DONE, EMPTY, FAILED, Job, JobStore, TranscriptionJob
 from voicebox.transcribe.commands import Runner, ToolMissing, run_convert_command
-from voicebox.transcribe.jobs import DONE, EMPTY, FAILED, Job, JobStore
-from voicebox.transcribe.lock import TranscriptionBusy, transcription_lock
 from voicebox.transcribe.output import transcript_text
 from voicebox.transcribe.prepare import ConversionFailed, convert
 
@@ -49,7 +49,7 @@ async def run_cli(argv: Sequence[str], log: Path) -> int:
         return await process.wait()
 
 
-def cli_argv(job: Job, audio: Path) -> list[str]:
+def cli_argv(job: TranscriptionJob, audio: Path) -> list[str]:
     argv = [
         job.nemo_binary,
         "--quiet",
@@ -85,13 +85,13 @@ async def run_job(
 ) -> Job | None:
     jobs = JobStore(state_dir)
     job = jobs.read(job_id)
-    if job is None:
+    if not isinstance(job, TranscriptionJob):
         return None
     me = pid if pid is not None else os.getpid()
-    lock = transcription_lock(state_dir, is_alive=is_alive, pid=me)
+    lock = job_lock(state_dir, is_alive=is_alive, pid=me)
     try:
         lock.take_over(job.claimed_by)
-    except TranscriptionBusy as error:
+    except JobBusy as error:
         # Refused the lock, so this job never runs. Saying so is the whole of the
         # worker's answer here: without a record it would look like a worker that
         # vanished, and the session would wait out an estimate for work nobody is doing.
@@ -112,14 +112,19 @@ async def run_job(
         jobs.write(finished)
         record(finished)
     finally:
-        jobs.wav_path(job_id).unlink(missing_ok=True)
+        jobs.discard_artifacts(job_id)
         lock.release()
     return finished
 
 
 async def _transcribe(
-    jobs: JobStore, job: Job, *, run: Runner, run_cli: CliRunner, clock: Callable[[], float]
-) -> Job:
+    jobs: JobStore,
+    job: TranscriptionJob,
+    *,
+    run: Runner,
+    run_cli: CliRunner,
+    clock: Callable[[], float],
+) -> TranscriptionJob:
     audio = Path(job.source)
     if job.convert:
         audio = jobs.wav_path(job.job_id)
@@ -157,7 +162,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Nobody reads this process's output: it is detached, and its stderr is the job
     # log. Sending this module's own logging there too, and logging a traceback
     # before exiting, is what turns a worker that died into something readable -
-    # `transcription_status` prints the tail of that log next to the failure.
+    # `job_status` prints the tail of that log next to the failure.
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
     try:
         job = asyncio.run(run_job(Path(args[0]), args[1]))

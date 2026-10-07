@@ -1,0 +1,82 @@
+"""The job_status tool, minus the MCP plumbing: one report for every kind of job."""
+
+from pathlib import Path
+
+from voicebox.config import Settings
+from voicebox.jobs.desk import Desk, duration, reconcile, release_if_idle
+from voicebox.jobs.store import CRASHED, DONE, EMPTY, FAILED, Job, TranscriptionJob
+from voicebox.transcribe.output import transcript_text
+
+# Below this a job is never called wedged, however short its estimate.
+MIN_TIMEOUT_S = 300.0
+PREVIEW_CHARS = 300
+
+
+def job_status(desk: Desk, settings: Settings, job_id: str | None) -> str:
+    if job_id is None:
+        jobs = [reconcile(desk, job) for job in desk.jobs.recent()]
+        release_if_idle(desk)
+        if not jobs:
+            return "no jobs yet"
+        return "\n".join(_summary(job) for job in jobs)
+    job = desk.jobs.read(job_id)
+    if job is None:
+        return f"no job {job_id}"
+    described = _describe(desk, settings, reconcile(desk, job))
+    release_if_idle(desk)
+    return described
+
+
+def _name(job: Job) -> str:
+    return Path(job.source).name if job.source else "pasted text"
+
+
+def _summary(job: Job) -> str:
+    return f"{job.job_id}  {job.kind:13}  {job.state:8}  {_name(job)}"
+
+
+def _describe(desk: Desk, settings: Settings, job: Job) -> str:
+    if job.state in (FAILED, CRASHED):
+        tail = desk.jobs.log_tail(job.job_id)
+        return f"{job.state}: {_name(job)}: {job.error or ''}" + (f"\n{tail}" if tail else "")
+    if isinstance(job, TranscriptionJob):
+        return _transcription(desk, settings, job)
+    return f"{job.state}: {_name(job)}"
+
+
+def _transcription(desk: Desk, settings: Settings, job: TranscriptionJob) -> str:
+    name = _name(job)
+    if job.state == DONE:
+        preview = _preview(job)
+        if preview is None:
+            return (
+                f"done: {name} -> {job.output} ({job.words} words), "
+                "but the transcript is no longer at that path"
+            )
+        return f"done: {name} -> {job.output} ({job.words} words)\n{preview}"
+    if job.state == EMPTY:
+        return f"finished, but no speech was detected in {name}; output: {job.output}"
+    return _running(desk, job, settings.transcribe_timeout, name)
+
+
+def _running(desk: Desk, job: Job, configured: float | None, what: str) -> str:
+    elapsed = desk.clock() - job.created_at
+    timeout = configured if (configured or 0) > 0 else None
+    limit = timeout if timeout is not None else max(MIN_TIMEOUT_S, 4 * job.eta_s)
+    if elapsed > limit:
+        return (
+            f"running: {what} for {duration(elapsed)}, well past the "
+            f"{duration(job.eta_s)} estimate - it may be wedged"
+        )
+    remaining = max(0.0, job.eta_s - elapsed)
+    return f"running: {what}, {duration(elapsed)} elapsed, about {duration(remaining)} left"
+
+
+def _preview(job: TranscriptionJob) -> str | None:
+    """The start of a finished transcript, or None when it is no longer there: the file
+    is the user's from the moment it is written."""
+    try:
+        text = transcript_text(Path(job.output), job.format)
+    except OSError:
+        return None
+    return text[:PREVIEW_CHARS] + ("…" if len(text) > PREVIEW_CHARS else "")

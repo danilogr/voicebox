@@ -38,19 +38,19 @@ or writing a script to do it. Nothing leaves the machine.
 
 It starts a background job and returns at once with a job id, the path the
 transcript will be written to, and an estimate: roughly a minute of work for every
-seven minutes of audio. Check on it with transcription_status. Speakers are
+seven minutes of audio. Check on it with job_status. Speakers are
 labelled by default; turn diarize off for a single speaker to save about a
-quarter of the time. Only one job runs at a time.
+quarter of the time. Only one voicebox job runs at a time.
 
 The transcript is written to a file, not returned. Read the file only when you
-need more than the preview transcription_status gives."""
+need more than the preview job_status gives."""
 
-TRANSCRIPTION_STATUS = """Report on transcription jobs started with transcribe. With a job id,
-that job: still running and how long it has left, finished with its output path
-and a short preview, or failed with the reason. Without one, the recent jobs.
+JOB_STATUS = """Report on voicebox's background jobs: transcriptions, and audio files being
+written by synthesize. With a job id, that job: still running and how far it has got,
+finished with its output path (and a short preview of a transcript), or failed with the
+reason. Without one, the recent jobs of every kind.
 
-The preview is the first few hundred characters; read the output file for the
-rest."""
+Only one voicebox job runs at a time."""
 
 TRANSCRIBE_PATH = (
     "The absolute path to the audio or video file to transcribe. The MCP server's "
@@ -65,4 +65,4 @@ TRANSCRIBE_FORMAT = "text, json (word timings and speakers), srt, or vtt."
 TRANSCRIBE_DIARIZE = "Label who is speaking. On by default; about 38% slower."
 TRANSCRIBE_LANGUAGE = "Language code of the speech, e.g. en or pt. Detected when omitted."
 TRANSCRIBE_TRANSLATE = "Translate the transcript into this language code."
-TRANSCRIPTION_JOB_ID = "A job id from transcribe. Omit it to list recent jobs."
+JOB_ID = "A job id from transcribe or synthesize. Omit it to list recent jobs."

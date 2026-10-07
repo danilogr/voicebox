@@ -5,19 +5,20 @@ from pathlib import Path
 
 import pytest
 
-from voicebox.transcribe.jobs import (
+from voicebox.jobs.store import (
     DONE,
     RETENTION_S,
     RUNNING,
-    Job,
+    TRANSCRIPTION,
     JobStore,
+    TranscriptionJob,
     eta_seconds,
     new_job_id,
 )
 from voicebox.transcribe.output import output_path, transcript_text
 
 
-def job(**overrides: object) -> Job:
+def job(**overrides: object) -> TranscriptionJob:
     fields = dict(
         job_id="abc123",
         state=RUNNING,
@@ -36,7 +37,7 @@ def job(**overrides: object) -> Job:
         claimed_by=100,
         created_at=1000.0,
     )
-    return Job(**{**fields, **overrides})
+    return TranscriptionJob(**{**fields, **overrides})
 
 
 def test_a_job_round_trips(tmp_path):
@@ -114,7 +115,7 @@ def test_a_prune_failure_does_not_break_recent(tmp_path, monkeypatch):
 def test_a_non_numeric_finished_at_does_not_break_recent(tmp_path):
     """A hand-edited or corrupted record can hold anything under `finished_at`; the
     subtraction that ages it against `RETENTION_S` must not raise a `TypeError` out
-    of a `transcription_status` call."""
+    of a `job_status` call."""
     store = JobStore(tmp_path)
     store.write(job(state=DONE, finished_at=time.time()))
     path = store.record_path("abc123")
@@ -170,9 +171,15 @@ def test_the_estimate_uses_the_measured_ratios():
     assert eta_seconds(950.0, diarize=False) == pytest.approx(100.0)
 
 
-def test_job_ids_are_short_and_distinct():
+def test_job_ids_are_distinct_dashed_uuid4s():
+    """The job id is telemetry's idempotency key, which the contract types as a uuid."""
+    import uuid
+
     ids = {new_job_id() for _ in range(50)}
-    assert len(ids) == 50 and all(len(i) == 12 for i in ids)
+    assert len(ids) == 50
+    for job_id in ids:
+        assert uuid.UUID(job_id).version == 4
+        assert job_id == str(uuid.UUID(job_id))
 
 
 def test_a_new_transcript_never_overwrites_an_old_one(tmp_path):
@@ -201,3 +208,32 @@ def test_the_words_come_out_of_every_format(tmp_path, fmt, content, expected):
     path = tmp_path / f"t.{fmt}"
     path.write_text(content)
     assert transcript_text(path, fmt) == expected
+
+
+def test_records_live_under_jobs_and_carry_their_kind(tmp_path):
+    store = JobStore(tmp_path)
+    record = job()
+    store.write(record)
+    assert store.record_path(record.job_id).parent == tmp_path / "jobs"
+    assert json.loads(store.record_path(record.job_id).read_text())["kind"] == TRANSCRIPTION
+    assert isinstance(store.read(record.job_id), TranscriptionJob)
+
+
+def test_a_record_of_an_unknown_kind_reads_as_none(tmp_path):
+    store = JobStore(tmp_path)
+    record = job()
+    store.write(record)
+    data = json.loads(store.record_path(record.job_id).read_text())
+    store.record_path(record.job_id).write_text(json.dumps({**data, "kind": "karaoke"}))
+    assert store.read(record.job_id) is None
+
+
+def test_discarding_artifacts_leaves_the_record_and_log(tmp_path):
+    store = JobStore(tmp_path)
+    record = job()
+    store.write(record)
+    store.wav_path(record.job_id).write_bytes(b"RIFF")
+    store.log_path(record.job_id).write_text("log")
+    store.discard_artifacts(record.job_id)
+    assert not store.wav_path(record.job_id).exists()
+    assert store.read(record.job_id) is not None and store.log_path(record.job_id).exists()

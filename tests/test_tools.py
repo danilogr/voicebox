@@ -3,27 +3,27 @@ import asyncio
 from fakes import FakeEngine, FakeQueue
 from voicebox import tools
 from voicebox.config import Settings
+from voicebox.jobs.desk import Desk, build_desk
+from voicebox.jobs.lock import job_lock
+from voicebox.jobs.store import JobStore
 from voicebox.server import create_server
-from voicebox.transcribe.jobs import JobStore
-from voicebox.transcribe.lock import transcription_lock
 from voicebox.transcribe.probe import Probe
-from voicebox.transcribe.service import Scribe, build_scribe
 
 SPEECH_TOOLS = {"speak", "stop_speaking", "speech_status"}
 
 
-def server(scribe=None) -> object:
+def server(desk=None) -> object:
     return create_server(
         settings=Settings.from_env({}, platform="darwin"),
         engine=FakeEngine(),
         queue=FakeQueue(),
         supervisor=None,
-        scribe=scribe,
+        desk=desk,
     )
 
 
-async def tools_by_name(scribe=None) -> dict:
-    return {tool.name: tool for tool in await server(scribe).list_tools()}
+async def tools_by_name(desk=None) -> dict:
+    return {tool.name: tool for tool in await server(desk).list_tools()}
 
 
 async def test_without_transcription_only_the_speech_tools_exist():
@@ -51,10 +51,10 @@ async def test_every_tool_is_described():
         assert tool.description
 
 
-async def test_the_transcription_tools_exist_when_a_scribe_is_given(tmp_path):
+async def test_the_transcription_tools_exist_when_a_desk_is_given(tmp_path):
     settings = Settings.from_env({"VOICEBOX_STATE_DIR": str(tmp_path)}, platform="darwin")
-    by_name = await tools_by_name(build_scribe(settings))
-    assert set(by_name) == SPEECH_TOOLS | {"transcribe", "transcription_status"}
+    by_name = await tools_by_name(build_desk(settings))
+    assert set(by_name) == SPEECH_TOOLS | {"transcribe", "job_status"}
     assert "instead of Whisper" in by_name["transcribe"].description
     fmt = by_name["transcribe"].input_schema["properties"]["format"]
     assert set(fmt["enum"]) == {"text", "json", "srt", "vtt"}
@@ -84,9 +84,9 @@ async def test_two_transcribe_calls_never_run_together(tmp_path):
         engine=FakeEngine(),
         queue=FakeQueue(),
         supervisor=None,
-        scribe=Scribe(
+        desk=Desk(
             jobs=JobStore(tmp_path / "state"),
-            lock=lambda: transcription_lock(tmp_path / "state", is_alive=lambda pid: True),
+            lock=lambda: job_lock(tmp_path / "state", is_alive=lambda pid: True),
             is_alive=lambda pid: True,
             spawn=spawn,
             probe=probe,
@@ -128,9 +128,9 @@ async def test_a_second_transcribe_call_is_refused_without_waiting_for_the_first
         engine=FakeEngine(),
         queue=FakeQueue(),
         supervisor=None,
-        scribe=Scribe(
+        desk=Desk(
             jobs=JobStore(tmp_path / "state"),
-            lock=lambda: transcription_lock(tmp_path / "state", is_alive=lambda pid: True),
+            lock=lambda: job_lock(tmp_path / "state", is_alive=lambda pid: True),
             is_alive=lambda pid: True,
             spawn=spawn,
             probe=probe,
@@ -149,3 +149,10 @@ async def test_a_second_transcribe_call_is_refused_without_waiting_for_the_first
 
     release.set()
     assert (await first).startswith("Transcribing")
+
+
+async def test_job_status_answers_for_an_empty_store(tmp_path):
+    settings = Settings.from_env({"VOICEBOX_STATE_DIR": str(tmp_path)}, platform="darwin")
+    served = server(build_desk(settings))
+    result = await served.call_tool("job_status", {})
+    assert result.content[0].text == "no jobs yet"

@@ -1,8 +1,7 @@
-"""One JSON record per transcription job, under `<state_dir>/transcriptions/`.
+"""One JSON record per job, whatever its kind, under `<state_dir>/jobs/`.
 
-The tool writes a record when a job starts and the worker writes it again when
-the job ends, so status reads a state rather than inferring one from a pid and a
-file.
+The tool writes a record when it accepts a job and the detached worker writes every
+later version, so status reads a state rather than inferring one from a pid and a file.
 """
 
 import json
@@ -17,26 +16,47 @@ logger = logging.getLogger(__name__)
 
 RUNNING = "running"
 DONE = "done"
-EMPTY = "empty"  # finished, and the model heard no speech
+EMPTY = "empty"  # a transcription that finished and heard no speech
 FAILED = "failed"
 CRASHED = "crashed"  # the worker died without writing an outcome
 
-# Realtime multiples measured on an M5, cold, including model load (spec, Goal).
+TRANSCRIPTION = "transcription"
+
+# Realtime multiples measured on an M5, cold, including model load (performance.md).
 REALTIME_RATIO_DIARIZED = 6.9
 REALTIME_RATIO_PLAIN = 9.5
 
-# How long a finished job's record and log stay in the directory before `recent()`
-# prunes them - generous for a human looking back at what they transcribed.
-RETENTION_S = 14 * 24 * 60 * 60  # two weeks
+# How long a finished job's record and log stay before `recent()` prunes them -
+# generous for a human looking back at what they transcribed.
+RETENTION_S = 14 * 24 * 60 * 60
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, kw_only=True)
 class Job:
+    """What every job records, whatever its kind. Each kind is a subclass."""
+
     job_id: str
+    kind: str
     state: str
     source: str
     output: str
     format: str
+    nemo_binary: str
+    claimed_by: int
+    created_at: float
+    worker_pid: int | None = None
+    finished_at: float | None = None
+    error: str | None = None
+
+    @property
+    def eta_s(self) -> float:
+        """Seconds of work this job was expected to take. Each kind estimates its own."""
+        raise NotImplementedError
+
+
+@dataclass(frozen=True, kw_only=True)
+class TranscriptionJob(Job):
+    kind: str = TRANSCRIPTION
     diarize: bool
     language: str | None
     translate_to: str | None
@@ -45,12 +65,6 @@ class Job:
     codec: str | None
     convert: bool
     asr_model: str
-    nemo_binary: str
-    claimed_by: int
-    created_at: float
-    worker_pid: int | None = None
-    finished_at: float | None = None
-    error: str | None = None
     words: int | None = None
     chars: int | None = None
     asr_ms: int | None = None
@@ -60,18 +74,23 @@ class Job:
         return eta_seconds(self.duration_s, self.diarize)
 
 
+# Every kind a record may hold, by the `kind` it is written with.
+JOB_TYPES: dict[str, type[Job]] = {TRANSCRIPTION: TranscriptionJob}
+
+
 def eta_seconds(duration_s: float, diarize: bool) -> float:
     ratio = REALTIME_RATIO_DIARIZED if diarize else REALTIME_RATIO_PLAIN
     return duration_s / ratio
 
 
 def new_job_id() -> str:
-    return uuid.uuid4().hex[:12]
+    """A dashed uuid4: the job store's id is the telemetry contract's `job_id`."""
+    return str(uuid.uuid4())
 
 
 class JobStore:
     def __init__(self, state_dir: Path, *, clock: Callable[[], float] = time.time) -> None:
-        self._dir = Path(state_dir) / "transcriptions"
+        self._dir = Path(state_dir) / "jobs"
         self._clock = clock
 
     def record_path(self, job_id: str) -> Path:
@@ -97,16 +116,13 @@ class JobStore:
         """The pid the tool's own spawn returned, in a file only the tool ever writes.
 
         Kept apart from the job record so recording it is never a read-modify-write
-        against a worker writing that same record: whatever this file holds, the
-        record's own history - up to and including a terminal state the worker has
-        already written - is never touched by it.
+        against a worker writing that same record.
         """
         self._dir.mkdir(parents=True, exist_ok=True)
         self.pid_path(job_id).write_text(str(pid))
 
     def read_pid(self, job_id: str) -> int | None:
-        """The pid `write_pid` wrote, or `None` for anything short of a clean int -
-        no file yet, an empty one, or content that got corrupted. Never raises."""
+        """The pid `write_pid` wrote, or `None` for anything short of a clean int."""
         try:
             return int(self.pid_path(job_id).read_text().strip())
         except (OSError, ValueError):
@@ -119,18 +135,18 @@ class JobStore:
             return None
         if not isinstance(data, dict):
             return None
+        kind = data.get("kind")
+        job_type = JOB_TYPES.get(kind) if isinstance(kind, str) else None
+        if job_type is None:
+            return None
         try:
-            return Job(**{f.name: data[f.name] for f in fields(Job) if f.name in data})
+            return job_type(**{f.name: data[f.name] for f in fields(job_type) if f.name in data})
         except TypeError:
             return None
 
     def running(self) -> list[Job]:
-        """Every record that still says running - all of them, not a page.
-
-        `recent` answers "what has this install been doing lately" and stops at ten;
-        deciding that nothing is running has to read them all, because the eleventh
-        record is as able to hold the lock as the first.
-        """
+        """Every record that still says running - all of them, not a page: deciding that
+        nothing is running has to read them all."""
         if not self._dir.is_dir():
             return []
         return [
@@ -146,19 +162,21 @@ class JobStore:
         jobs = [job for path in self._dir.glob("*.json") if (job := self.read(path.stem))]
         return sorted(jobs, key=lambda j: j.created_at, reverse=True)[:limit]
 
+    def discard_artifacts(self, job_id: str) -> None:
+        """Delete what a job holds only while it runs (converted audio), never its record
+        or log. Never raises."""
+        try:
+            self.wav_path(job_id).unlink(missing_ok=True)
+        except OSError as error:
+            logger.debug("could not discard the artifacts of job %s: %s", job_id, error)
+
     def _prune(self) -> None:
         """Reclaim what a finished job no longer needs.
 
-        Any job that is not running loses its converted `.wav` at once - the audio
-        is 16 kHz mono s16, about 115 MB per hour, and nothing but this call ever
-        reclaims one left behind by a worker that never reached its own `finally`
-        (a `SIGKILL`, an OOM kill). A job's record and log outlive it for
-        `RETENTION_S` before those go too, so a status check still answers "what
-        did I transcribe last week". The pid sidecar goes with them. Never touches a
-        running job, and never raises: a `transcription_status` call failing because
-        housekeeping hit a locked or missing file, or a hand-edited record whose
-        `finished_at` is not a number, would be worse than the clutter it is trying
-        to prevent.
+        Any job that is not running loses its artifacts at once - nothing but this call
+        reclaims ones a worker left behind when it never reached its own `finally` (a
+        SIGKILL, an OOM kill). Its record, log and pid sidecar outlive it for
+        `RETENTION_S`. Never touches a running job and never raises.
         """
         now = self._clock()
         try:
@@ -166,13 +184,13 @@ class JobStore:
                 job = self.read(path.stem)
                 if job is None or job.state == RUNNING:
                     continue
-                self.wav_path(job.job_id).unlink(missing_ok=True)
+                self.discard_artifacts(job.job_id)
                 if job.finished_at is not None and now - job.finished_at >= RETENTION_S:
                     self.record_path(job.job_id).unlink(missing_ok=True)
                     self.log_path(job.job_id).unlink(missing_ok=True)
                     self.pid_path(job.job_id).unlink(missing_ok=True)
         except (OSError, TypeError) as error:
-            logger.debug("could not prune old transcription jobs: %s", error)
+            logger.debug("could not prune old jobs: %s", error)
 
     def log_tail(self, job_id: str, lines: int = 8) -> str:
         try:
