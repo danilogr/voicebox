@@ -45,68 +45,53 @@ three requests fired together finished at 3.4 s, 7.3 s and 10.6 s for a wall clo
 
 ## Synthesis chunk size
 
-`synthesize` sends a long text to the speech server in chunks, because one request has
-to finish inside its timeout and a long input may read worse. Three passages of plain
-prose were synthesized at each request size with MagpieTTS (voice `John`) on the Apple M5
-on Metal, by a private NeMo-Speech.cpp 0.2.0 server started with the plugin's flags and
-warmed first, then transcribed back with the same server's Nemotron 3.5 and scored
-against the input. Each reading is the longest run of whole sentences from the start of
-its passage that fits the size, so a passage's longer readings begin with its shorter
-ones:
+`synthesize` sends one sentence per request, and cuts a sentence longer than 250
+characters at its clauses (`CHUNK_CHARS`, `chunk_text`). MagpieTTS repeats and garbles
+words when one request holds several sentences, and the errors are audible.
 
-| Request size (characters) | Synthesis (median / slowest) | Audio | Realtime factor | Word error rate (worst) |
-|---|---|---|---|---|
-| 47–82 (one sentence) | 1.4 s / 2.1 s | 2.7 s | 0.50x | 12.5% |
-| 282–492 | 12.8 s / 16.5 s | 24.3 s | 0.52x | 9.7% |
-| 941–999 | 33.4 s / 34.7 s | 63.9 s | 0.52x | 8.1% |
-| 1385–1456 | 46.9 s / 49.7 s | 89.5 s | 0.52x | 8.4% |
+Two paragraphs of plain prose (961 and 4,229 characters, no code or markup) were
+synthesized with MagpieTTS (voice `John`) on the Apple M5 on Metal, by the running
+NeMo-Speech.cpp server with its fixed seed, cut into requests four ways, joined and
+transcribed back with the same server's Nemotron 3.5. "Extra words" counts words heard
+that the text does not hold. The rest of the differences are mostly the recogniser's
+spelling (`harbour` as `harbor`, `stationmaster` as `station master`):
 
-The word error rate includes the recogniser's own mistakes, so the one-sentence rows are
-the baseline. The rule: the largest size whose worst passage stays within 5 points of the
-baseline's worst, and whose audio length per character stays within ±25 % of the
-baseline (a skipped or repeated passage moves both). That is 1500 characters per
-request. Four times the slowest request at that size, at least a minute, is 199 s: the
-least any request waits (below). The estimate `synthesize` returns uses the median
-throughput at that size, 29.5 characters a second, plus 10 s when the server has to start
-first.
+| Requests | 961-char paragraph: extra words | 4,229-char paragraph: extra words | 4,229: synthesis time |
+|---|---|---|---|
+| Sentences packed up to 1,500 characters (1 and 3 requests) | 10 | 30 | 132 s |
+| Sentences packed up to 250 characters (21 requests) | | 11 | 118 s |
+| One sentence each (6 and 36 requests, longest 330 and 261) | 4 | 0 | 110 s |
+| One sentence each, cut at clauses past 250 (37 requests) | | 1 | 110 s |
+| One sentence each, cut at clauses past 160 (9 and 44 requests) | 0 | 1 | |
+
+Packed requests repeat words (`get get done`, `size size`, `machine machine`), say a
+sentence's last words again after it (`again. Again.`, `button button`), add syllables
+between sentences (`Nanda`, `Ishe`, `them the barked`) and garble some (`darker` as
+`dark urk or be`, `Nobody remembers` as `and do you know everybody remembers`). A
+listener heard `get get` and the repeated `again` in the 1,500-character reading. One
+sentence a request removes nearly all of it; the 330-character sentence still said its
+last four words twice, which is why a sentence past 250 characters is cut. Shorter
+requests are also faster: the packed readings spend time on the extra speech.
+
+The estimate `synthesize` returns uses the one-sentence throughput, 38 characters a
+second (4,229 characters in 110 s), plus 10 s when the server has to start first.
+
+A sweep of three passages at four request sizes, each reading the longest run of whole
+sentences from the start of its passage that fits the size, sets the least any request waits (199 s, four times the slowest
+1,385–1,456-character request) and the audio-per-character bound below:
+
+| Request size (characters) | Synthesis (median / slowest) | Audio | Realtime factor |
+|---|---|---|---|
+| 47–82 (one sentence) | 1.4 s / 2.1 s | 2.7 s | 0.50x |
+| 282–492 | 12.8 s / 16.5 s | 24.3 s | 0.52x |
+| 941–999 | 33.4 s / 34.7 s | 63.9 s | 0.52x |
+| 1385–1456 | 46.9 s / 49.7 s | 89.5 s | 0.52x |
 
 The output is 22,050 Hz 16-bit mono, 44,100 bytes a second, so one WAV file's 4 GiB
 holds about 27 hours. `synthesize` refuses a text before any work starts when its
 estimate passes that: 80 ms of audio a character, rounded up from the most any reading
-here made (79 ms, the 282-character reading below), plus 700 ms for each paragraph
-break. That is about 1.2 million characters of prose.
-
-"Reads cleanly" here means no measurable regression against a noisy baseline, judged
-from transcripts alone; nobody listened to the audio. The baseline's worst is one
-spelling difference in an eight-word sentence (`harbour` heard as `harbor`), which puts
-the word-error bar at 17.5 %, and no size came near it: the bar excluded nothing, and
-the pace test was the only one that discriminated. It excluded the 282–492 row on one
-passage, whose 282-character reading runs 41 % longer per character than the baseline
-because a 2.1 s pause near its start, which every longer reading of that passage also
-holds, weighs more in a short reading. 1500 is the top of the sweep, not a measured
-limit: no larger size was tried.
-
-The transcripts show defects that single sentences do not. Every size from 282–492 up
-shares the ones in the passages' opening sentences, because the readings share those
-prefixes: false starts and stray syllables at sentence joins (`peda` before `people`,
-`than a dad` before `the first lesson`, `nodindo`, `adelana`), and the last word or
-words of a sentence heard twice (`reasons reasons`). That echo also lands on the end of
-a request in four of the nine readings above one sentence (`worse worse`, `reasons
-reasons`, `music music`, `that is fine that is fine`) and in none of the three single
-sentences. The 941–999 and 1385–1456 readings carry further defects in the text only
-they contain: `a faint` missing (a possible two-word skip, or a recogniser miss),
-`grease` heard as `pedigrees a greece`, stray `uh` and `but`, and, in the 1385–1456
-readings only, `yet` missing. The error rate does not grow
-with length: these defects sit where the text sits, so a smaller chunk would not remove
-them, and it would add request ends for the echo to land on.
-
-Repeated words are not tied to request ends. Two voice-overs written through
-`synthesize` itself (a 961-character paragraph in one chunk, and a 4,229-character one
-in three) and transcribed back the same way had a word heard twice at two of their four
-chunk ends (`size size`, and a final `again` said again) and inside chunks, mid-sentence
-and at a sentence's end (`get get`, `machine machine`, `button button`). Transcripts
-alone cannot say whether the speech model or the recogniser made each repeat; listening
-to the audio would.
+here made (79 ms, a 282-character reading holding a 2.1 s pause), plus 700 ms for each
+paragraph break. That is about 1.2 million characters of prose.
 
 The speech server finishes a request its client has given up on. On the M5 against the
 running server, a short request took 0.73 s alone and 19.9 s when sent right after
@@ -116,16 +101,16 @@ use and holds up every other session using the server.
 
 So a request's timeout follows the machine instead (`request_timeout_s` in
 `synthesize/limits.py`). The 199 s figure assumes Metal. On the CPU backend, at about
-0.07x realtime ("Metal against CPU" below), a 1500-character request of about 90 s of
-audio takes around 21 minutes. A request may take four times what the slowest pace this
-job has shown would need, counting only requests of at least 200 characters: a short
-request is mostly fixed cost (a 6-character heading runs at about 8 characters a
-second) or, sent while another session holds the server, mostly waiting. Before such a
-request has finished, the pace is the CPU backend's, about 1.2 characters a second. No
-request waits longer than four times what the CPU backend's pace would need, or 45
-minutes, and none less than 199 s. A request that times out fails the job with reason
-`timeout`, and is not retried. The time left that `job_status` reports is the characters
-still to speak at the job's overall throughput so far.
+0.07x realtime ("Metal against CPU" below), a 250-character request takes around 3.5
+minutes. A request may take four times what the slowest pace this job has shown would
+need, counting only requests of at least 100 characters: a shorter request is mostly
+fixed cost (a 6-character heading runs at about 8 characters a second) or, sent while
+another session holds the server, mostly waiting. Before such a request has finished,
+the pace is the CPU backend's, about 1.2 characters a second. No request waits longer
+than four times what the CPU backend's pace would need, or 45 minutes, and none less
+than 199 s. A request that times out fails the job with reason `timeout`, and is not
+retried. The time left that `job_status` reports is the characters still to speak at the
+job's overall throughput so far.
 
 ## Transcription
 

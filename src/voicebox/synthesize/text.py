@@ -39,8 +39,9 @@ _UNDERSCORE = re.compile(r"(?<!\w)(_{1,3})(?=\S)(.+?)(?<=\S)\1(?!\w)")
 _STRIKE = re.compile(r"~~(?=\S)(.+?)(?<=\S)~~")
 
 # Sentence ends (with any closing quote or bracket) and clause breaks, followed by the
-# whitespace a chunk may be cut at. Typographic characters are written as escapes.
-_SENTENCE_END = re.compile(r"[.!?\u2026][\"'\u201d\u2019)\]]*(\s+)")
+# whitespace a chunk may be cut at. A sentence end followed by a lowercase word is an
+# abbreviation (`e.g. here`), not an end. Typographic characters are written as escapes.
+_SENTENCE_END = re.compile(r"[.!?\u2026][\"'\u201d\u2019)\]]*(\s+)(?![a-z])")
 _CLAUSE_END = re.compile(r"[,;:\u2014\u2013](\s+)")
 _WORD = re.compile(r"\w")
 _FINAL = re.compile(r"[.!?\u2026][\"'\u201d\u2019)\]]*$")
@@ -192,7 +193,11 @@ class Chunk:
 
 
 def chunk_text(text: str, *, max_chars: int) -> list[Chunk]:
-    """`text`'s paragraphs, each packed into pieces of at most `max_chars` characters.
+    """`text`'s paragraphs, cut into pieces of at most `max_chars` characters: one
+    sentence a piece, because MagpieTTS repeats and garbles words when one request holds
+    several (harness/performance.md). A sentence over `max_chars` is cut at its clauses,
+    then its words. A one-word sentence, usually an abbreviation such as `Dr.`, goes with
+    the sentence after it.
 
     A piece holding no word (only punctuation) is not spoken.
     Every chunk ends in sentence-final punctuation so the speech model closes the
@@ -207,7 +212,7 @@ def chunk_text(text: str, *, max_chars: int) -> list[Chunk]:
     budget = max_chars - 1
     chunks: list[Chunk] = []
     for paragraph in paragraphs(text):
-        pieces = [p for p in _pack(_units(paragraph, budget), budget) if _WORD.search(p)]
+        pieces = [p for p in _sentences(paragraph, budget) if _WORD.search(p)]
         chunks += [Chunk(_close(piece), i == len(pieces) - 1) for i, piece in enumerate(pieces)]
     return chunks
 
@@ -228,16 +233,35 @@ def _split_after(pattern: re.Pattern[str], text: str) -> list[str]:
     return [piece for piece in pieces if piece]
 
 
-def _units(paragraph: str, max_chars: int) -> list[str]:
-    """Sentences, or for a sentence over the limit its clauses, or their words: every
-    unit at most `max_chars` long."""
-    units: list[str] = []
+def _sentences(paragraph: str, max_chars: int) -> list[str]:
+    """One piece a sentence, a one-word sentence joined to the next when both fit, and a
+    sentence over the limit as its clauses (or their words) packed up to it: every piece
+    at most `max_chars` long, and no two sentences in one unless the first is one word."""
+    pieces: list[str] = []
+    held = ""  # a one-word sentence waiting for the sentence after it
     for sentence in _split_after(_SENTENCE_END, paragraph):
-        if len(sentence) <= max_chars:
-            units.append(sentence)
-            continue
-        for clause in _split_after(_CLAUSE_END, sentence):
-            units += [clause] if len(clause) <= max_chars else _words(clause, max_chars)
+        if held:
+            if len(held) + 1 + len(sentence) <= max_chars:
+                sentence = f"{held} {sentence}"
+            else:
+                pieces.append(held)
+            held = ""
+        if " " not in sentence and len(sentence) <= max_chars:
+            held = sentence
+        elif len(sentence) <= max_chars:
+            pieces.append(sentence)
+        else:
+            pieces += _pack(_clauses(sentence, max_chars), max_chars)
+    if held:
+        pieces.append(held)
+    return pieces
+
+
+def _clauses(sentence: str, max_chars: int) -> list[str]:
+    """`sentence`'s clauses, a clause over `max_chars` cut into its words."""
+    units: list[str] = []
+    for clause in _split_after(_CLAUSE_END, sentence):
+        units += [clause] if len(clause) <= max_chars else _words(clause, max_chars)
     return units
 
 

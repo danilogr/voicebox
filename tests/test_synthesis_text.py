@@ -120,11 +120,11 @@ def test_short_paragraphs_are_one_chunk_each_and_end_their_paragraph():
     ]
 
 
-def test_sentences_are_packed_up_to_the_limit_and_never_split_needlessly():
-    text = "Aaa aaa. Bbb bbb. Ccc ccc. Ddd ddd."
-    chunks = chunk_text(text, max_chars=18)
-    assert [c.text for c in chunks] == ["Aaa aaa. Bbb bbb.", "Ccc ccc. Ddd ddd."]
-    assert [c.paragraph_end for c in chunks] == [False, True]
+def test_every_sentence_is_a_chunk_of_its_own_however_much_room_is_left():
+    text = "Aaa aaa. Bbb bbb! Ccc ccc? Ddd ddd."
+    chunks = chunk_text(text, max_chars=1000)
+    assert [c.text for c in chunks] == ["Aaa aaa.", "Bbb bbb!", "Ccc ccc?", "Ddd ddd."]
+    assert [c.paragraph_end for c in chunks] == [False, False, False, True]
 
 
 def test_a_long_sentence_is_split_at_clauses_before_words():
@@ -133,6 +133,35 @@ def test_a_long_sentence_is_split_at_clauses_before_words():
         "one two three.",
         "four five six.",
         "seven eight nine.",
+    ]
+
+
+def test_a_long_sentences_clauses_are_packed_but_never_with_the_next_sentence():
+    text = "one, two, three four five six seven. Eight."
+    assert [c.text for c in chunk_text(text, max_chars=30)] == [
+        "one, two.",
+        "three four five six seven.",
+        "Eight.",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Dr. Smith arrived. He sat.", ["Dr. Smith arrived.", "He sat."]),
+        ("It rained, e.g. here. Then it stopped.", ["It rained, e.g. here.", "Then it stopped."]),
+        ("He left. Yes. Then she did.", ["He left.", "Yes. Then she did."]),
+        ("He left. Yes.", ["He left.", "Yes."]),
+    ],
+)
+def test_a_one_word_sentence_goes_with_the_sentence_after_it(text, expected):
+    assert [c.text for c in chunk_text(text, max_chars=1000)] == expected
+
+
+def test_a_one_word_sentence_stands_alone_when_the_next_would_not_fit_with_it():
+    assert [c.text for c in chunk_text("Dr. Smith arrived late.", max_chars=20)] == [
+        "Dr.",
+        "Smith arrived late.",
     ]
 
 

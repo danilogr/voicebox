@@ -342,14 +342,15 @@ async def paced(state_dir: Path, server: PacedServer):
 
 
 # A paragraph of 1,364 characters: one full chunk.
-FULL = " ".join(["This sentence is here to fill the chunk up."] * 31)
+# One sentence just under CHUNK_CHARS: a full request.
+FULL = " ".join(["this clause is here to fill the chunk up"] * 6).capitalize() + "."
 LONG = "\n\n".join([FULL] * 3)
 WITH_HEADINGS = "\n\n".join(["Intro", FULL, "Next", FULL, "End", FULL])
 
 
 async def test_a_cpu_only_machine_finishes_its_full_chunks(tmp_path):
     staged(tmp_path, LONG)
-    server = PacedServer(rate=1.2)  # about 0.07x realtime: 19 minutes a chunk
+    server = PacedServer(rate=1.2)  # about 0.07x realtime: 3.4 minutes a chunk
     finished = await paced(tmp_path, server)
     assert finished.state == DONE and finished.chunks_done == 3
     assert server.timeouts == [request_timeout_s(len(FULL), None)] + 2 * [
@@ -364,18 +365,20 @@ async def test_the_slowest_full_request_sets_later_timeouts(tmp_path):
 
     class Slowing(PacedServer):
         async def synthesize(self, text, *, voice) -> bytes:
-            self._rate = 10.0 if len(self.texts) == 1 else 30.0
+            self._rate = 2.0 if len(self.texts) == 1 else 30.0
             return await super().synthesize(text, voice=voice)
 
     server = Slowing(rate=30.0)
     finished = await paced(tmp_path, server)
-    assert finished.slowest_chars_per_s == pytest.approx(10.0)
-    assert server.timeouts == [
-        request_timeout_s(len(FULL), None),
-        request_timeout_s(len(FULL), 30.0),
-        request_timeout_s(len(FULL), 10.0),
-    ]
-    assert server.timeouts[2] == pytest.approx(4 * len(FULL) / 10.0)
+    assert finished.slowest_chars_per_s == pytest.approx(2.0)
+    assert server.timeouts == pytest.approx(
+        [
+            request_timeout_s(len(FULL), None),
+            request_timeout_s(len(FULL), 30.0),
+            request_timeout_s(len(FULL), 2.0),
+        ]
+    )
+    assert server.timeouts[2] == pytest.approx(4 * len(FULL) / 2.0)
 
 
 async def test_short_requests_do_not_skew_the_pace(tmp_path):
@@ -386,9 +389,9 @@ async def test_short_requests_do_not_skew_the_pace(tmp_path):
     full_pace = len(FULL) / (0.7 + len(FULL) / 45.0)
     assert finished.slowest_chars_per_s == pytest.approx(full_pace)
     assert server.timeouts[-1] == REQUEST_TIMEOUT_S  # 4 x 31 s is under the floor
-    # the estimate counts every character over all the time spent: about 43 chars/s,
-    # where the headings' own pace (~8 chars/s) would make it five times longer
-    assert finished.eta_s < finished.chars / 40
+    # the estimate counts every character over all the time spent: about 36 chars/s,
+    # where the headings' own pace (~8 chars/s) would make it four times longer
+    assert finished.eta_s < finished.chars / 30
 
 
 async def test_a_short_first_request_stuck_behind_other_work_does_not_skew_the_pace(tmp_path):
@@ -402,7 +405,7 @@ async def test_a_short_first_request_stuck_behind_other_work_does_not_skew_the_p
 
 async def test_a_full_request_stuck_behind_other_work_is_bounded_by_the_cpu_pace(tmp_path):
     staged(tmp_path, LONG)
-    server = PacedServer(rate=45.0, queued={1: 2000.0})  # about 0.68 chars/s
+    server = PacedServer(rate=45.0, queued={1: 600.0})  # about 0.4 chars/s
     finished = await paced(tmp_path, server)
     assert finished.state == DONE
     assert server.timeouts[1:] == 2 * [

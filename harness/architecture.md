@@ -131,12 +131,12 @@ their design is in its `harness/architecture.md`. This document covers voicebox.
   required at call time: the server answers, or its binary resolves and voicebox may
   start it.
 
-- **No text is ever dropped, and chunk size is measured.** One request must finish inside
-  its timeout and long inputs may read worse, so the text is sent in chunks; the size is
-  the largest that read back as cleanly as single sentences on this machine
-  (`performance.md`). Chunks follow paragraphs, then sentences, clauses and words; a word
-  longer than a chunk is cut, never dropped (so text without spaces is cut at the size
-  limit). Markdown loses only its markup, list numbers included; fenced code is skipped
+- **No text is ever dropped, and each request is one sentence.** MagpieTTS repeats and
+  garbles words when one request holds several sentences (`performance.md`), so the text
+  is sent a sentence at a time, and a sentence over 250 characters is cut at its clauses,
+  then its words. A one-word sentence (`Dr.`) goes with the next, and a full stop before
+  a lowercase word (`e.g. this`) does not end a sentence. A word longer than a chunk is
+  cut, never dropped (so text without spaces is cut at the size limit). Markdown loses only its markup, list numbers included; fenced code is skipped
   whole, because code read aloud is noise in a voice-over (as `/voicebox:narrate`
   already skips it).
 

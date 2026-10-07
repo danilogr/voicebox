@@ -115,11 +115,11 @@ the speech server decides its arguments, so keep them identical.
 ## Limits
 
 - One voicebox job runs at a time; a second request is refused with the running job's id.
-- Voice-overs are sent to the speech server in chunks of a measured size
-  ([harness/performance.md](harness/performance.md)). Synthesized speech sometimes
-  repeats a word or two, at the end of a chunk and inside one; they were found by
-  transcribing the audio back, so whether the speech model or the recogniser made each
-  one is not settled.
+- Voice-overs are sent to the speech server one sentence at a time, because the speech
+  model repeats and garbles words when one request holds several
+  ([harness/performance.md](harness/performance.md)). A sentence over 250 characters is
+  cut at its commas, with a short pause where it is cut. A word is still occasionally
+  repeated.
 - A voice-over is one WAV file (encoded from it for m4a and mp3), and a WAV file holds
   about 27 hours of audio: `synthesize` refuses text estimated to need more, which is
   about 1.2 million characters of prose.
