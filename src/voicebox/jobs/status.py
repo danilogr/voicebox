@@ -14,6 +14,7 @@ from voicebox.jobs.store import (
     TranscriptionJob,
 )
 from voicebox.synthesize.limits import COLD_START_S, FIRST_REQUEST_CEILING_S, WARMUP_TIMEOUT_S
+from voicebox.telemetry.rows import UUID4
 from voicebox.transcribe.output import transcript_text
 
 # Below this a job is never called wedged, however short its estimate.
@@ -28,6 +29,10 @@ def job_status(desk: Desk, settings: Settings, job_id: str | None) -> str:
         if not jobs:
             return "no jobs yet"
         return "\n".join(_summary(job) for job in jobs)
+    if not UUID4.fullmatch(job_id):
+        # The id becomes a path under the state directory; one that is not a job id could
+        # name a file anywhere, and a crashed-looking record there would be acted on.
+        return f"no job {job_id}: a job id is the one transcribe or synthesize answered with"
     job = desk.jobs.read(job_id)
     if job is None:
         return f"no job {job_id}"

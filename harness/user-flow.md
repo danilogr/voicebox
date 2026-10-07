@@ -52,7 +52,9 @@ server would go on working on it and queue the retry behind it.
 
 ## Asking about jobs
 
-`job_status(job_id)` reads the record. A running job whose worker is gone — its pid dead,
+`job_status(job_id)` reads the record; an id that is not a uuid4, or a record that names
+another id than its own file, is no job, so a path can never be passed for an id. A
+running job whose worker is gone — its pid dead,
 or no pid anywhere a minute after starting — becomes `crashed`, keeps the stage it had
 reached (for a voice-over, "after chunk i of n"), loses its artifacts and is recorded.
 Without an id it lists recent jobs of every kind. A job far past its estimate is

@@ -211,9 +211,12 @@ class JobStore:
         if job_type is None:
             return None
         try:
-            return job_type(**{f.name: data[f.name] for f in fields(job_type) if f.name in data})
+            job = job_type(**{f.name: data[f.name] for f in fields(job_type) if f.name in data})
         except TypeError:
             return None
+        # Every path a job's artifacts live at is built from its id: a record that names
+        # another id than its own file's would point deletes and writes somewhere else.
+        return job if job.job_id == job_id else None
 
     def running(self) -> list[Job]:
         """Every record that still says running - all of them, not a page: deciding that

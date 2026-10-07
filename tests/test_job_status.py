@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -349,3 +350,54 @@ def test_a_job_with_only_short_requests_finished_is_judged_by_the_first_request_
     s.jobs.write(synthesis(tmp_path, chunks_done=1, chars_done=6, synth_ms=200))
     reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
     assert reply.startswith("running: notes.md, chunk 1 of 10 done, 25 min elapsed")
+
+
+def plant(path: Path, job_id: str) -> None:
+    """A running synthesis record with a dead worker, as a file anyone could leave in a
+    repository the agent was asked to look at."""
+    record = {
+        "job_id": job_id,
+        "kind": "synthesis",
+        "state": "running",
+        "source": "",
+        "output": str(path.parent / "o.wav"),
+        "format": "wav",
+        "nemo_binary": "x",
+        "claimed_by": 999999,
+        "created_at": 0,
+        "worker_pid": 999999,
+        "voice": "John",
+        "tts_model": "magpie",
+        "input_kind": "text",
+        "input_format": "plain",
+        "chars": 1,
+        "words": 1,
+        "paragraphs": 1,
+        "cold_start": False,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record))
+
+
+def test_an_id_that_is_not_a_job_id_is_refused_before_anything_is_read(tmp_path):
+    (tmp_path / "state" / "jobs").mkdir(parents=True)  # as after any earlier job
+    plant(tmp_path / "repo" / "evil.json", "../../victim")
+    victim = tmp_path / "victim.d"
+    victim.mkdir()
+    (victim / "keep.txt").write_text("mine")
+
+    reply = status(scribe(tmp_path, alive=()), settings(tmp_path), "../../repo/evil")
+
+    assert reply.startswith("no job ../../repo/evil")
+    assert (victim / "keep.txt").exists() and not (tmp_path / "victim.json").exists()
+
+
+def test_a_record_naming_another_id_than_its_file_is_not_a_job(tmp_path):
+    job_id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    plant(tmp_path / "state" / "jobs" / f"{job_id}.json", "../../victim")
+    victim = tmp_path / "victim.d"
+    victim.mkdir()
+
+    assert status(scribe(tmp_path, alive=()), settings(tmp_path), job_id) == f"no job {job_id}"
+    assert status(scribe(tmp_path, alive=()), settings(tmp_path), None) == "no jobs yet"
+    assert victim.exists()
