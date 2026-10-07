@@ -70,6 +70,12 @@ least any request waits (below). The estimate `synthesize` returns uses the medi
 throughput at that size, 29.5 characters a second, plus 10 s when the server has to start
 first.
 
+The output is 22,050 Hz 16-bit mono, 44,100 bytes a second, so one WAV file's 4 GiB
+holds about 27 hours. `synthesize` refuses a text before any work starts when its
+estimate passes that: 80 ms of audio a character, rounded up from the most any reading
+here made (79 ms, the 282-character reading below), plus 700 ms for each paragraph
+break. That is about 1.2 million characters of prose.
+
 "Reads cleanly" here means no measurable regression against a noisy baseline, judged
 from transcripts alone; nobody listened to the audio. The baseline's worst is one
 spelling difference in an eight-word sentence (`harbour` heard as `harbor`), which puts

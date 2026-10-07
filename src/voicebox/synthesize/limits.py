@@ -17,6 +17,14 @@ SYNTH_CHARS_PER_S = 29.5
 # Added to the estimate when the speech server has to start first (performance.md).
 COLD_START_S = 10.0
 
+# What the speech server answers with: MagpieTTS writes 22,050 Hz, 16-bit, mono.
+AUDIO_BYTES_PER_S = 22_050 * 2
+
+# Seconds of speech per character, rounded up from the most any measured reading took
+# (79 ms, a 282-character reading holding a 2.1 s pause), so a size estimate errs large.
+# The 250 ms between chunks, under 0.2 ms a character, is inside the rounding.
+AUDIO_S_PER_CHAR = 0.08
+
 # The CPU backend's pace, derived rather than measured at chunk size: about 0.07x
 # realtime, so a full chunk (about 90 s of audio) takes about 21 minutes.
 CPU_CHARS_PER_S = 1.2

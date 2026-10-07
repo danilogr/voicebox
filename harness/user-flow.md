@@ -25,7 +25,8 @@
    (answered, not recorded); the file is absolute, exists and is UTF-8 text
    (`input_missing`, `input_unsupported`); pasted text holds no NUL and no unpaired
    surrogate (`input_unsupported`); something is left once markup is removed
-   (`input_unsupported`); the output is absolute, does not exist, matches the format and
+   (`input_unsupported`); the audio it would make fits one WAV file, about 27 hours
+   (`output_unwritable`); the output is absolute, does not exist, matches the format and
    its folder is writable (`output_unwritable`; pasted text must name one); ffmpeg for
    m4a and mp3 (`ffmpeg_missing`); NeMo — the server answers, or its binary resolves
    (`nemo_missing`) and `NEMO_AUTOSTART` allows starting it (`server_unavailable`); the

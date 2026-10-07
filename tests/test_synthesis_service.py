@@ -81,6 +81,25 @@ async def test_pasted_text_no_engine_can_take_is_refused_before_any_work(tmp_pat
     assert job_lock(tmp_path / "state", is_alive=lambda p: True).owner() is None
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "word " * 260_000,  # 1.3 million characters: about 29 hours of speech
+        "Hi.\n\n" * 150_000,  # the pauses between paragraphs alone pass 27 hours
+    ],
+    ids=["long", "many-paragraphs"],
+)
+async def test_text_whose_audio_would_not_fit_one_wav_file_is_refused_at_once(tmp_path, text):
+    answer = await reply(tmp_path, request(text=text, output=str(tmp_path / "o.wav")))
+    assert "more than one WAV file can hold" in answer
+    assert JobStore(tmp_path / "state").recent() == []
+
+
+async def test_a_long_text_that_fits_one_wav_file_is_accepted(tmp_path):
+    answer = await reply(tmp_path, request(text="word " * 200_000, output=str(tmp_path / "o.wav")))
+    assert answer.startswith("Writing the text (200000 words)")
+
+
 async def test_a_relative_path_is_refused(tmp_path):
     assert "must be absolute" in await reply(tmp_path, request(path="notes.md"))
 

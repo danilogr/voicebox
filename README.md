@@ -118,6 +118,9 @@ the speech server decides its arguments, so keep them identical.
 - Voice-overs are sent to the speech server in chunks of a measured size
   ([harness/performance.md](harness/performance.md)). The last word or two of a
   request is sometimes spoken twice.
+- A voice-over is one WAV file (encoded from it for m4a and mp3), and a WAV file holds
+  about 27 hours of audio: `synthesize` refuses text estimated to need more, which is
+  about 1.2 million characters of prose.
 - Text with no spaces between words (Chinese, Japanese) is cut at the request size
   rather than at a word boundary.
 - A voice-over request waits as long as the machine's pace needs, up to a fixed ceiling.

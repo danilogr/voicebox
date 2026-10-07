@@ -18,7 +18,9 @@ from voicebox.jobs.desk import Desk, busy_message, claim, duration, launch, reco
 from voicebox.jobs.lock import BUSY
 from voicebox.jobs.store import RUNNING, SynthesisJob, new_job_id
 from voicebox.programs import FFMPEG_REMEDY
+from voicebox.synthesize.audio import MAX_DATA_BYTES
 from voicebox.synthesize.encode import FORMATS
+from voicebox.synthesize.limits import AUDIO_BYTES_PER_S, AUDIO_S_PER_CHAR
 from voicebox.synthesize.text import (
     MARKDOWN_SUFFIXES,
     looks_like_markdown,
@@ -26,11 +28,14 @@ from voicebox.synthesize.text import (
     strip_markdown,
     unspeakable,
 )
+from voicebox.synthesize.worker import PARAGRAPH_GAP_MS
 from voicebox.telemetry.rows import SYNTHESIS, JobFacts, iso, job_row, recorded_voice, wall_ms
 from voicebox.telemetry.session import TelemetrySession
 
 DEFAULT_VOICE = "John"
 AUDIO_SUFFIXES = frozenset(f".{fmt}" for fmt in FORMATS)
+# A WAV file's 4 GiB of samples, in hours of the speech server's audio.
+MAX_AUDIO_HOURS = MAX_DATA_BYTES / AUDIO_BYTES_PER_S / 3600
 
 NO_NEMO = (
     "synthesize needs the local speech server, NVIDIA NeMo-Speech.cpp, and it is not "
@@ -214,6 +219,16 @@ async def _prepare(
     text = "\n\n".join(spoken)
     chars, words = len(text), len(text.split())
     shape.update(chars=chars, words=words, paragraphs=len(spoken))
+    seconds = _audio_s(chars, len(spoken))
+    if seconds * AUDIO_BYTES_PER_S > MAX_DATA_BYTES:
+        # Refused now rather than when the chunks are joined, hours of synthesis later.
+        raise Refused(
+            "output_unwritable",
+            f"this text would make about {seconds / 3600:.0f} hours of audio, more than one "
+            f"WAV file can hold (about {MAX_AUDIO_HOURS:.0f}); split it and write each part "
+            "to its own file",
+            shape,
+        )
 
     output = _output(request, source, job_id, shape)
     if request.format != "wav" and speech.which("ffmpeg") is None:
@@ -242,6 +257,12 @@ async def _prepare(
         cold_start=state is not Liveness.READY,
         shape=shape,
     )
+
+
+def _audio_s(chars: int, paragraphs: int) -> float:
+    """Seconds of audio a text will make, erring long: its speech and the pauses between
+    its paragraphs."""
+    return chars * AUDIO_S_PER_CHAR + paragraphs * PARAGRAPH_GAP_MS / 1000
 
 
 def _expanded(raw: str) -> Path:
