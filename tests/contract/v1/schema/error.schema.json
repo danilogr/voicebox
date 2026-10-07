@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voicebox-telemetry/contract/v1/schema/error.schema.json",
+  "title": "Error response body (400, 404, 413, 429, 500)",
+  "description": "Generic on every failure: no stack traces, no route enumeration. `field` is a JSON Pointer (RFC 6901) into the request body and is present whenever the failure names a specific location; see CONTRACT.md for how to construct it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["error"],
+  "properties": {
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": ["schema_violation", "invalid_reference", "payload_too_large", "rate_limited", "not_found", "internal"]
+        },
+        "message": { "type": "string", "maxLength": 500 },
+        "field": { "type": "string", "maxLength": 200 }
+      }
+    }
+  }
+}

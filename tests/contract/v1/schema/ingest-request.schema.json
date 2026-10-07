@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voicebox-telemetry/contract/v1/schema/ingest-request.schema.json",
+  "title": "POST /v1/ingest request",
+  "description": "One chunk of the client's unshipped backlog: the install snapshot, the sessions that are new or changed or that the jobs belong to, and the job rows themselves (possibly none). See CONTRACT.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["install", "sessions", "jobs"],
+  "properties": {
+    "install": { "$ref": "#/$defs/install" },
+    "sessions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/session" },
+      "minItems": 0,
+      "maxItems": 100
+    },
+    "jobs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/job" },
+      "minItems": 0,
+      "maxItems": 100
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "description": "A version 4 (random) uuid: the client generates every id with uuid4.",
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$",
+      "maxLength": 32
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "busy", "input_missing", "input_unsupported", "output_unwritable", "ffmpeg_missing", "nemo_missing",
+        "server_unavailable", "timeout", "conversion_failed", "model_failed", "format_mismatch", "other"
+      ]
+    },
+    "stage": {
+      "type": "string",
+      "enum": ["probe", "convert", "asr", "split", "synthesize", "encode", "write", "play"]
+    },
+    "install": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["install_id", "first_seen_at", "last_seen_at", "plugin_version", "os", "arch", "accel"],
+      "properties": {
+        "install_id": { "$ref": "#/$defs/uuid" },
+        "first_seen_at": { "$ref": "#/$defs/timestamp" },
+        "last_seen_at": { "$ref": "#/$defs/timestamp" },
+        "plugin_version": { "$ref": "#/$defs/semver" },
+        "disclosure_ver": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "language": { "type": "string", "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$", "maxLength": 35 },
+        "timezone": { "type": "string", "pattern": "^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+){1,2}$", "maxLength": 64 },
+        "utc_offset_min": { "type": "integer", "minimum": -720, "maximum": 840 },
+        "os": { "type": "string", "enum": ["darwin", "linux", "win32"] },
+        "os_version": { "type": "string", "pattern": "^(unknown|[0-9]+\\.[0-9]+)$", "maxLength": 16 },
+        "arch": { "type": "string", "enum": ["arm64", "x86_64"] },
+        "cpu_model": { "type": "string", "maxLength": 128 },
+        "cpu_count": { "type": "integer", "minimum": 1, "maximum": 1024 },
+        "ram_gb": { "type": "integer", "enum": [8, 16, 32, 64, 128] },
+        "accel": { "type": "string", "enum": ["metal", "cuda", "rocm", "none", "unknown"] },
+        "accel_name": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "install_id", "started_at", "plugin_version", "core_version", "harness", "ffmpeg_present"],
+      "properties": {
+        "session_id": { "$ref": "#/$defs/uuid" },
+        "install_id": { "$ref": "#/$defs/uuid" },
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "ended_at": { "$ref": "#/$defs/timestamp" },
+        "plugin_version": { "$ref": "#/$defs/semver" },
+        "core_version": { "$ref": "#/$defs/semver" },
+        "nemo_version": { "$ref": "#/$defs/semver" },
+        "harness": { "type": "string", "enum": ["claude-code", "antigravity", "gemini-cli", "codex", "other", "unknown"] },
+        "harness_version": { "type": "string", "maxLength": 64 },
+        "ffmpeg_present": { "type": "boolean" }
+      }
+    },
+    "job": {
+      "description": "One finished job. `oneOf` picks the row schema for its `kind`; each has additionalProperties: false, so a field that belongs to another kind is rejected by construction. The `allOf` holds the two status rules every kind shares.",
+      "type": "object",
+      "oneOf": [
+        { "$ref": "#/$defs/transcription_job" },
+        { "$ref": "#/$defs/synthesis_job" },
+        { "$ref": "#/$defs/narration_job" }
+      ],
+      "allOf": [
+        {
+          "if": { "required": ["status"], "properties": { "status": { "enum": ["failed", "refused"] } } },
+          "then": { "required": ["reason"], "properties": { "reason": true } },
+          "else": { "properties": { "reason": false } }
+        },
+        {
+          "if": { "required": ["status"], "properties": { "status": { "enum": ["failed", "crashed"] } } },
+          "then": { "required": ["stage"], "properties": { "stage": true } },
+          "else": { "properties": { "stage": false } }
+        }
+      ]
+    },
+    "transcription_job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job_id", "session_id", "install_id", "kind", "started_at", "ended_at", "wall_ms", "status", "engine"],
+      "properties": {
+        "job_id": { "$ref": "#/$defs/uuid" },
+        "session_id": { "$ref": "#/$defs/uuid" },
+        "install_id": { "$ref": "#/$defs/uuid" },
+        "kind": { "const": "transcription" },
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "ended_at": { "$ref": "#/$defs/timestamp" },
+        "wall_ms": { "type": "integer", "minimum": 0, "maximum": 172800000 },
+        "status": { "type": "string", "enum": ["ok", "empty", "refused", "failed", "crashed"] },
+        "reason": { "$ref": "#/$defs/reason" },
+        "stage": { "$ref": "#/$defs/stage" },
+        "engine": { "type": "string", "maxLength": 32, "pattern": "^[A-Za-z0-9._-]+$" },
+        "model": { "type": "string", "maxLength": 64, "pattern": "^[A-Za-z0-9._-]+$" },
+        "source_bytes": { "type": "integer", "minimum": 0, "maximum": 10737418240 },
+        "audio_ms": { "type": "integer", "minimum": 0, "maximum": 86400000 },
+        "audio_codec": { "type": "string", "maxLength": 32, "pattern": "^[a-z0-9_]+$" },
+        "has_video": { "type": "boolean" },
+        "converted": { "type": "boolean" },
+        "convert_ms": { "type": "integer", "minimum": 0, "maximum": 86400000 },
+        "asr_ms": { "type": "integer", "minimum": 0, "maximum": 86400000 },
+        "diarize": { "type": "boolean" },
+        "speakers": { "type": "integer", "minimum": 0, "maximum": 64 },
+        "language": { "type": "string", "pattern": "^(auto|[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*)$", "maxLength": 35 },
+        "translate": { "type": "boolean" },
+        "format": { "type": "string", "enum": ["text", "json", "srt", "vtt"] },
+        "words": { "type": "integer", "minimum": 0, "maximum": 500000 },
+        "chars": { "type": "integer", "minimum": 0, "maximum": 5000000 }
+      }
+    },
+    "synthesis_job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job_id", "session_id", "install_id", "kind", "started_at", "ended_at", "wall_ms", "status", "engine"],
+      "properties": {
+        "job_id": { "$ref": "#/$defs/uuid" },
+        "session_id": { "$ref": "#/$defs/uuid" },
+        "install_id": { "$ref": "#/$defs/uuid" },
+        "kind": { "const": "synthesis" },
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "ended_at": { "$ref": "#/$defs/timestamp" },
+        "wall_ms": { "type": "integer", "minimum": 0, "maximum": 172800000 },
+        "status": { "type": "string", "enum": ["ok", "refused", "failed", "crashed"] },
+        "reason": { "$ref": "#/$defs/reason" },
+        "stage": { "$ref": "#/$defs/stage" },
+        "engine": { "type": "string", "maxLength": 32, "pattern": "^[A-Za-z0-9._-]+$" },
+        "model": { "type": "string", "maxLength": 64, "pattern": "^[A-Za-z0-9._-]+$" },
+        "server_warm": { "type": "boolean" },
+        "input_kind": { "type": "string", "enum": ["text", "file"] },
+        "input_format": { "type": "string", "enum": ["plain", "markdown"] },
+        "chars": { "type": "integer", "minimum": 0, "maximum": 5000000 },
+        "words": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "paragraphs": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "chunks": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "chunks_done": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "voice": { "type": "string", "maxLength": 64, "pattern": "^[A-Za-z0-9._-]+$" },
+        "synth_ms": { "type": "integer", "minimum": 0, "maximum": 172800000 },
+        "encode_ms": { "type": "integer", "minimum": 0, "maximum": 86400000 },
+        "audio_ms": { "type": "integer", "minimum": 0, "maximum": 172800000 },
+        "format": { "type": "string", "enum": ["wav", "m4a", "mp3"] },
+        "output_bytes": { "type": "integer", "minimum": 0, "maximum": 10737418240 }
+      }
+    },
+    "narration_job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job_id", "session_id", "install_id", "kind", "started_at", "ended_at", "wall_ms", "status", "engine"],
+      "properties": {
+        "job_id": { "$ref": "#/$defs/uuid" },
+        "session_id": { "$ref": "#/$defs/uuid" },
+        "install_id": { "$ref": "#/$defs/uuid" },
+        "kind": { "const": "narration" },
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "ended_at": { "$ref": "#/$defs/timestamp" },
+        "wall_ms": { "type": "integer", "minimum": 0, "maximum": 172800000 },
+        "status": { "type": "string", "enum": ["ok", "stopped", "refused", "failed"] },
+        "reason": { "$ref": "#/$defs/reason" },
+        "stage": { "$ref": "#/$defs/stage" },
+        "engine": { "type": "string", "maxLength": 32, "pattern": "^[A-Za-z0-9._-]+$" },
+        "model": { "type": "string", "maxLength": 64, "pattern": "^[A-Za-z0-9._-]+$" },
+        "server_warm": { "type": "boolean" },
+        "sentences": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "sentences_played": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "chars": { "type": "integer", "minimum": 0, "maximum": 5000000 },
+        "voice": { "type": "string", "maxLength": 64, "pattern": "^[A-Za-z0-9._-]+$" },
+        "synth_ms": { "type": "integer", "minimum": 0, "maximum": 172800000 },
+        "audio_ms": { "type": "integer", "minimum": 0, "maximum": 172800000 },
+        "fallback_sentences": { "type": "integer", "minimum": 0, "maximum": 100000 }
+      }
+    }
+  }
+}

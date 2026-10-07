@@ -1,0 +1,7 @@
+{
+  "status": 400,
+  "error_code": "schema_violation",
+  "field": "/jobs/0",
+  "reason": "maximum: synthesis paragraphs must be <= 100000. Inside the job oneOf/allOf, so only the row prefix is binding.",
+  "field_is_prefix": true
+}

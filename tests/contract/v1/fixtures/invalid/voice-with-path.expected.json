@@ -1,0 +1,7 @@
+{
+  "status": 400,
+  "error_code": "schema_violation",
+  "field": "/jobs/0",
+  "reason": "pattern: engine, model and voice are identifiers matching ^[A-Za-z0-9._-]+$; a path or a name with spaces is refused (the client maps unknown voices to custom). Inside the job oneOf/allOf, so only the row prefix is binding.",
+  "field_is_prefix": true
+}

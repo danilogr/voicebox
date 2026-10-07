@@ -1,0 +1,1024 @@
+{
+  "install": {
+    "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "first_seen_at": "2026-10-06T09:00:00Z",
+    "last_seen_at": "2026-10-06T10:00:00Z",
+    "plugin_version": "1.0.0",
+    "os": "darwin",
+    "arch": "arm64",
+    "accel": "metal"
+  },
+  "sessions": [
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000000",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000001",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000002",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000003",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000004",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000005",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000006",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000007",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000008",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000009",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000000a",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000000b",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000000c",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000000d",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000000e",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000000f",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000010",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000011",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000012",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000013",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000014",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000015",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000016",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000017",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000018",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000019",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000001a",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000001b",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000001c",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000001d",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000001e",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000001f",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000020",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000021",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000022",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000023",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000024",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000025",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000026",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000027",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000028",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000029",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000002a",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000002b",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000002c",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000002d",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000002e",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000002f",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000030",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000031",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000032",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000033",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000034",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000035",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000036",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000037",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000038",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000039",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000003a",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000003b",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000003c",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000003d",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000003e",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000003f",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000040",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000041",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000042",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000043",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000044",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000045",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000046",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000047",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000048",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000049",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000004a",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000004b",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000004c",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000004d",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000004e",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000004f",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000050",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000051",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000052",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000053",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000054",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000055",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000056",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000057",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000058",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000059",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000005a",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000005b",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000005c",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000005d",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000005e",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-00000000005f",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000060",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000061",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000062",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000063",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    },
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000064",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    }
+  ],
+  "jobs": []
+}

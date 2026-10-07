@@ -1,0 +1,5 @@
+{
+  "plugin_version": "1.0.0",
+  "os": "freebsd",
+  "event": "install"
+}

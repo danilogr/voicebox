@@ -1,0 +1,7 @@
+{
+  "status": 400,
+  "error_code": "schema_violation",
+  "field": "/jobs/0",
+  "reason": "false schema (allOf/else): stage is present iff status is failed or crashed. Inside the job oneOf/allOf, so only the row prefix is binding.",
+  "field_is_prefix": true
+}

@@ -1,0 +1,37 @@
+{
+  "install": {
+    "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "first_seen_at": "2026-10-06T09:00:00Z",
+    "last_seen_at": "2026-10-06T10:00:00Z",
+    "plugin_version": "1.0.0",
+    "os": "darwin",
+    "arch": "arm64",
+    "accel": "metal"
+  },
+  "sessions": [
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    }
+  ],
+  "jobs": [
+    {
+      "job_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "kind": "synthesis",
+      "started_at": "2026-10-06T10:00:00Z",
+      "ended_at": "2026-10-06T10:01:00Z",
+      "wall_ms": 60000,
+      "status": "failed",
+      "engine": "nemo",
+      "stage": "synthesize"
+    }
+  ]
+}

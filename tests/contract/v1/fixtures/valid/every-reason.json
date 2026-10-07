@@ -1,0 +1,176 @@
+{
+  "install": {
+    "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "first_seen_at": "2026-10-06T09:00:00Z",
+    "last_seen_at": "2026-10-06T10:00:00Z",
+    "plugin_version": "1.0.0",
+    "os": "darwin",
+    "arch": "arm64",
+    "accel": "metal"
+  },
+  "sessions": [
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0",
+      "core_version": "0.1.0",
+      "nemo_version": "0.2.0",
+      "harness": "claude-code",
+      "ffmpeg_present": true
+    }
+  ],
+  "jobs": [
+    {
+      "job_id": "cccccccc-cccc-4ccc-8ccc-000000000065",
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "kind": "synthesis",
+      "started_at": "2026-10-06T10:00:00Z",
+      "ended_at": "2026-10-06T10:01:00Z",
+      "wall_ms": 60000,
+      "status": "refused",
+      "engine": "nemo",
+      "reason": "busy"
+    },
+    {
+      "job_id": "cccccccc-cccc-4ccc-8ccc-000000000066",
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "kind": "transcription",
+      "started_at": "2026-10-06T10:00:00Z",
+      "ended_at": "2026-10-06T10:01:00Z",
+      "wall_ms": 60000,
+      "status": "refused",
+      "engine": "nemo",
+      "reason": "input_missing"
+    },
+    {
+      "job_id": "cccccccc-cccc-4ccc-8ccc-000000000067",
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "kind": "synthesis",
+      "started_at": "2026-10-06T10:00:00Z",
+      "ended_at": "2026-10-06T10:01:00Z",
+      "wall_ms": 60000,
+      "status": "refused",
+      "engine": "nemo",
+      "reason": "input_unsupported"
+    },
+    {
+      "job_id": "cccccccc-cccc-4ccc-8ccc-000000000068",
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "kind": "transcription",
+      "started_at": "2026-10-06T10:00:00Z",
+      "ended_at": "2026-10-06T10:01:00Z",
+      "wall_ms": 60000,
+      "status": "refused",
+      "engine": "nemo",
+      "reason": "output_unwritable"
+    },
+    {
+      "job_id": "cccccccc-cccc-4ccc-8ccc-000000000069",
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "kind": "transcription",
+      "started_at": "2026-10-06T10:00:00Z",
+      "ended_at": "2026-10-06T10:01:00Z",
+      "wall_ms": 60000,
+      "status": "failed",
+      "engine": "nemo",
+      "reason": "ffmpeg_missing",
+      "stage": "probe"
+    },
+    {
+      "job_id": "cccccccc-cccc-4ccc-8ccc-00000000006a",
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "kind": "synthesis",
+      "started_at": "2026-10-06T10:00:00Z",
+      "ended_at": "2026-10-06T10:01:00Z",
+      "wall_ms": 60000,
+      "status": "refused",
+      "engine": "nemo",
+      "reason": "nemo_missing"
+    },
+    {
+      "job_id": "cccccccc-cccc-4ccc-8ccc-00000000006b",
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "kind": "narration",
+      "started_at": "2026-10-06T10:00:00Z",
+      "ended_at": "2026-10-06T10:01:00Z",
+      "wall_ms": 60000,
+      "status": "failed",
+      "engine": "nemo",
+      "reason": "server_unavailable",
+      "stage": "synthesize"
+    },
+    {
+      "job_id": "cccccccc-cccc-4ccc-8ccc-00000000006c",
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "kind": "synthesis",
+      "started_at": "2026-10-06T10:00:00Z",
+      "ended_at": "2026-10-06T10:01:00Z",
+      "wall_ms": 60000,
+      "status": "failed",
+      "engine": "nemo",
+      "reason": "timeout",
+      "stage": "synthesize"
+    },
+    {
+      "job_id": "cccccccc-cccc-4ccc-8ccc-00000000006d",
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "kind": "transcription",
+      "started_at": "2026-10-06T10:00:00Z",
+      "ended_at": "2026-10-06T10:01:00Z",
+      "wall_ms": 60000,
+      "status": "failed",
+      "engine": "nemo",
+      "reason": "conversion_failed",
+      "stage": "convert"
+    },
+    {
+      "job_id": "cccccccc-cccc-4ccc-8ccc-00000000006e",
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "kind": "transcription",
+      "started_at": "2026-10-06T10:00:00Z",
+      "ended_at": "2026-10-06T10:01:00Z",
+      "wall_ms": 60000,
+      "status": "failed",
+      "engine": "nemo",
+      "reason": "model_failed",
+      "stage": "asr"
+    },
+    {
+      "job_id": "cccccccc-cccc-4ccc-8ccc-00000000006f",
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "kind": "synthesis",
+      "started_at": "2026-10-06T10:00:00Z",
+      "ended_at": "2026-10-06T10:01:00Z",
+      "wall_ms": 60000,
+      "status": "failed",
+      "engine": "nemo",
+      "reason": "format_mismatch",
+      "stage": "encode"
+    },
+    {
+      "job_id": "cccccccc-cccc-4ccc-8ccc-000000000070",
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "kind": "narration",
+      "started_at": "2026-10-06T10:00:00Z",
+      "ended_at": "2026-10-06T10:01:00Z",
+      "wall_ms": 60000,
+      "status": "failed",
+      "engine": "nemo",
+      "reason": "other",
+      "stage": "play"
+    }
+  ]
+}

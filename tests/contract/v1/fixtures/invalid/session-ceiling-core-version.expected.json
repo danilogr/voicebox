@@ -1,0 +1,6 @@
+{
+  "status": 400,
+  "error_code": "schema_violation",
+  "field": "/sessions/0/core_version",
+  "reason": "maxLength: core_version must be <= 32 characters."
+}

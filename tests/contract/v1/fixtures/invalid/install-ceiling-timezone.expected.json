@@ -1,0 +1,6 @@
+{
+  "status": 400,
+  "error_code": "schema_violation",
+  "field": "/install/timezone",
+  "reason": "maxLength: timezone must be <= 64 characters."
+}

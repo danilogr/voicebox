@@ -1,0 +1,58 @@
+{
+  "install": {
+    "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "first_seen_at": "2026-10-06T09:00:00Z",
+    "last_seen_at": "2026-10-06T10:00:00Z",
+    "plugin_version": "1.0.0-aaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "os": "darwin",
+    "arch": "arm64",
+    "accel": "metal",
+    "disclosure_ver": 1,
+    "language": "en-abcdefgh-abcdefgh-abcdefgh-abcde",
+    "timezone": "America/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "utc_offset_min": -180,
+    "os_version": "11111111.2222222",
+    "cpu_model": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "cpu_count": 12,
+    "ram_gb": 64,
+    "accel_name": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg"
+  },
+  "sessions": [
+    {
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "started_at": "2026-10-06T09:00:00Z",
+      "plugin_version": "1.0.0-aaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "core_version": "1.0.0-aaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "nemo_version": "1.0.0-aaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "harness": "claude-code",
+      "ffmpeg_present": true,
+      "ended_at": "2026-10-06T11:00:00Z",
+      "harness_version": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+    }
+  ],
+  "jobs": [
+    {
+      "job_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "install_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "kind": "narration",
+      "started_at": "2026-10-06T10:00:00Z",
+      "ended_at": "2026-10-06T10:01:00Z",
+      "wall_ms": 60000,
+      "status": "failed",
+      "engine": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "reason": "other",
+      "stage": "play",
+      "model": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "server_warm": false,
+      "sentences": 42,
+      "sentences_played": 17,
+      "chars": 3900,
+      "voice": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+      "synth_ms": 61000,
+      "audio_ms": 252000,
+      "fallback_sentences": 2
+    }
+  ]
+}

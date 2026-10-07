@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voicebox-telemetry/contract/v1/schema/ping-request.schema.json",
+  "title": "POST /v1/ping request",
+  "description": "The anonymous install ping: sent once per install and once per upgrade in every telemetry mode, never under DO_NOT_TRACK. It carries no identifier, so two pings cannot be linked to each other or to an install. See CONTRACT.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plugin_version", "os", "event"],
+  "properties": {
+    "plugin_version": {
+      "description": "A release version only: major.minor.patch with bounded digits. No pre-release or build suffix, because free text there could carry an identifier and every distinct value is a new ping_daily row.",
+      "type": "string",
+      "pattern": "^[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,6}$",
+      "maxLength": 16
+    },
+    "os": { "type": "string", "enum": ["darwin", "linux", "win32"] },
+    "event": { "type": "string", "enum": ["install", "upgrade"] }
+  }
+}

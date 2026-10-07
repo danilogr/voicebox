@@ -1,0 +1,6 @@
+{
+  "status": 400,
+  "error_code": "schema_violation",
+  "field": "/sessions/0/session_id",
+  "reason": "pattern: session_id must match the uuid pattern."
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voicebox-telemetry/contract/v1/schema/ingest-response.schema.json",
+  "title": "POST /v1/ingest response (202)",
+  "description": "Batch-level acknowledgement. `accepted` counts job rows now durably stored on the server, whether newly inserted or already present from a replayed chunk (CONTRACT.md, idempotency). It may be lower than the jobs sent when the per-install quota soft-drops a request.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["accepted"],
+  "properties": {
+    "accepted": { "type": "integer", "minimum": 0, "maximum": 100 }
+  }
+}

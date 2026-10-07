@@ -1,0 +1,107 @@
+-- Full local schema. Every row here exists in the client's SQLite database.
+-- `derive-remote.py` strips every line tagged `-- LOCAL` to produce
+-- schema.remote.sql, the DDL that runs against D1. A column is local until
+-- it is written down as not: the tag is what keeps content off the server,
+-- not a comment convention.
+
+CREATE TABLE installs (
+  install_id      TEXT PRIMARY KEY,   -- uuid4, client-generated, never hardware-derived
+  first_seen_at   TEXT NOT NULL,
+  last_seen_at    TEXT NOT NULL,
+  plugin_version  TEXT NOT NULL,
+  disclosure_ver  INTEGER,            -- which first-run notice this install was shown
+
+  -- where and when. `country` is written by the server from CF-IPCountry on
+  -- ingest; the client never populates this column.
+  country         TEXT,               -- ISO-3166 alpha-2
+  language        TEXT,               -- BCP-47 from the OS locale, e.g. en-US
+  timezone        TEXT,               -- IANA name, e.g. America/Sao_Paulo
+  utc_offset_min  INTEGER,            -- the offset at the latest session; follows DST
+
+  -- the machine. Static facts, probed once.
+  os              TEXT NOT NULL,      -- darwin | linux | win32
+  os_version      TEXT,               -- major.minor only, never the patch
+  arch            TEXT NOT NULL,      -- arm64 | x86_64
+  cpu_model       TEXT,               -- "Apple M5", "Intel Core i7-9750H"
+  cpu_count       INTEGER,
+  ram_gb          INTEGER,            -- bucketed: 8 16 32 64 128
+  accel           TEXT,               -- metal | cuda | rocm | none | unknown
+  accel_name      TEXT                -- "Apple M5", "NVIDIA GeForce RTX 4090"
+);
+
+CREATE TABLE sessions (
+  session_id      TEXT PRIMARY KEY,   -- uuid4, one per voicebox MCP server process
+  install_id      TEXT NOT NULL REFERENCES installs(install_id),
+  started_at      TEXT NOT NULL,
+  ended_at        TEXT,               -- arrives in a later request than started_at
+  plugin_version  TEXT NOT NULL,
+  core_version    TEXT NOT NULL,      -- the speak-core version the plugin pinned
+  nemo_version    TEXT,               -- second field of `nemo-speech --version`; NULL when not installed
+  harness         TEXT NOT NULL,      -- claude-code|antigravity|gemini-cli|codex|other|unknown
+  harness_version TEXT,               -- NULL when the host does not declare one
+  ffmpeg_present  INTEGER NOT NULL,   -- 1 when ffmpeg and ffprobe were on PATH at session start
+
+  shipped_at      TEXT                -- LOCAL: NULL = changed since it was last sent
+);
+CREATE INDEX sessions_unshipped ON sessions(shipped_at) WHERE shipped_at IS NULL; -- LOCAL: the column above does not exist remotely
+
+-- One row per finished job. Columns below `model` belong to one or two kinds
+-- and are NULL on every other kind; the JSON schema's per-kind row schemas
+-- decide which (contract/v1/schema/ingest-request.schema.json).
+CREATE TABLE jobs (
+  job_id          TEXT PRIMARY KEY,   -- uuid4; the job store's id and the idempotency key
+  session_id      TEXT NOT NULL REFERENCES sessions(session_id),
+  install_id      TEXT NOT NULL,      -- denormalised; most queries group by it
+  kind            TEXT NOT NULL,      -- transcription | synthesis | narration
+  started_at      TEXT NOT NULL,      -- when the tool accepted or refused it
+  ended_at        TEXT NOT NULL,
+  wall_ms         INTEGER NOT NULL,   -- ended_at - started_at, measured monotonically
+  status          TEXT NOT NULL,      -- ok|empty|stopped|refused|failed|crashed
+  reason          TEXT,               -- set iff status is failed or refused
+  stage           TEXT,               -- set iff status is failed or crashed
+  engine          TEXT NOT NULL,      -- the engine that ran, after any fallback
+  model           TEXT,               -- magpie | nemotron-3.5 | NULL
+
+  -- more than one kind; each kind has its own bound
+  server_warm     INTEGER,            -- synthesis, narration: 1 when the speech server was already up
+  audio_ms        INTEGER,            -- media duration (transcription), output (synthesis), played (narration)
+  chars           INTEGER,
+  words           INTEGER,            -- transcription, synthesis
+  format          TEXT,               -- transcription: text|json|srt|vtt; synthesis: wav|m4a|mp3
+  voice           TEXT,               -- synthesis, narration: a known voice name or `custom`
+  synth_ms        INTEGER,            -- synthesis, narration: summed model time
+
+  -- transcription: the shape of the file, never its name or its content
+  source_bytes    INTEGER,
+  audio_codec     TEXT,               -- ffprobe codec_name, e.g. flac, pcm_s16le
+  has_video       INTEGER,            -- 1 when a video stream was present
+  converted       INTEGER,            -- 1 when ffmpeg ran before the model
+  convert_ms      INTEGER,
+  asr_ms          INTEGER,            -- model time, cold: the CLI loads the model per job
+  diarize         INTEGER,
+  speakers        INTEGER,            -- speakers found, when diarized
+  language        TEXT,               -- the requested language or `auto`, never the detected one
+  translate       INTEGER,
+
+  -- synthesis
+  input_kind      TEXT,               -- text | file
+  input_format    TEXT,               -- plain | markdown
+  paragraphs      INTEGER,
+  chunks          INTEGER,
+  chunks_done     INTEGER,            -- how far a failed job got
+  encode_ms       INTEGER,            -- concatenation and conversion
+  output_bytes    INTEGER,
+
+  -- narration
+  sentences       INTEGER,            -- queued
+  sentences_played INTEGER,
+  fallback_sentences INTEGER,         -- spoken by `say` because NeMo was not ready
+
+  error_message   TEXT,               -- LOCAL: may contain paths
+  source_name     TEXT,               -- LOCAL: the input's basename, for the user's own stats
+  output_path     TEXT,               -- LOCAL
+  shipped_at      TEXT,               -- LOCAL: NULL = still in the backlog
+  rejected_at     TEXT                -- LOCAL: the server refused it with a 400; never resent
+);
+CREATE INDEX jobs_session ON jobs(session_id);
+CREATE INDEX jobs_unshipped ON jobs(shipped_at) WHERE shipped_at IS NULL; -- LOCAL: the column above does not exist remotely

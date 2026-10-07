@@ -1,0 +1,6 @@
+{
+  "plugin_version": "1.0.0",
+  "os": "darwin",
+  "event": "install",
+  "mode": "off"
+}

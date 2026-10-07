@@ -1,0 +1,6 @@
+{
+  "status": 400,
+  "error_code": "schema_violation",
+  "field": "/sessions/0/harness_version",
+  "reason": "maxLength: harness_version must be <= 64 characters."
+}

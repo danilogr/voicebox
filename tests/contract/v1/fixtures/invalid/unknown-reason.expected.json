@@ -1,0 +1,7 @@
+{
+  "status": 400,
+  "error_code": "schema_violation",
+  "field": "/jobs/0",
+  "reason": "enum: reason is a closed set; a new value lands in v1 only after the server accepts it, and the client maps anything unknown to other. Inside the job oneOf/allOf, so only the row prefix is binding.",
+  "field_is_prefix": true
+}
