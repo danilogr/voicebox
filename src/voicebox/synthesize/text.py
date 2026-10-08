@@ -192,7 +192,7 @@ def chunk_text(text: str, *, max_chars: int) -> list[Chunk]:
     `max_chars` characters: one sentence a chunk, because MagpieTTS repeats and garbles
     words when one request holds several (harness/performance.md), a sentence over
     `max_chars` cut at its clauses, then its words, and a one-word sentence such as
-    `Dr.` with the sentence after it.
+    `Prof.` with the sentence after it.
 
     A piece holding no word (only punctuation) is not spoken.
     Every chunk ends in sentence-final punctuation (`close`) so the speech model closes

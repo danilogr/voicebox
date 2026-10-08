@@ -142,6 +142,15 @@ pulls both, because the same server serves speech and transcription. The model c
 is keyed by revision, so an install upgraded from 0.1.0 also keeps the v2602 MagpieTTS
 file (447 MB) until it is deleted by hand.
 
+The text-normalization grammars the server reads numbers, prices, times and
+abbreviations with are a **9 MB** download, **137 MB** unpacked (all twelve languages;
+English alone is 9 MB), kept in `<cache>/speak-core/tn_configs`.
+
+With them, a sentence without numbers synthesized in the same time as without them
+(1.17–1.30 s for three warm sentences, against 1.17–1.31 s, on Metal). A sentence with
+numbers takes longer because there is more to say: `It costs $12.50, about 15% more than
+last year.` took 2.12 s against 1.85 s, and a time and date 2.22 s against 1.67 s.
+
 ## Metal against CPU
 
 On NeMo-Speech.cpp 0.2.0 with the plugin's own server flags (voice `John`,

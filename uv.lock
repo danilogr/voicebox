@@ -918,7 +918,7 @@ wheels = [
 [[package]]
 name = "speak-core"
 version = "0.4.0"
-source = { git = "https://github.com/danilogr/speak-core?rev=v0.4.0#dcd45dee805b29d60924c9e1864387b551d94534" }
+source = { git = "https://github.com/danilogr/speak-core?rev=v0.4.0#937a8fb8920cc2536a109cd359186ca6781cdda4" }
 dependencies = [
     { name = "httpx2" },
 ]

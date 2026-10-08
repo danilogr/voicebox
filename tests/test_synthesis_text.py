@@ -148,7 +148,7 @@ def test_a_long_sentences_clauses_are_packed_but_never_with_the_next_sentence():
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("Dr. Smith arrived. He sat.", ["Dr. Smith arrived.", "He sat."]),
+        ("Prof. Smith arrived. He sat.", ["Prof. Smith arrived.", "He sat."]),
         ("It rained, e.g. here. Then it stopped.", ["It rained, e.g. here.", "Then it stopped."]),
         ("He left. Yes. Then she did.", ["He left.", "Yes. Then she did."]),
         ("He left. Yes.", ["He left.", "Yes."]),
@@ -159,8 +159,8 @@ def test_a_one_word_sentence_goes_with_the_sentence_after_it(text, expected):
 
 
 def test_a_one_word_sentence_stands_alone_when_the_next_would_not_fit_with_it():
-    assert [c.text for c in chunk_text("Dr. Smith arrived late.", max_chars=20)] == [
-        "Dr.",
+    assert [c.text for c in chunk_text("Prof. Smith arrived late.", max_chars=20)] == [
+        "Prof.",
         "Smith arrived late.",
     ]
 

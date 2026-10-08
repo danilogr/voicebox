@@ -24,7 +24,8 @@ voicebox needs [uv](https://docs.astral.sh/uv/), which launches it; if `uv` is n
 full path.
 
 Restart Claude Code, then run `/voicebox:setup` once. It installs NeMo-Speech.cpp and its
-two models (about 1.4 GB) and shows voicebox's one-time telemetry notice. Transcription,
+two models (about 1.4 GB), downloads the grammars it reads numbers and abbreviations
+with (9 MB), and shows voicebox's one-time telemetry notice. Transcription,
 m4a and mp3 also need `ffmpeg` (`brew install ffmpeg` on macOS). voicebox works under
 Antigravity too, as an MCP server; `/voicebox:narrate` is offered there as the `narrate`
 prompt.
@@ -106,6 +107,7 @@ Environment variables, read when the server starts:
 | `NEMO_BIN` | `nemo-speech` | the server binary, when it is not on `PATH` |
 | `NEMO_AUTOSTART` | `1` | `0` to run the speech server yourself |
 | `NEMO_TTS_SEED` | unset | pins each voice's timbre across server restarts |
+| `NEMO_TN_DIR` | `~/Library/Caches/speak-core/tn_configs` | the text-normalization grammars `/voicebox:setup` downloads |
 | `NEMO_API_KEY` | unset | sent to the speech server when it needs one |
 
 `NEMO_*` settings are shared by every plugin built on speak-core: whichever one starts

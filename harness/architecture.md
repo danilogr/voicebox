@@ -134,8 +134,11 @@ their design is in its `harness/architecture.md`. This document covers voicebox.
 - **No text is ever dropped, and each request is one sentence.** MagpieTTS repeats and
   garbles words when one request holds several sentences (`performance.md`), so the text
   is sent a sentence at a time, and a sentence over 250 characters is cut at its clauses,
-  then its words. A one-word sentence (`Dr.`) goes with the next, and a full stop before
-  a lowercase word (`e.g. this`) does not end a sentence. The cutting is speak-core's
+  then its words. A one-word sentence (`Prof.`) goes with the next, and a full stop before
+  a lowercase word (`e.g. this`) or after `Mr`, `Mrs`, `Dr`, `St` or a month's
+  abbreviation does not end a sentence. The speech server reads numbers and
+  abbreviations as words with NVIDIA's text-normalization grammars, which `/voicebox:setup`
+  downloads; it reads `Nobel Dr.` as Nobel Doctor unless a house number comes first. The cutting is speak-core's
   `text.pieces`, which its `nemo` engine applies to `read_aloud` sentences too. A word
   longer than a chunk is cut, never dropped (so text without spaces is cut at the size
   limit). Markdown loses only its markup, list numbers included; fenced code is skipped

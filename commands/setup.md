@@ -6,12 +6,14 @@ description: Install NVIDIA NeMo-Speech.cpp and the models voicebox needs to tra
 
 voicebox runs entirely on this machine, powered by NVIDIA NeMo-Speech.cpp
 (https://github.com/NVIDIA/NeMo-Speech.cpp): MagpieTTS for speech and Nemotron 3.5 for
-recognition. Explain the cost before you start: about 1.4 GB of models on disk, and while
+recognition. Explain the cost before you start: about 1.4 GB of models and 137 MB of
+text-normalization grammars on disk, and while
 the speech server runs, roughly 1.75 GB of resident memory.
 
 1. Run `uv run --directory "${CLAUDE_PLUGIN_ROOT}" --quiet speak-core-setup` and show the
    output. It installs `nemo-speech` if it is missing or older than 0.2.0, pulls both
-   models, and runs `nemo-speech doctor`. It is idempotent. If `uv` is not on PATH, use
+   models, downloads the grammars that let the server read numbers and abbreviations as
+   words, and runs `nemo-speech doctor`. It is idempotent. If `uv` is not on PATH, use
    `~/.local/bin/uv`.
 2. If it fails, report the failure verbatim rather than working around it. A partial
    install is worse than none.
