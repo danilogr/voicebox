@@ -12,9 +12,8 @@ AudioFormat = Literal["wav", "m4a", "mp3"]
 READ_ALOUD = """Read one sentence aloud through the speakers, as part of /voicebox:narrate.
 
 Returns at once. Sentences queue and play in order, never over another plugin's speech.
-Anything past about 400 characters is cut at a word boundary, so split a long sentence
-at a clause break first. This plays sound and writes no file; to make an audio file,
-use synthesize."""
+Nothing is cut: text holding several sentences is queued a sentence at a time. This
+plays sound and writes no file; to make an audio file, use synthesize."""
 
 READING_STATUS = """How many sentences are still waiting to be read aloud, and how many have
 been read. /voicebox:narrate calls it between rounds, so a "stop" from the user loses

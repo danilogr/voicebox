@@ -16,7 +16,7 @@ from speak_core.engines.base import Engine
 from speak_core.queue import QueueStats
 from speak_core.queue import describe as describe_queue
 from speak_core.telemetry.wiring import normalize_harness
-from speak_core.text import normalize
+from speak_core.text import normalize, sentences
 
 from voicebox import tools
 from voicebox.config import Settings
@@ -184,11 +184,12 @@ def create_server(
     async def revive_reader() -> str | None:
         """Start the queue's worker again if it has ended, and say what that cost.
 
-        speak-core's worker ends on an error it does not expect from a player, and from
-        then on nothing reads the queue: every sentence would be answered and never
-        heard, and `reading_status` would count it as still to read forever. What the
-        queue still holds is dropped, and the reply says how much, so the caller can send
-        it again. Never suspends while the worker is alive.
+        speak-core's worker plays on after any error a player raises, so only something
+        outside that, or a cancellation, ends it. From then on nothing reads the queue:
+        every sentence would be answered and never heard, and `reading_status` would
+        count it as still to read forever. What the queue still holds is dropped, and
+        the reply says how much, so the caller can send it again. Never suspends while
+        the worker is alive.
         """
         worker = session.worker
         if worker is None or not worker.done():
@@ -237,17 +238,26 @@ def create_server(
         if problem is not None:
             raise refused(f"this text cannot be read aloud: {problem}")
         try:
-            spoken = normalize(text, max_chars=settings.speech.max_chars)
+            spoken = normalize(text)
         except ValueError as error:
             raise refused(str(error)) from error
         revived = await revive_reader()
+        # A sentence an utterance, so the first is heard while the next is synthesized.
         # Bookkeeping and enqueue happen with no suspension between them, so concurrent
         # calls queue in arrival order and a `stop_reading` cannot fall in between.
-        if narration is not None:
-            narration.queued(spoken)
-        ahead = queue.enqueue(
-            spoken, voice=settings.speech.voice, rate=settings.speech.rate, intent="narration"
-        )
+        queued = []
+        for sentence in sentences(spoken):
+            if narration is not None:
+                narration.queued(sentence)
+            queued.append(
+                queue.enqueue(
+                    sentence,
+                    voice=settings.speech.voice,
+                    rate=settings.speech.rate,
+                    intent="narration",
+                )
+            )
+        ahead = queued[0]
         if supervisor is not None and not session.registered:
             session.registered = True
             try:

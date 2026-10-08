@@ -9,6 +9,8 @@ than a chunk is cut rather than dropped: nothing a reader wrote is ever lost.
 import re
 from dataclasses import dataclass
 
+from speak_core.text import close, pieces
+
 MARKDOWN_SUFFIXES = frozenset({".md", ".markdown", ".mdown", ".mkd", ".mdx"})
 
 _FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
@@ -38,14 +40,7 @@ _STAR = re.compile(r"(\*{1,3})(?=\S)(.+?)(?<=\S)\1")
 _UNDERSCORE = re.compile(r"(?<!\w)(_{1,3})(?=\S)(.+?)(?<=\S)\1(?!\w)")
 _STRIKE = re.compile(r"~~(?=\S)(.+?)(?<=\S)~~")
 
-# Sentence ends (with any closing quote or bracket) and clause breaks, followed by the
-# whitespace a chunk may be cut at. A sentence end followed by a lowercase word is an
-# abbreviation (`e.g. here`), not an end. Typographic characters are written as escapes.
-_SENTENCE_END = re.compile(r"[.!?\u2026][\"'\u201d\u2019)\]]*(\s+)(?![a-z])")
-_CLAUSE_END = re.compile(r"[,;:\u2014\u2013](\s+)")
 _WORD = re.compile(r"\w")
-_FINAL = re.compile(r"[.!?\u2026][\"'\u201d\u2019)\]]*$")
-_TRAILING_CLAUSE = re.compile(r"\s*[,;:\u2014\u2013]+$")
 
 
 def unspeakable(text: str) -> str | None:
@@ -193,16 +188,16 @@ class Chunk:
 
 
 def chunk_text(text: str, *, max_chars: int) -> list[Chunk]:
-    """`text`'s paragraphs, cut into pieces of at most `max_chars` characters: one
-    sentence a piece, because MagpieTTS repeats and garbles words when one request holds
-    several (harness/performance.md). A sentence over `max_chars` is cut at its clauses,
-    then its words. A one-word sentence, usually an abbreviation such as `Dr.`, goes with
-    the sentence after it.
+    """`text`'s paragraphs, each cut by speak-core's `pieces` into chunks of at most
+    `max_chars` characters: one sentence a chunk, because MagpieTTS repeats and garbles
+    words when one request holds several (harness/performance.md), a sentence over
+    `max_chars` cut at its clauses, then its words, and a one-word sentence such as
+    `Dr.` with the sentence after it.
 
     A piece holding no word (only punctuation) is not spoken.
-    Every chunk ends in sentence-final punctuation so the speech model closes the
-    phrase: a chunk that does not gets a full stop (replacing a trailing clause mark).
-    That stop counts against `max_chars`.
+    Every chunk ends in sentence-final punctuation (`close`) so the speech model closes
+    the phrase: a chunk that does not gets a full stop (replacing a trailing clause
+    mark). That stop counts against `max_chars`.
 
     Raises:
         ValueError: `max_chars` is under 2, too small for a character and its stop.
@@ -212,71 +207,6 @@ def chunk_text(text: str, *, max_chars: int) -> list[Chunk]:
     budget = max_chars - 1
     chunks: list[Chunk] = []
     for paragraph in paragraphs(text):
-        pieces = [p for p in _sentences(paragraph, budget) if _WORD.search(p)]
-        chunks += [Chunk(_close(piece), i == len(pieces) - 1) for i, piece in enumerate(pieces)]
+        cut = [piece for piece in pieces(paragraph, max_chars=budget) if _WORD.search(piece)]
+        chunks += [Chunk(close(piece), i == len(cut) - 1) for i, piece in enumerate(cut)]
     return chunks
-
-
-def _close(piece: str) -> str:
-    if _FINAL.search(piece):
-        return piece
-    return _TRAILING_CLAUSE.sub("", piece) + "."
-
-
-def _split_after(pattern: re.Pattern[str], text: str) -> list[str]:
-    """`text` cut at each whitespace run `pattern` marks; the punctuation stays left."""
-    pieces, start = [], 0
-    for match in pattern.finditer(text):
-        pieces.append(text[start : match.start(1)])
-        start = match.end(1)
-    pieces.append(text[start:])
-    return [piece for piece in pieces if piece]
-
-
-def _sentences(paragraph: str, max_chars: int) -> list[str]:
-    """One piece a sentence, a one-word sentence joined to the next when both fit, and a
-    sentence over the limit as its clauses (or their words) packed up to it: every piece
-    at most `max_chars` long, and no two sentences in one unless the first is one word."""
-    pieces: list[str] = []
-    held = ""  # a one-word sentence waiting for the sentence after it
-    for sentence in _split_after(_SENTENCE_END, paragraph):
-        if held:
-            if len(held) + 1 + len(sentence) <= max_chars:
-                sentence = f"{held} {sentence}"
-            else:
-                pieces.append(held)
-            held = ""
-        if " " not in sentence and len(sentence) <= max_chars:
-            held = sentence
-        elif len(sentence) <= max_chars:
-            pieces.append(sentence)
-        else:
-            pieces += _pack(_clauses(sentence, max_chars), max_chars)
-    if held:
-        pieces.append(held)
-    return pieces
-
-
-def _clauses(sentence: str, max_chars: int) -> list[str]:
-    """`sentence`'s clauses, a clause over `max_chars` cut into its words."""
-    units: list[str] = []
-    for clause in _split_after(_CLAUSE_END, sentence):
-        units += [clause] if len(clause) <= max_chars else _words(clause, max_chars)
-    return units
-
-
-def _words(text: str, max_chars: int) -> list[str]:
-    pieces: list[str] = []
-    for word in text.split():
-        pieces += [word[i : i + max_chars] for i in range(0, len(word), max_chars)]
-    return _pack(pieces, max_chars)
-
-
-def _pack(units: list[str], max_chars: int) -> list[str]:
-    packed: list[str] = []
-    for unit in units:
-        if packed and len(packed[-1]) + 1 + len(unit) <= max_chars:
-            packed[-1] = f"{packed[-1]} {unit}"
-        else:
-            packed.append(unit)
-    return packed

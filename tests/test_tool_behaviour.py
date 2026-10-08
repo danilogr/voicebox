@@ -28,10 +28,11 @@ async def test_read_aloud_collapses_whitespace_and_marks_it_narration():
     assert queue.intents == ["narration"]
 
 
-async def test_read_aloud_cuts_at_the_configured_cap():
-    server, queue = build(env={"VOICEBOX_MAX_CHARS": "10"})
-    await call(server, "read_aloud", text="one two three four five")
-    assert queue.enqueued[0][0] == "one two…"
+async def test_read_aloud_queues_each_sentence_whole_and_in_order():
+    server, queue = build()
+    long = "Clause, " * 200 + "and the end."
+    await call(server, "read_aloud", text=f"First one. {long} Last!")
+    assert [entry[0] for entry in queue.enqueued] == ["First one.", long, "Last!"]
 
 
 async def test_read_aloud_reads_in_the_configured_voice_and_rate():
@@ -179,16 +180,20 @@ class Exited:
         return 0
 
 
+class WorkerKilled(BaseException):
+    """Not an `Exception`: speak-core's queue worker plays on after any error a player
+    raises, so only something outside that, or a cancellation, ends it."""
+
+
 def failing_first_player(played: list[str]):
-    """A spawn whose first call raises an error the queue does not expect from a player.
-    speak-core's queue worker ends on it, as it does on a NUL in a player's arguments."""
+    """A spawn whose first call raises what speak-core's queue worker does not catch."""
     calls = 0
 
     async def spawn(command: str, args) -> Exited:
         nonlocal calls
         calls += 1
         if calls == 1:
-            raise ValueError("embedded null byte")
+            raise WorkerKilled
         played.append(args[-1])
         return Exited()
 

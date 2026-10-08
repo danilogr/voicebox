@@ -135,8 +135,10 @@ their design is in its `harness/architecture.md`. This document covers voicebox.
   garbles words when one request holds several sentences (`performance.md`), so the text
   is sent a sentence at a time, and a sentence over 250 characters is cut at its clauses,
   then its words. A one-word sentence (`Dr.`) goes with the next, and a full stop before
-  a lowercase word (`e.g. this`) does not end a sentence. A word longer than a chunk is
-  cut, never dropped (so text without spaces is cut at the size limit). Markdown loses only its markup, list numbers included; fenced code is skipped
+  a lowercase word (`e.g. this`) does not end a sentence. The cutting is speak-core's
+  `text.pieces`, which its `nemo` engine applies to `read_aloud` sentences too. A word
+  longer than a chunk is cut, never dropped (so text without spaces is cut at the size
+  limit). Markdown loses only its markup, list numbers included; fenced code is skipped
   whole, because code read aloud is noise in a voice-over (as `/voicebox:narrate`
   already skips it).
 

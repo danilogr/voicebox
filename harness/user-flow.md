@@ -66,9 +66,11 @@ session also reconciles running jobs when it starts.
 `/voicebox:narrate` splits the text into sentences and sends at most ten `read_aloud`
 calls, then one `reading_status`, and starts the next round when two or fewer are left.
 
-1. `read_aloud` normalises the sentence (one line, capped at `VOICEBOX_MAX_CHARS`, 400)
-   and queues it. Empty text is refused (`input_unsupported`), and so is text holding a
-   NUL or an unpaired surrogate, which no player process can be given.
+1. `read_aloud` normalises the text to one line, never cutting it, and queues each of
+   its sentences as its own utterance; speak-core's `nemo` engine sends a sentence over
+   250 characters a clause at a time and joins the audio. Empty text is refused
+   (`input_unsupported`), and so is text holding a NUL or an unpaired surrogate, which no
+   player process can be given.
 2. The queue prepares the next sentence while one plays, waits for the speaker lock
    (another process may be speaking), plays it, and reports how it ended.
 3. `stop_reading` clears the queue and stops the sentence playing, including one waiting

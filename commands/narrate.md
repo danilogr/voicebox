@@ -30,9 +30,9 @@ Under that, just begin.
 
 **Prepare the text before the first call.**
 
-- Split it into sentences. One `read_aloud` call carries one sentence, and anything past
-  about 400 characters is cut off at a word boundary — so split a long sentence at its
-  clause break rather than letting it truncate.
+- Split it into sentences. One `read_aloud` call carries one sentence, so a `stop` or a
+  `reading_status` between rounds counts what is left in sentences. A long sentence is
+  read whole.
 - Skip what cannot be heard: code blocks, tables, ASCII diagrams, reference lists,
   footnote markers, figure labels. Say "there is a code example here" and move on.
 - Turn headings into transitions, not announcements. "Next, on how the lock works" —

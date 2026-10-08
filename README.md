@@ -98,7 +98,6 @@ Environment variables, read when the server starts:
 | `VOICEBOX_ENGINE` | `nemo` | reading-aloud engine: `nemo`, `say` (macOS) or `command` |
 | `VOICEBOX_COMMAND` | unset | the command the `command` engine runs; without one, `nemo` is used and a warning logged |
 | `VOICEBOX_RATE` | engine default | reading-aloud rate, for engines that take one |
-| `VOICEBOX_MAX_CHARS` | `400` | longest sentence `read_aloud` accepts; the rest is cut |
 | `VOICEBOX_TRANSCRIBE_DIR` | the input's folder | where transcripts go |
 | `VOICEBOX_TRANSCRIBE_TIMEOUT` | unset | seconds after which `job_status` calls a transcription possibly wedged; it does not stop the job |
 | `VOICEBOX_UV` | found on `PATH` or in a standard location | full path to `uv`, used by the server launcher |
@@ -115,8 +114,8 @@ the speech server decides its arguments, so keep them identical.
 ## Limits
 
 - One voicebox job runs at a time; a second request is refused with the running job's id.
-- Voice-overs are sent to the speech server one sentence at a time, because the speech
-  model repeats and garbles words when one request holds several
+- Voice-overs and read-aloud text are sent to the speech server one sentence at a time,
+  because the speech model repeats and garbles words when one request holds several
   ([harness/performance.md](harness/performance.md)). A sentence over 250 characters is
   cut at its commas, with a short pause where it is cut. A word is still occasionally
   repeated.

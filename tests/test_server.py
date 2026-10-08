@@ -166,13 +166,16 @@ async def test_reading_status_is_offered_over_stdio(recorder):
         assert "nothing left to read" in await text_of(session, "reading_status")
 
 
-async def test_the_character_cap_is_honoured_end_to_end(recorder):
+async def test_each_sentence_is_read_in_order_end_to_end(recorder):
     script, log = recorder
-    async with connected(f"{sys.executable} {script}", {"VOICEBOX_MAX_CHARS": "11"}) as session:
-        await text_of(session, "read_aloud", text="one two three four")
-        await _wait_for_lines(log, 1)
+    async with connected(f"{sys.executable} {script}") as session:
+        await text_of(session, "read_aloud", text="One two. Three four!")
+        await _wait_for_lines(log, 2)
 
-    assert json.loads(log.read_text().splitlines()[0]) == ["one two…"]
+    assert [json.loads(line) for line in log.read_text().splitlines()] == [
+        ["One two."],
+        ["Three four!"],
+    ]
 
 
 async def test_nothing_is_written_to_stdout_except_protocol_frames(recorder):

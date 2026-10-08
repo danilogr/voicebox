@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "Offline transcription, voice-overs and read-aloud for coding agents, on NVIDIA NeMo-Speech.cpp."
 requires-python = ">=3.12"
 dependencies = [
-    "speak-core @ git+https://github.com/danilogr/speak-core@v0.3.0",
+    "speak-core @ git+https://github.com/danilogr/speak-core@36d0c695ceeb967275378bc04809f1c29f6bb9e9",
     "mcp>=2.1,<3",
 ]
 
