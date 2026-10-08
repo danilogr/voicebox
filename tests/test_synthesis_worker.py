@@ -24,7 +24,7 @@ from synthesis_support import (
 )
 from voicebox.jobs.desk import Desk, reconcile
 from voicebox.jobs.lock import JobBusy, job_lock
-from voicebox.jobs.store import CRASHED, DONE, FAILED, JobStore
+from voicebox.jobs.store import CRASHED, DONE, FAILED, QUEUED, JobStore
 from voicebox.programs import ConversionFailed, ToolMissing
 from voicebox.synthesize.audio import OutputTooLargeError
 from voicebox.synthesize.limits import (
@@ -249,7 +249,7 @@ async def test_an_output_directory_that_vanished_is_unwritable(tmp_path):
     assert (finished.reason, finished.stage) == ("output_unwritable", "write")
 
 
-async def test_a_worker_that_loses_the_lock_race_is_refused_busy(tmp_path):
+async def test_a_worker_that_loses_the_lock_race_waits_its_turn_again(tmp_path):
     staged(tmp_path, "One chunk.")
     job_lock(tmp_path, is_alive=lambda pid: True, pid=300).take_over(CLAIMER)
     recorded = []
@@ -262,7 +262,10 @@ async def test_a_worker_that_loses_the_lock_race_is_refused_busy(tmp_path):
             pid=WORKER,
             record=recorded.append,
         )
-    assert [(job.state, job.reason) for job in recorded] == [(FAILED, "busy")]
+    assert recorded == []
+    store = JobStore(tmp_path)
+    assert store.read(JOB_ID).state == QUEUED
+    assert store.text_path(JOB_ID).read_text() == "One chunk.", "its text must wait with it"
 
 
 def test_place_never_leaves_half_a_file(tmp_path):

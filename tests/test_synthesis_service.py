@@ -209,7 +209,7 @@ async def test_a_job_sent_while_any_job_runs_waits_its_turn(tmp_path):
     answer = await reply(
         tmp_path, request(text="Hi.", output=str(tmp_path / "o.wav")), alive=(ME, OTHER)
     )
-    assert "queued behind 1 job" in answer
+    assert "queued, next in line" in answer
     (waiting,) = JobStore(tmp_path / "state").queued()
     assert JobStore(tmp_path / "state").text_path(waiting.job_id).is_file(), "its text waits too"
 

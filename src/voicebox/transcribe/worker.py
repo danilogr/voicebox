@@ -20,7 +20,7 @@ from speak_core.supervisor import process_is_alive
 
 from voicebox.jobs.desk import Record, start_next_job
 from voicebox.jobs.lock import JobBusy, job_lock
-from voicebox.jobs.store import DONE, EMPTY, FAILED, Job, JobStore, TranscriptionJob
+from voicebox.jobs.store import DONE, EMPTY, FAILED, QUEUED, Job, JobStore, TranscriptionJob
 from voicebox.programs import ConversionFailed, Runner, ToolMissing, run_convert_command
 from voicebox.telemetry.jobs import record_job
 from voicebox.transcribe.output import transcript_text
@@ -85,13 +85,10 @@ async def run_job(
     lock = job_lock(state_dir, is_alive=is_alive, pid=me)
     try:
         lock.take_over(job.claimed_by)
-    except JobBusy as error:
-        # Refused the lock, so this job never runs. Saying so is the whole of the
-        # worker's answer here: without a record it would look like a worker that
-        # vanished, and the session would wait out an estimate for work nobody is doing.
-        refused = replace(job, state=FAILED, finished_at=clock(), error=str(error), reason="busy")
-        jobs.write(refused)
-        record(refused)
+    except JobBusy:
+        # Another job took the lock between this job's start and this takeover: put it
+        # back in the queue, in its place, for whoever ends that job to start again.
+        jobs.write(replace(job, state=QUEUED))
         raise
     job = replace(job, worker_pid=me)
     jobs.write(job)

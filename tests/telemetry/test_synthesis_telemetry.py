@@ -59,15 +59,14 @@ async def test_a_failed_synthesis_is_failed_at_synthesize_with_chunks_done(tmp_p
     )
 
 
-async def test_a_worker_that_lost_the_lock_race_is_one_refused_row(tmp_path):
+async def test_a_worker_that_lost_the_lock_race_records_nothing_yet(tmp_path):
     db = tmp_path / "telemetry.db"
     opened(db).close()
     staged(tmp_path, "One.", telemetry=ref(db))
     job_lock(tmp_path, is_alive=lambda pid: True, pid=300).take_over(CLAIMER)
     with pytest.raises(JobBusy):
         await finish(tmp_path, FakeSynthesizer())
-    (row,) = assert_shippable(db)
-    assert (row["status"], row["reason"]) == ("refused", "busy") and "stage" not in row
+    assert stored_rows(db) == []  # back in the queue: its row comes when it ends
 
 
 def test_a_dead_synthesis_worker_is_crashed_once_and_cleaned_up(tmp_path):
@@ -171,7 +170,7 @@ async def test_a_job_sent_while_another_runs_waits_and_records_nothing_yet(tmp_p
         request(text="Hi.", output=str(tmp_path / "o.wav")),
         session,
     )
-    assert "queued behind 1 job" in reply
+    assert "queued, next in line" in reply
     assert stored_rows(db) == []  # a job is recorded when it ends
 
 

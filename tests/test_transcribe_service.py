@@ -160,7 +160,7 @@ async def test_a_job_sent_while_one_runs_waits_its_turn(tmp_path):
     s = scribe(tmp_path, alive=(ME, OTHER))
     job_lock(tmp_path / "state", is_alive=lambda p: True, pid=OTHER).acquire()
     reply = await start(s, settings(tmp_path), request(media(tmp_path)))
-    assert reply.startswith("Transcribing") and "queued behind 1 job" in reply
+    assert reply.startswith("Transcribing") and "queued, next in line" in reply
     assert [job.state for job in s.jobs.recent()] == ["queued"]
 
 
@@ -239,7 +239,7 @@ async def test_three_calls_in_one_session_start_exactly_one_transcription(tmp_pa
         *(start(s, settings(tmp_path), request(source)) for _ in range(3))
     )
     assert all(reply.startswith("Transcribing") for reply in replies)
-    assert sum("queued behind" in reply for reply in replies) == 2
+    assert sum("queued, behind" in reply for reply in replies) == 2
     assert len(spawned) == 1
     jobs = s.jobs.recent()
     assert sorted(job.state for job in jobs) == ["queued", "queued", "running"]

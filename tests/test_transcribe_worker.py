@@ -3,7 +3,15 @@ from pathlib import Path
 import pytest
 
 from voicebox.jobs.lock import JobBusy, job_lock
-from voicebox.jobs.store import DONE, EMPTY, FAILED, RUNNING, JobStore, TranscriptionJob
+from voicebox.jobs.store import (
+    DONE,
+    EMPTY,
+    FAILED,
+    QUEUED,
+    RUNNING,
+    JobStore,
+    TranscriptionJob,
+)
 from voicebox.programs import CommandResult
 from voicebox.transcribe.worker import cli_argv, run_job
 
@@ -108,9 +116,9 @@ async def test_the_worker_takes_the_lock_over_and_releases_it(tmp_path):
     assert job_lock(tmp_path, is_alive=alive).owner() is None
 
 
-async def test_a_worker_refused_the_lock_records_the_failure_rather_than_dying_quietly(tmp_path):
-    """Its stderr is the job log and nobody waits on its exit code, so a worker that
-    cannot have the lock has to leave the answer on the record itself."""
+async def test_a_worker_refused_the_lock_puts_its_job_back_in_the_queue(tmp_path):
+    """Another job took the lock between this one's start and its takeover: this job
+    waits its turn again instead of failing as busy."""
     store, _ = start(tmp_path)
     job_lock(tmp_path, is_alive=alive, pid=OTHER).take_over(CLAIMER)
     run_cli, calls = cli_writing("words")
@@ -119,9 +127,8 @@ async def test_a_worker_refused_the_lock_records_the_failure_rather_than_dying_q
     with pytest.raises(JobBusy):
         await run(tmp_path, run_cli, recorded)
 
-    refused = store.read("j1")
-    assert refused.state == FAILED and "one job at a time" in refused.error
-    assert [job.state for job in recorded] == [FAILED]
+    assert store.read("j1").state == QUEUED
+    assert recorded == []  # it has not ended, so it has no row yet
     assert calls == []
     assert job_lock(tmp_path, is_alive=alive).owner() == OTHER
 

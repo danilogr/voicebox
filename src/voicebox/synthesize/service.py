@@ -146,6 +146,11 @@ async def start(
         if refusal.reason is not None:
             refuse(refusal.reason, refusal.shape, source)
         return refusal.message
+    if str(prepared.output) in desk.jobs.outputs_in_use():
+        # Checked again with no await before the job is queued: another session may have
+        # queued a job writing here while this one waited on the speech server.
+        refuse("output_unwritable", prepared.shape, source)
+        return f"another voicebox job is already writing {prepared.output}; choose another path"
     job = SynthesisJob(
         job_id=job_id,
         state=QUEUED,

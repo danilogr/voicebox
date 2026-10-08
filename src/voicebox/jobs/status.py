@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from voicebox.config import Settings
-from voicebox.jobs.desk import Desk, duration, place, reconcile, release_if_idle
+from voicebox.jobs.desk import Desk, behind, duration, place, reconcile, release_if_idle
 from voicebox.jobs.store import (
     CRASHED,
     DONE,
@@ -67,10 +67,9 @@ def _summary(job: Job) -> str:
 
 def _describe(desk: Desk, settings: Settings, job: Job) -> str:
     if job.state == QUEUED:
-        position, wait = place(desk, job)
-        ahead = "1 job" if position == 1 else f"{position} jobs"
+        count, wait = place(desk, job)
         return (
-            f"queued: {_name(job)}, behind {ahead}; it starts on its own in about "
+            f"queued: {_name(job)}, {behind(count)}; it starts on its own in about "
             f"{duration(wait)} and should be done about {duration(wait + job.eta_s)} from "
             f"now. Check again in about {duration(_check_again(wait))}."
         )

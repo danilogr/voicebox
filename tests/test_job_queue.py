@@ -280,3 +280,38 @@ def test_a_worker_starts_the_next_job_however_its_own_ended(monkeypatch, module,
     worker.main(["/state", "00000000-0000-4000-8000-000000000001"])
 
     assert started == [Path("/state")]
+
+
+async def test_session_start_starts_a_job_left_waiting(tmp_path):
+    from voicebox.__main__ import _start_waiting_job
+
+    desk = desk_at(tmp_path)
+    queue(desk, job("a", 10.0))
+
+    await _start_waiting_job(desk)
+
+    assert desk.jobs.read(job("a", 10.0).job_id).state == RUNNING
+
+
+async def test_session_start_survives_a_state_dir_it_cannot_use(tmp_path):
+    from voicebox.__main__ import _start_waiting_job
+
+    (tmp_path / "state").write_text("a file where the directory should be")
+    await _start_waiting_job(desk_at(tmp_path))  # logs, never raises
+
+
+async def test_a_job_with_nothing_ahead_is_next_in_line(tmp_path):
+    """The lock can be held for a moment with no job running yet: nothing is ahead."""
+    job_lock(tmp_path / "state", is_alive=lambda p: True, pid=OTHER).acquire()
+    desk = desk_at(tmp_path, alive=(ME, OTHER))
+    queue(desk, job("a", 10.0))
+
+    report = status(desk, Settings(state_dir=tmp_path / "state"), job("a", 10.0).job_id)
+
+    assert report.startswith("queued: a.m4a, next in line; it starts on its own in about 0 s")
+
+
+def test_a_job_no_longer_queued_has_nothing_ahead(tmp_path):
+    desk = desk_at(tmp_path)
+    queue(desk, job("b", 20.0))
+    assert desk_module.place(desk, job("a", 10.0)) == (0, 0.0)

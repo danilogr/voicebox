@@ -111,10 +111,13 @@ their design is in its `harness/architecture.md`. This document covers voicebox.
   (`start_next_job`), at session start and by `job_status`, so the queue moves on after
   a worker that died, at the next of those. A worker that starts the next job waits up
   to 10 s for that job's worker to take the lock over before exiting, since a lock
-  naming a dead pid may be reclaimed by anyone. A job's `created_at` is when it started
+  naming a dead pid may be reclaimed by anyone; a worker that still finds another job
+  holding the lock puts its own job back in the queue. A job's `created_at` is when it started
   running, so estimates, the dead-worker grace and telemetry's `wall_ms` measure work;
   `queued_at` orders the queue. A request whose output a queued or running job will
-  write is refused, or for a transcript given another name. The lock is not re-entrant
+  write is refused, or for a transcript given another name. Known limitation: the check
+  and the queuing are not one step across processes, so two sessions queuing
+  transcripts of the same file in the same few milliseconds could be given one name. The lock is not re-entrant
   (it is claimed for a worker that does not exist yet) and waits out an ownerless
   directory for two seconds before reclaiming it. An in-process gate in the server makes
   one session's job calls check and queue one at a time. Not built: a cap, cancelling or

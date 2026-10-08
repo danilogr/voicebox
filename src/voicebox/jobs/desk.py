@@ -160,9 +160,13 @@ async def start_next(desk: Desk, *, hand_off: bool = False) -> Job | None:
             return started
         desk.jobs.discard_artifacts(started.job_id)
         left = desk.jobs.read(started.job_id)
-        if left is not None and left.state == QUEUED:
-            # Its failure could not be written: drop it rather than retry it forever.
-            desk.jobs.record_path(started.job_id).unlink(missing_ok=True)
+        if left is not None and left.state in (QUEUED, RUNNING):
+            # Its failure could not be written: drop it, rather than retry it forever or
+            # leave a running job no worker will ever finish.
+            try:
+                desk.jobs.record_path(started.job_id).unlink(missing_ok=True)
+            except OSError as error:
+                logger.warning("could not drop job %s: %s", started.job_id, error)
 
 
 def start_next_job(state_dir: Path) -> None:
@@ -186,15 +190,24 @@ async def _await_takeover(desk: Desk, worker_pid: int | None) -> None:
 
 
 def place(desk: Desk, job: Job) -> tuple[int, float]:
-    """A queued job's place in line (1 = next) and the seconds until it should start:
-    what the running job has left, and the estimate of every job ahead of it."""
+    """How many jobs are ahead of a queued one - running or queued before it - and the
+    seconds until it should start: what the running job has left, and the estimate of
+    every queued job ahead of it."""
     queued = desk.jobs.queued()
     ids = [j.job_id for j in queued]
-    ahead = queued[: ids.index(job.job_id)] if job.job_id in ids else queued
-    wait = sum(
-        max(0.0, j.eta_s - (desk.clock() - j.created_at)) for j in desk.jobs.running()
-    ) + sum(j.eta_s for j in ahead)
-    return len(ahead) + 1, wait
+    ahead = queued[: ids.index(job.job_id)] if job.job_id in ids else []
+    running = desk.jobs.running()
+    wait = sum(max(0.0, j.eta_s - (desk.clock() - j.created_at)) for j in running) + sum(
+        j.eta_s for j in ahead
+    )
+    return len(running) + len(ahead), wait
+
+
+def behind(count: int) -> str:
+    """Where a queued job stands, for the tools' answers."""
+    if count == 0:
+        return "next in line"
+    return "behind 1 job" if count == 1 else f"behind {count} jobs"
 
 
 def claim(desk: Desk) -> ExclusiveLock:
@@ -319,10 +332,9 @@ def accepted(desk: Desk, job: Job) -> str:
     current = desk.jobs.read(job.job_id) or job
     if current.state != QUEUED:
         return f"Job {job.job_id}; about {duration(job.eta_s)}. Ask job_status for progress."
-    position, wait = place(desk, current)
-    ahead = "1 job" if position == 1 else f"{position} jobs"
+    count, wait = place(desk, current)
     return (
-        f"Job {job.job_id}; queued behind {ahead}: voicebox runs one job at a time, and "
+        f"Job {job.job_id}; queued, {behind(count)}: voicebox runs one job at a time, and "
         f"this one starts on its own in about {duration(wait)} and should be done about "
         f"{duration(wait + job.eta_s)} from now. Ask job_status for progress."
     )

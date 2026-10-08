@@ -30,7 +30,7 @@ from speak_core.supervisor import process_is_alive
 
 from voicebox.jobs.desk import Record, start_next_job
 from voicebox.jobs.lock import JobBusy, job_lock
-from voicebox.jobs.store import DONE, FAILED, Job, JobStore, SynthesisJob
+from voicebox.jobs.store import DONE, FAILED, QUEUED, Job, JobStore, SynthesisJob
 from voicebox.programs import ConversionFailed, ToolMissing
 from voicebox.synthesize.audio import (
     FormatMismatchError,
@@ -206,13 +206,10 @@ async def run_job(
     lock = job_lock(state_dir, is_alive=is_alive, pid=me)
     try:
         lock.take_over(job.claimed_by)
-    except JobBusy as error:
-        # Refused the lock, so this job never runs; the record says so, or it would look
-        # like a worker that vanished.
-        refused = replace(job, state=FAILED, finished_at=clock(), error=str(error), reason="busy")
-        jobs.write(refused)
-        record(refused)
-        jobs.discard_artifacts(job_id)
+    except JobBusy:
+        # Another job took the lock between this job's start and this takeover: put it
+        # back in the queue, in its place, for whoever ends that job to start again.
+        jobs.write(replace(job, state=QUEUED))
         raise
     job = replace(job, worker_pid=me)
     jobs.write(job)

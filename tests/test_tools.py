@@ -100,7 +100,7 @@ async def test_two_transcribe_calls_never_run_together(tmp_path):
     release.set()
     replies = await asyncio.gather(first, second)
     assert all(reply.startswith("Transcribing") for reply in replies)
-    assert sum("queued behind 1 job" in reply for reply in replies) == 1
+    assert sum("queued, behind 1 job" in reply for reply in replies) == 1
 
 
 async def test_job_status_answers_for_an_empty_store(tmp_path):

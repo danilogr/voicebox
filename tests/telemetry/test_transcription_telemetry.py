@@ -182,7 +182,7 @@ async def test_a_model_failure_after_a_conversion_is_failed_at_asr_and_counts_th
     assert row["converted"] is True and row["convert_ms"] > 0
 
 
-async def test_a_worker_that_loses_the_lock_race_is_refused_busy(tmp_path):
+async def test_a_worker_that_loses_the_lock_race_records_nothing_yet(tmp_path):
     db = started(tmp_path)
     job_lock(tmp_path, is_alive=lambda pid: True, pid=300).take_over(CLAIMER)
     with pytest.raises(JobBusy):
@@ -194,11 +194,7 @@ async def test_a_worker_that_loses_the_lock_race_is_refused_busy(tmp_path):
             record=record_job,
             run_cli=cli(),
         )
-    (row,) = assert_shippable(db)
-    assert (row["status"], row["reason"]) == ("refused", "busy")
-    assert "stage" not in row
-    # The worker never ran, so nothing was converted whatever the plan said.
-    assert "converted" not in row
+    assert stored_rows(db) == []  # back in the queue: its row comes when it ends
 
 
 def test_a_dead_worker_is_recorded_as_crashed_once_at_its_stage(tmp_path):
@@ -393,7 +389,7 @@ async def test_a_job_sent_while_another_runs_waits_and_records_nothing_yet(tmp_p
     job_lock(tmp_path / "state", is_alive=lambda p: True, pid=300).acquire()
     desk = desk_for(tmp_path, alive=(CLAIMER, 300))
     reply = await start(desk, Settings(state_dir=tmp_path / "state"), request(media), session)
-    assert "queued behind 1 job" in reply
+    assert "queued, next in line" in reply
     assert [job.state for job in desk.jobs.recent()] == ["queued"]
     assert stored_rows(session.db_path) == []  # a job is recorded when it ends
 

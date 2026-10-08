@@ -167,7 +167,7 @@ async def test_a_lock_wedged_by_a_dead_worker_is_freed_by_the_session_holding_it
     assert "crashed" in status(b, settings(tmp_path), None)
     assert a.lock().owner() == ME, "the claiming session still holds it"
     waiting = await start(b, settings(tmp_path), request(media(tmp_path, "second.m4a")))
-    assert "queued behind 1 job" in waiting
+    assert "queued, next in line" in waiting  # the lock is held, nothing runs
 
     status(a, settings(tmp_path), None)
     assert a.lock().owner() is None
@@ -225,7 +225,7 @@ async def test_a_queued_job_reports_its_place_and_when_it_starts(tmp_path):
     s = scribe(tmp_path, now=1000.0, alive=(ME, WORKER))
     await start(s, settings(tmp_path), request(media(tmp_path)))
     reply = await start(s, settings(tmp_path), request(media(tmp_path, "second.m4a")))
-    assert "queued behind 1 job" in reply
+    assert "queued, behind 1 job" in reply
     (waiting,) = s.jobs.queued()
     report = status(s, settings(tmp_path), waiting.job_id)
     assert report.startswith("queued: second.m4a, behind 1 job; it starts on its own in about")
