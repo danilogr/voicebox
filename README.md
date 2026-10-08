@@ -1,4 +1,4 @@
-![voicebox](assets/voicebox-hero.jpg)
+<img src="assets/voicebox-hero.jpg" alt="voicebox" width="320" />
 
 # <img src="assets/voicebox-detailed.svg" width="36" height="36" alt="" valign="middle" /> voicebox
 
@@ -32,7 +32,7 @@ prompt.
 
 ## <img src="assets/transcribe-detailed.svg" width="28" height="28" alt="" valign="middle" /> Transcribe
 
-![Transcribe](assets/transcribe-hero.jpg)
+<img src="assets/transcribe-hero.jpg" alt="Transcribe" width="240" />
 
 Meetings, interviews, voice memos, lectures, video clips: any format `ffmpeg` reads.
 
@@ -47,7 +47,7 @@ and the transcript translated.
 
 ## <img src="assets/narrate-detailed.svg" width="28" height="28" alt="" valign="middle" /> Voice-overs
 
-![Narrate](assets/narrate-hero.jpg)
+<img src="assets/narrate-hero.jpg" alt="Narrate" width="240" />
 
 > *"Turn `~/notes/launch.md` into an mp3 in Sofia's voice."*
 >
