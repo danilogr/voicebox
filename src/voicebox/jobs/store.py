@@ -17,6 +17,7 @@ from voicebox.synthesize.limits import COLD_START_S, PACE_MIN_CHARS, SYNTH_CHARS
 
 logger = logging.getLogger(__name__)
 
+QUEUED = "queued"  # accepted, waiting for the job before it to finish
 RUNNING = "running"
 DONE = "done"
 EMPTY = "empty"  # a transcription that finished and heard no speech
@@ -47,6 +48,9 @@ class Job:
     format: str
     nemo_binary: str
     claimed_by: int
+    # When the job started running, not when it was asked for: elapsed time, estimates,
+    # the dead-worker grace and telemetry's `wall_ms` all measure work, never waiting.
+    # A queued job holds its acceptance time here until it starts.
     created_at: float
     worker_pid: int | None = None
     finished_at: float | None = None
@@ -62,6 +66,8 @@ class Job:
     # {"db_path", "session_id", "install_id"} of the session that asked, or None when
     # that session records nothing.
     telemetry: dict[str, str] | None = None
+    # When the tool accepted it: the queue runs in this order.
+    queued_at: float | None = None
 
     @property
     def eta_s(self) -> float:
@@ -146,6 +152,10 @@ def eta_seconds(duration_s: float, diarize: bool) -> float:
     return duration_s / ratio
 
 
+def _queued_at(job: Job) -> float:
+    return job.queued_at if job.queued_at is not None else job.created_at
+
+
 def new_job_id() -> str:
     """A dashed uuid4: the job store's id is the telemetry contract's `job_id`."""
     return str(uuid.uuid4())
@@ -153,7 +163,8 @@ def new_job_id() -> str:
 
 class JobStore:
     def __init__(self, state_dir: Path, *, clock: Callable[[], float] = time.time) -> None:
-        self._dir = Path(state_dir) / "jobs"
+        self.state_dir = Path(state_dir)
+        self._dir = self.state_dir / "jobs"
         self._clock = clock
 
     def record_path(self, job_id: str) -> Path:
@@ -221,12 +232,23 @@ class JobStore:
     def running(self) -> list[Job]:
         """Every record that still says running - all of them, not a page: deciding that
         nothing is running has to read them all."""
+        return self._in(RUNNING)
+
+    def queued(self) -> list[Job]:
+        """Every job waiting its turn, oldest first: the order they run in."""
+        return sorted(self._in(QUEUED), key=lambda j: (_queued_at(j), j.job_id))
+
+    def outputs_in_use(self) -> set[str]:
+        """The outputs of every job not yet finished, which no new job may take."""
+        return {job.output for job in self._in(QUEUED, RUNNING)}
+
+    def _in(self, *states: str) -> list[Job]:
         if not self._dir.is_dir():
             return []
         return [
             job
             for path in self._dir.glob("*.json")
-            if (job := self.read(path.stem)) and job.state == RUNNING
+            if (job := self.read(path.stem)) and job.state in states
         ]
 
     def recent(self, limit: int = 10) -> list[Job]:
@@ -273,13 +295,13 @@ class JobStore:
         Any job that is not running loses its artifacts at once - nothing but this call
         reclaims ones a worker left behind when it never reached its own `finally` (a
         SIGKILL, an OOM kill). Its record, log and pid sidecar outlive it for
-        `RETENTION_S`. Never touches a running job and never raises.
+        `RETENTION_S`. Never touches a queued or running job and never raises.
         """
         now = self._clock()
         try:
             for path in self._dir.glob("*.json"):
                 job = self.read(path.stem)
-                if job is None or job.state == RUNNING:
+                if job is None or job.state in (QUEUED, RUNNING):
                     continue
                 self.discard_artifacts(job.job_id)
                 if job.finished_at is not None and now - job.finished_at >= RETENTION_S:

@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import Collection
 from pathlib import Path
 
 EXTENSIONS = {"text": "txt", "json": "json", "srt": "srt", "vtt": "vtt"}
@@ -12,12 +13,16 @@ FORMATS = tuple(EXTENSIONS)
 _NOT_SPEECH = re.compile(r"^\d+$|-->|^WEBVTT")
 
 
-def output_path(source: Path, directory: Path, fmt: str, job_id: str) -> Path:
-    """`<stem>.<ext>`, or `<stem>.<job_id>.<ext>` when that is taken - a new
-    transcript never overwrites an earlier one."""
+def output_path(
+    source: Path, directory: Path, fmt: str, job_id: str, *, in_use: Collection[str] = ()
+) -> Path:
+    """`<stem>.<ext>`, or `<stem>.<job_id>.<ext>` when that is taken - by a file, or by
+    a job not yet finished (`in_use`) - so a new transcript never overwrites another."""
     ext = EXTENSIONS[fmt]
     plain = directory / f"{source.stem}.{ext}"
-    return plain if not plain.exists() else directory / f"{source.stem}.{job_id}.{ext}"
+    if plain.exists() or str(plain) in in_use:
+        return directory / f"{source.stem}.{job_id}.{ext}"
+    return plain
 
 
 def transcript_text(path: Path, fmt: str) -> str:

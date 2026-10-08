@@ -204,13 +204,23 @@ async def test_a_voice_is_taken_on_trust_while_the_server_is_down(tmp_path):
     assert the_job(tmp_path).voice == "Aria"
 
 
-async def test_a_running_job_of_any_kind_makes_it_busy(tmp_path):
+async def test_a_job_sent_while_any_job_runs_waits_its_turn(tmp_path):
     job_lock(tmp_path / "state", is_alive=lambda p: True, pid=OTHER).acquire()
     answer = await reply(
         tmp_path, request(text="Hi.", output=str(tmp_path / "o.wav")), alive=(ME, OTHER)
     )
-    assert "one job at a time" in answer
-    assert JobStore(tmp_path / "state").recent() == []
+    assert "queued behind 1 job" in answer
+    (waiting,) = JobStore(tmp_path / "state").queued()
+    assert JobStore(tmp_path / "state").text_path(waiting.job_id).is_file(), "its text waits too"
+
+
+async def test_an_output_a_pending_job_will_write_is_refused(tmp_path):
+    job_lock(tmp_path / "state", is_alive=lambda p: True, pid=OTHER).acquire()
+    out = str(tmp_path / "o.wav")
+    await reply(tmp_path, request(text="Hi.", output=out), alive=(ME, OTHER))
+    answer = await reply(tmp_path, request(text="Bye.", output=out), alive=(ME, OTHER))
+    assert "another voicebox job is already writing" in answer
+    assert len(JobStore(tmp_path / "state").queued()) == 1
 
 
 async def test_a_dangling_symlink_at_the_output_is_refused_not_followed(tmp_path):

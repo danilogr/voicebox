@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from speak_core.engines.asr import Liveness
-from telemetry_support import assert_shippable, opened, ref
+from telemetry_support import assert_shippable, opened, ref, stored_rows
 
 from synthesis_support import CLAIMER, JOB_ID, WORKER, FakeSynthesizer, Liveliness, staged
 from voicebox.config import Settings
@@ -157,22 +157,22 @@ def _session(tmp_path: Path) -> tuple[Path, TelemetrySession]:
     return db, TelemetrySession(conn=opened(db), install_id=INSTALL, session_id=SESSION, db_path=db)
 
 
-async def test_a_busy_refusal_is_one_shippable_row(tmp_path):
+async def test_a_job_sent_while_another_runs_waits_and_records_nothing_yet(tmp_path):
     from synthesis_support import ME, OTHER, desk_at, request, settings, speech
     from voicebox.synthesize.service import start
 
     db, session = _session(tmp_path)
     job_lock(tmp_path / "state", is_alive=lambda p: True, pid=OTHER).acquire()
     desk = desk_at(tmp_path, alive=(ME, OTHER))
-    await start(
+    reply = await start(
         desk,
         speech(),
         settings(tmp_path),
         request(text="Hi.", output=str(tmp_path / "o.wav")),
         session,
     )
-    (row,) = assert_shippable(db)
-    assert (row["status"], row["reason"]) == ("refused", "busy")
+    assert "queued behind 1 job" in reply
+    assert stored_rows(db) == []  # a job is recorded when it ends
 
 
 async def test_a_server_that_is_down_and_not_ours_to_start_is_one_shippable_row(tmp_path):

@@ -37,7 +37,9 @@ def captured(monkeypatch):
     served: dict[str, object] = {}
 
     def spawn(coroutine) -> None:
-        spawned.append(coroutine.cr_code.co_name)
+        # Starting a job left queued is not telemetry, and happens in every mode.
+        if coroutine.cr_code.co_name != "_start_waiting_job":
+            spawned.append(coroutine.cr_code.co_name)
         coroutine.close()
 
     def create_server(**kwargs: object) -> object:
@@ -47,6 +49,23 @@ def captured(monkeypatch):
     monkeypatch.setattr(entry, "_spawn", spawn)
     monkeypatch.setattr(entry, "create_server", create_server)
     return spawned, served
+
+
+def test_every_session_start_starts_a_job_left_waiting(tmp_path, monkeypatch):
+    """Whatever the telemetry mode: a job queued behind a worker that died starts when
+    the next session does."""
+    started: list[str] = []
+
+    def spawn(coroutine) -> None:
+        started.append(coroutine.cr_code.co_name)
+        coroutine.close()
+
+    monkeypatch.setattr(entry, "_spawn", spawn)
+    monkeypatch.setattr(entry, "create_server", lambda **kwargs: kwargs)
+    env = env_for(tmp_path, DO_NOT_TRACK="1")
+    served = entry.build(Settings.from_env(env), env)
+    served["on_session_start"]()  # type: ignore[index]
+    assert "_start_waiting_job" in started
 
 
 def run_build(captured, env: dict[str, str]):

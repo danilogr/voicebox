@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fakes import installed
 from voicebox.config import Settings
-from voicebox.jobs.desk import Desk
+from voicebox.jobs.desk import Desk, start_next
 from voicebox.jobs.lock import job_lock
 from voicebox.jobs.status import job_status as status
 from voicebox.jobs.store import CRASHED, DONE, EMPTY, RUNNING, JobStore
@@ -166,12 +166,13 @@ async def test_a_lock_wedged_by_a_dead_worker_is_freed_by_the_session_holding_it
 
     assert "crashed" in status(b, settings(tmp_path), None)
     assert a.lock().owner() == ME, "the claiming session still holds it"
-    assert "already running" in await start(b, settings(tmp_path), request(media(tmp_path)))
+    waiting = await start(b, settings(tmp_path), request(media(tmp_path, "second.m4a")))
+    assert "queued behind 1 job" in waiting
 
     status(a, settings(tmp_path), None)
     assert a.lock().owner() is None
-    reply = await start(b, settings(tmp_path), request(media(tmp_path, "second.m4a")))
-    assert reply.startswith("Transcribing")
+    started = await start_next(b)
+    assert started is not None and started.source.endswith("second.m4a")
 
 
 async def test_status_gives_a_preview_of_a_finished_transcript(tmp_path):
@@ -220,12 +221,15 @@ async def test_the_list_names_each_jobs_kind(tmp_path):
     assert "transcription" in line and "meeting.m4a" in line
 
 
-async def test_a_busy_reply_names_the_running_jobs_kind(tmp_path):
-    from voicebox.jobs.desk import busy_message
-
-    s = scribe(tmp_path, alive=(ME, WORKER))
+async def test_a_queued_job_reports_its_place_and_when_it_starts(tmp_path):
+    s = scribe(tmp_path, now=1000.0, alive=(ME, WORKER))
     await start(s, settings(tmp_path), request(media(tmp_path)))
-    assert busy_message(s).startswith("a transcription is already running (job ")
+    reply = await start(s, settings(tmp_path), request(media(tmp_path, "second.m4a")))
+    assert "queued behind 1 job" in reply
+    (waiting,) = s.jobs.queued()
+    report = status(s, settings(tmp_path), waiting.job_id)
+    assert report.startswith("queued: second.m4a, behind 1 job; it starts on its own in about")
+    assert "Check again in about" in report
 
 
 async def test_the_session_start_sweep_crashes_a_dead_worker_and_frees_the_lock(tmp_path):
@@ -272,7 +276,10 @@ def test_a_running_synthesis_reports_its_chunks(tmp_path):
     # 2,400 characters in 40 s of synthesis: 3,600 more at 60 a second
     s.jobs.write(synthesis(tmp_path, chars_done=2400, synth_ms=40_000))
     reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
-    assert reply == "running: notes.md, chunk 4 of 10 done, 40 s elapsed, about 60 s left"
+    assert reply == (
+        "running: notes.md, chunk 4 of 10 done, 40 s elapsed, about 60 s left. "
+        "Check again in about 15 s."
+    )
 
 
 def test_pasted_text_is_named_as_such(tmp_path):
@@ -306,7 +313,10 @@ def test_a_slow_machines_synthesis_is_judged_by_the_pace_it_has_shown(tmp_path):
     s = replace(scribe(tmp_path, alive=(ME, WORKER)), clock=lambda: 1000.0 + 1800)
     s.jobs.write(synthesis(tmp_path, chars_done=1800, synth_ms=1_800_000))
     reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
-    assert reply == "running: notes.md, chunk 4 of 10 done, 30 min elapsed, about 70 min left"
+    assert reply == (
+        "running: notes.md, chunk 4 of 10 done, 30 min elapsed, about 70 min left. "
+        "Check again in about 5 min."
+    )
     # ...and four times the estimate is not
     s = replace(s, clock=lambda: 1000.0 + 4 * 6000 + 60)
     reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
@@ -336,11 +346,11 @@ def test_time_left_never_reads_zero_while_the_job_runs(tmp_path):
     s = replace(scribe(tmp_path, alive=(ME, WORKER)), clock=lambda: 1000.0 + 1200)
     s.jobs.write(synthesis(tmp_path, chunks_done=0))
     reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
-    assert reply.endswith("about 3 min left")  # 6,000 characters at the measured 29.5/s
+    assert "about 3 min left." in reply  # 6,000 characters at the measured 29.5/s
     # every chunk spoken, the file still being joined and written
     s.jobs.write(synthesis(tmp_path, chunks_done=10, chars_done=6000, synth_ms=1_100_000))
     reply = status(s, settings(tmp_path), "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
-    assert reply.endswith("about 1 s left")
+    assert "about 1 s left." in reply
 
 
 def test_a_job_with_only_short_requests_finished_is_judged_by_the_first_request_limit(tmp_path):

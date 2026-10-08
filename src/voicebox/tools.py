@@ -33,7 +33,9 @@ It starts a background job and returns at once with a job id, the path the
 transcript will be written to, and an estimate: roughly a minute of work for every
 seven minutes of audio. Check on it with job_status. Speakers are
 labelled by default; turn diarize off for a single speaker to save about a
-quarter of the time. Only one voicebox job runs at a time.
+quarter of the time. Jobs run one at a time in the order they were sent: one sent
+while another runs is queued and starts on its own, so send every file you need
+without waiting for the last.
 
 The transcript is written to a file, not returned. Read the file only when you
 need more than the preview job_status gives."""
@@ -41,9 +43,9 @@ need more than the preview job_status gives."""
 JOB_STATUS = """Report on voicebox's background jobs: transcriptions, and audio files being
 written by synthesize. With a job id, that job: still running and how far it has got,
 finished with its output path (and a short preview of a transcript), or failed with the
-reason. Without one, the recent jobs of every kind.
-
-Only one voicebox job runs at a time."""
+reason and whether sending the same request again can work. A queued job reports its
+place in line and when it should start. Every report on an unfinished job says when to
+check again. Without an id, the recent jobs of every kind."""
 
 TRANSCRIBE_PATH = (
     "The absolute path to the audio or video file to transcribe. The MCP server's "
@@ -72,7 +74,8 @@ is spoken, however long the text. An existing file is never overwritten.
 
 It starts a background job and returns at once with a job id, the output path and an
 estimate. Check on it with job_status. It plays nothing: to read a text aloud now, use
-/voicebox:narrate. Only one voicebox job runs at a time."""
+/voicebox:narrate. Jobs run one at a time in the order they were sent: one sent while
+another runs is queued and starts on its own."""
 
 SYNTHESIZE_TEXT = "The text to speak. Give this or path, not both."
 SYNTHESIZE_PATH = "Absolute path to a text or markdown file to speak. Give this or text."

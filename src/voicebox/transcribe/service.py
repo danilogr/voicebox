@@ -2,14 +2,12 @@
 A request turned away for a closed-set reason is recorded as a `refused` row."""
 
 import os
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from voicebox.config import Settings
-from voicebox.jobs.desk import Desk, busy_message, claim, duration, launch
-from voicebox.jobs.lock import BUSY
-from voicebox.jobs.store import RUNNING, TranscriptionJob, new_job_id
+from voicebox.jobs.desk import Desk, accepted, duration, failed_to_start, queue, start_next
+from voicebox.jobs.store import QUEUED, TranscriptionJob, new_job_id
 from voicebox.programs import ToolMissing
 from voicebox.telemetry.rows import TRANSCRIPTION, JobFacts, iso, job_row, wall_ms
 from voicebox.telemetry.session import TelemetrySession
@@ -138,19 +136,17 @@ async def start(
         # The worker runs it; finding it missing there would cost a job the user waited on.
         refusal.record("nemo_missing", source, found)
         return NO_NEMO
-    try:
-        lock = claim(desk)
-    except BUSY:
-        refusal.record("busy", source, found)
-        return busy_message(desk)
-
     job_id = new_job_id()
     convert = needs_conversion(found)
     job = TranscriptionJob(
         job_id=job_id,
-        state=RUNNING,
+        state=QUEUED,
         source=str(source.resolve()),
-        output=str(output_path(source, directory, request.format, job_id)),
+        output=str(
+            output_path(
+                source, directory, request.format, job_id, in_use=desk.jobs.outputs_in_use()
+            )
+        ),
         format=request.format,
         nemo_binary=settings.server.binary,
         claimed_by=desk.pid,
@@ -168,14 +164,17 @@ async def start(
         asr_model=settings.server.asr_model,
         has_video=found.has_video,
     )
-    argv = [sys.executable, "-m", "voicebox.transcribe.worker", str(settings.state_dir), job_id]
-    failure = await launch(desk, lock, job, argv)
+    failure = queue(desk, job)
+    if failure is not None:
+        return f"could not start transcription: {failure}"
+    await start_next(desk)
+    failure = failed_to_start(desk, job)
     if failure is not None:
         return f"could not start transcription: {failure}"
     return (
         f"Transcribing {source.name} ({duration(found.duration_s)} of audio"
         f"{', labelling speakers' if request.diarize else ''}) to {job.output}\n"
-        f"Job {job_id}; about {duration(job.eta_s)}. Ask job_status for progress."
+        + accepted(desk, job)
     )
 
 

@@ -156,11 +156,12 @@ async def test_the_output_directory_argument_wins(tmp_path):
     assert s.jobs.recent()[0].output == str(out / "meeting.txt")
 
 
-async def test_a_second_job_is_refused_while_one_runs(tmp_path):
+async def test_a_job_sent_while_one_runs_waits_its_turn(tmp_path):
     s = scribe(tmp_path, alive=(ME, OTHER))
     job_lock(tmp_path / "state", is_alive=lambda p: True, pid=OTHER).acquire()
     reply = await start(s, settings(tmp_path), request(media(tmp_path)))
-    assert "already running" in reply
+    assert reply.startswith("Transcribing") and "queued behind 1 job" in reply
+    assert [job.state for job in s.jobs.recent()] == ["queued"]
 
 
 async def test_a_spawn_failure_releases_the_lock_and_fails_the_job(tmp_path):
@@ -229,19 +230,20 @@ async def test_a_terminal_record_the_worker_wrote_is_never_reverted_by_the_tool(
 async def test_three_calls_in_one_session_start_exactly_one_transcription(tmp_path):
     """A model told to transcribe three recordings emits three calls in one turn, and
     the lock is claimed for a worker that has not taken it over yet - so a lock that
-    waved its own pid through let all three spawn, onto the same output path."""
+    waved its own pid through would let all three spawn. All three are accepted, one
+    runs, the others wait, and no two write the same transcript."""
     spawned = []
     s = scribe(tmp_path, alive=(ME, WORKER), spawned=spawned)
     source = media(tmp_path)
     replies = await asyncio.gather(
         *(start(s, settings(tmp_path), request(source)) for _ in range(3))
     )
-    accepted = [reply for reply in replies if reply.startswith("Transcribing")]
-    refused = [reply for reply in replies if "one job at a time" in reply]
-    assert len(accepted) == 1
-    assert len(refused) == 2
+    assert all(reply.startswith("Transcribing") for reply in replies)
+    assert sum("queued behind" in reply for reply in replies) == 2
     assert len(spawned) == 1
-    assert len(s.jobs.recent()) == 1
+    jobs = s.jobs.recent()
+    assert sorted(job.state for job in jobs) == ["queued", "queued", "running"]
+    assert len({job.output for job in jobs}) == 3
 
 
 async def test_the_spawned_worker_writes_its_stderr_to_the_job_log(tmp_path):

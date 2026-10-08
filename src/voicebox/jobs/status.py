@@ -3,12 +3,13 @@
 from pathlib import Path
 
 from voicebox.config import Settings
-from voicebox.jobs.desk import Desk, duration, reconcile, release_if_idle
+from voicebox.jobs.desk import Desk, duration, place, reconcile, release_if_idle
 from voicebox.jobs.store import (
     CRASHED,
     DONE,
     EMPTY,
     FAILED,
+    QUEUED,
     Job,
     SynthesisJob,
     TranscriptionJob,
@@ -20,6 +21,21 @@ from voicebox.transcribe.output import transcript_text
 # Below this a job is never called wedged, however short its estimate.
 MIN_TIMEOUT_S = 300.0
 PREVIEW_CHARS = 300
+
+# What an agent should do about a failure, by its recorded reason: whether sending the
+# same request again can work, and if not, what has to change first. An agent should
+# never have to read a log or look at processes to decide.
+RETRY = "Sending the same request again may work."
+WHAT_TO_DO = {
+    "input_missing": "The input file is gone; check the path before sending it again.",
+    "input_unsupported": "voicebox cannot read this input; the same request will fail again.",
+    "output_unwritable": "The output cannot be written there; choose another output path.",
+    "ffmpeg_missing": "Install ffmpeg (brew install ffmpeg on macOS), then send it again.",
+    "nemo_missing": "Run /voicebox:setup to install NeMo-Speech.cpp, then send it again.",
+    "conversion_failed": "ffmpeg could not convert this file; the same request will fail again.",
+    "format_mismatch": "The speech server answered in an unexpected audio format; "
+    "the same request will likely fail again.",
+}
 
 
 def job_status(desk: Desk, settings: Settings, job_id: str | None) -> str:
@@ -50,12 +66,23 @@ def _summary(job: Job) -> str:
 
 
 def _describe(desk: Desk, settings: Settings, job: Job) -> str:
+    if job.state == QUEUED:
+        position, wait = place(desk, job)
+        ahead = "1 job" if position == 1 else f"{position} jobs"
+        return (
+            f"queued: {_name(job)}, behind {ahead}; it starts on its own in about "
+            f"{duration(wait)} and should be done about {duration(wait + job.eta_s)} from "
+            f"now. Check again in about {duration(_check_again(wait))}."
+        )
     if job.state in (FAILED, CRASHED):
         detail = job.error or ""
         if isinstance(job, SynthesisJob) and job.state == CRASHED and job.chunks:
             detail += f" (after chunk {job.chunks_done} of {job.chunks})"
+        advice = WHAT_TO_DO.get(job.reason or "", RETRY)
         tail = desk.jobs.log_tail(job.job_id)
-        return f"{job.state}: {_name(job)}: {detail}" + (f"\n{tail}" if tail else "")
+        return f"{job.state}: {_name(job)}: {detail}\n{advice}" + (
+            f"\nlog:\n{tail}" if tail else ""
+        )
     if isinstance(job, TranscriptionJob):
         return _transcription(desk, settings, job)
     if isinstance(job, SynthesisJob):
@@ -103,7 +130,8 @@ def _synthesis(desk: Desk, job: SynthesisJob) -> str:
     left = max(1.0, (job.chars - job.chars_done) / job.chars_per_s)
     return (
         f"running: {name}, chunk {job.chunks_done} of {job.chunks} done, "
-        f"{duration(elapsed)} elapsed, about {duration(left)} left"
+        f"{duration(elapsed)} elapsed, about {duration(left)} left. "
+        f"Check again in about {duration(_check_again(left))}."
     )
 
 
@@ -117,7 +145,16 @@ def _running(desk: Desk, job: Job, configured: float | None, what: str) -> str:
             f"{duration(job.eta_s)} estimate - it may be wedged"
         )
     remaining = max(0.0, job.eta_s - elapsed)
-    return f"running: {what}, {duration(elapsed)} elapsed, about {duration(remaining)} left"
+    return (
+        f"running: {what}, {duration(elapsed)} elapsed, about {duration(remaining)} left. "
+        f"Check again in about {duration(_check_again(remaining))}."
+    )
+
+
+def _check_again(seconds_left: float) -> float:
+    """When an agent polling a job learns something new: a quarter of what is left,
+    between 15 s and 5 min."""
+    return min(300.0, max(15.0, seconds_left / 4))
 
 
 def _preview(job: TranscriptionJob) -> str | None:

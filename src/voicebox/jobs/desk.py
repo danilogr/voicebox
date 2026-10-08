@@ -1,10 +1,17 @@
-"""What the job tools share, whatever the kind: the store, the one-job lock, how a
-worker is started, and how a worker that died is recognised."""
+"""What the job tools share, whatever the kind: the store, the queue and the one-job
+lock, how a worker is started, and how a worker that died is recognised.
+
+Every accepted job is written `queued`; `start_next` is the one way a job starts. It
+claims the one-job lock and starts the oldest queued job, and is called by the tool
+after queuing, by a worker that has just finished, at session start and by
+`job_status`, so the queue moves on after a worker that died too.
+"""
 
 import asyncio
 import logging
 import os
 import shutil
+import sys
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
@@ -14,8 +21,17 @@ from speak_core.exclusive import ExclusiveLock
 from speak_core.supervisor import process_is_alive
 
 from voicebox.config import Settings
-from voicebox.jobs.lock import job_lock
-from voicebox.jobs.store import CRASHED, FAILED, RUNNING, Job, JobStore
+from voicebox.jobs.lock import BUSY, job_lock
+from voicebox.jobs.store import (
+    CRASHED,
+    FAILED,
+    QUEUED,
+    RUNNING,
+    SYNTHESIS,
+    TRANSCRIPTION,
+    Job,
+    JobStore,
+)
 from voicebox.telemetry.jobs import record_job
 from voicebox.transcribe.probe import Probe, probe
 
@@ -23,6 +39,14 @@ logger = logging.getLogger(__name__)
 
 # How long a job may sit with no worker pid anywhere before it counts as never started.
 WORKER_START_GRACE_S = 60.0
+# How long a worker that started the next job waits for that job's worker to take the
+# lock over before exiting: until then the lock names this worker, and once it exits a
+# lock naming a dead pid may be reclaimed by anyone, starting a second job at once.
+HANDOFF_WAIT_S = 10.0
+HANDOFF_POLL_S = 0.05
+
+# The module each kind of job's worker runs as.
+WORKERS = {TRANSCRIPTION: "voicebox.transcribe.worker", SYNTHESIS: "voicebox.synthesize.worker"}
 
 Spawn = Callable[[Sequence[str], Path], Awaitable[int]]
 ProbeMedia = Callable[[Path], Awaitable[Probe]]
@@ -72,14 +96,105 @@ async def spawn_worker(argv: Sequence[str], log: Path) -> int:
 
 
 def build_desk(settings: Settings) -> Desk:
+    return desk_for(settings.state_dir)
+
+
+def desk_for(state_dir: Path) -> Desk:
+    """The desk for a state directory: what a worker that starts the next job uses."""
     return Desk(
-        jobs=JobStore(settings.state_dir),
-        lock=lambda: job_lock(settings.state_dir, is_alive=process_is_alive),
+        jobs=JobStore(state_dir),
+        lock=lambda: job_lock(state_dir, is_alive=process_is_alive),
         is_alive=process_is_alive,
         spawn=spawn_worker,
         probe=probe,
         record=record_job,
     )
+
+
+def queue(desk: Desk, job: Job) -> str | None:
+    """Write an accepted job's first record, `queued`. `None` once written; otherwise
+    why it could not be, with the job recorded as failed."""
+    try:
+        desk.jobs.write(replace(job, state=QUEUED, queued_at=job.created_at))
+    except OSError as error:
+        record_unstarted(desk, job, error)
+        return str(error)
+    return None
+
+
+async def start_next(desk: Desk, *, hand_off: bool = False) -> Job | None:
+    """Start the oldest queued job when no job runs: the job started, or `None`.
+
+    Only the holder of the one-job lock starts a job, so two callers never start two.
+    A job whose worker cannot be started is failed and the next one tried. `hand_off`
+    is for a worker about to exit: it waits for the new worker to take the lock over.
+    """
+    tried: set[str] = set()  # a job whose failure could not be written stays queued
+    while True:
+        try:
+            lock = claim(desk)
+        except BUSY:
+            return None
+        waiting = [job for job in desk.jobs.queued() if job.job_id not in tried]
+        if not waiting:
+            lock.release()
+            return None
+        tried.add(waiting[0].job_id)
+        started = replace(
+            waiting[0],
+            state=RUNNING,
+            claimed_by=desk.pid,
+            created_at=desk.clock(),
+            created_monotonic=desk.monotonic(),
+        )
+        argv = [
+            sys.executable,
+            "-m",
+            WORKERS[started.kind],
+            str(desk.jobs.state_dir),
+            started.job_id,
+        ]
+        if await launch(desk, lock, started, argv) is None:
+            if hand_off:
+                await _await_takeover(desk, desk.jobs.read_pid(started.job_id))
+            return started
+        desk.jobs.discard_artifacts(started.job_id)
+        left = desk.jobs.read(started.job_id)
+        if left is not None and left.state == QUEUED:
+            # Its failure could not be written: drop it rather than retry it forever.
+            desk.jobs.record_path(started.job_id).unlink(missing_ok=True)
+
+
+def start_next_job(state_dir: Path) -> None:
+    """What a worker does as it exits, whatever its job's outcome: start the next queued
+    job and see it take the lock over. Never raises - the worker's own job is over."""
+    try:
+        asyncio.run(start_next(desk_for(state_dir), hand_off=True))
+    except Exception:
+        logger.exception("could not start the next queued job")
+
+
+async def _await_takeover(desk: Desk, worker_pid: int | None) -> None:
+    deadline = desk.monotonic() + HANDOFF_WAIT_S
+    lock = desk.lock()
+    while worker_pid is not None and desk.monotonic() < deadline:
+        if lock.owner() == worker_pid or not desk.is_alive(worker_pid):
+            return
+        await asyncio.sleep(HANDOFF_POLL_S)
+    if worker_pid is not None:
+        logger.warning("worker %s did not take the job lock over in time", worker_pid)
+
+
+def place(desk: Desk, job: Job) -> tuple[int, float]:
+    """A queued job's place in line (1 = next) and the seconds until it should start:
+    what the running job has left, and the estimate of every job ahead of it."""
+    queued = desk.jobs.queued()
+    ids = [j.job_id for j in queued]
+    ahead = queued[: ids.index(job.job_id)] if job.job_id in ids else queued
+    wait = sum(
+        max(0.0, j.eta_s - (desk.clock() - j.created_at)) for j in desk.jobs.running()
+    ) + sum(j.eta_s for j in ahead)
+    return len(ahead) + 1, wait
 
 
 def claim(desk: Desk) -> ExclusiveLock:
@@ -188,16 +303,28 @@ def sweep(desk: Desk) -> None:
     release_if_idle(desk)
 
 
-def busy_message(desk: Desk) -> str:
-    """The refusal for a live holder, used by every job tool and by the server's own
-    in-process gate, so both ways of learning voicebox is busy say the same thing."""
-    running = next((j for j in desk.jobs.recent() if j.state == RUNNING), None)
-    if running is None:
-        return "a voicebox job is already running; voicebox runs one job at a time"
-    left = max(0.0, running.eta_s - (desk.clock() - running.created_at))
+def failed_to_start(desk: Desk, job: Job) -> str | None:
+    """Why `job` could not start when `start_next` just tried it, or `None`."""
+    current = desk.jobs.read(job.job_id)
+    if current is None:
+        return "its worker could not be started, and neither could that be recorded"
+    if current.state == FAILED:
+        return current.error or "its worker could not be started"
+    return None
+
+
+def accepted(desk: Desk, job: Job) -> str:
+    """What a tool answers once a job is accepted: its id, whether it is running or
+    waiting its turn, and when it should finish."""
+    current = desk.jobs.read(job.job_id) or job
+    if current.state != QUEUED:
+        return f"Job {job.job_id}; about {duration(job.eta_s)}. Ask job_status for progress."
+    position, wait = place(desk, current)
+    ahead = "1 job" if position == 1 else f"{position} jobs"
     return (
-        f"a {running.kind} is already running (job {running.job_id}, "
-        f"about {duration(left)} left); voicebox runs one job at a time"
+        f"Job {job.job_id}; queued behind {ahead}: voicebox runs one job at a time, and "
+        f"this one starts on its own in about {duration(wait)} and should be done about "
+        f"{duration(wait + job.eta_s)} from now. Ask job_status for progress."
     )
 
 

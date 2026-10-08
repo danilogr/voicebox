@@ -18,7 +18,7 @@ from pathlib import Path
 
 from speak_core.supervisor import process_is_alive
 
-from voicebox.jobs.desk import Record
+from voicebox.jobs.desk import Record, start_next_job
 from voicebox.jobs.lock import JobBusy, job_lock
 from voicebox.jobs.store import DONE, EMPTY, FAILED, Job, JobStore, TranscriptionJob
 from voicebox.programs import ConversionFailed, Runner, ToolMissing, run_convert_command
@@ -178,6 +178,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception:
         logger.exception("the transcription worker did not finish")
         return 1
+    finally:
+        start_next_job(Path(args[0]))
     return 0 if job is not None else 1
 
 

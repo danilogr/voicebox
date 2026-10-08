@@ -43,7 +43,7 @@
 |---|---|
 | `jobs/store.py` | Job records (`TranscriptionJob`, `SynthesisJob`), ids, artifacts, pruning |
 | `jobs/lock.py` | One voicebox job at a time |
-| `jobs/desk.py` | Claiming the lock, launching a worker, recognising a dead one, the start-of-session sweep |
+| `jobs/desk.py` | The queue: queuing a job, `start_next` (claiming the lock, launching the oldest queued job's worker), recognising a dead worker, the start-of-session sweep |
 | `jobs/status.py` | `job_status` |
 | `transcribe/service.py` | `transcribe`'s checks and launch |
 | `transcribe/worker.py` | The transcription worker |
@@ -80,7 +80,7 @@
 | `conftest.py`, `fakes.py`, `telemetry/telemetry_support.py` | Shared fixtures and fakes |
 | `contract/` | The vendored contract (`CONTRACT.md`, `v1/`), its fixtures, freshness against the voicebox-telemetry checkout, and every client-produced row validated |
 | `telemetry/` | Rows, session, composition, notice, stats, commands, and each job kind's rows |
-| `test_job_*.py` | Store, lock and status |
+| `test_job_*.py` | Store, lock, queue and status |
 | `test_transcribe_*.py`, `test_programs.py` | Transcription |
 | `test_synthesis_*.py`, `synthesis_support.py` | Synthesis |
 | `test_narration.py`, `test_tool_behaviour.py` | Reading aloud |

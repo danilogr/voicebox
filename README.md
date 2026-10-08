@@ -58,7 +58,7 @@ Markdown markup is not read out (list numbers and bullets included) and code blo
 skipped; every other word is spoken, however long the text. The audio goes beside the
 source file unless you say where, and an existing file is never overwritten. Pasted text
 must name an output path. Like transcription it runs in the background, and `job_status`
-reports how many chunks are done. Only one voicebox job runs at a time.
+reports how many chunks are done. Jobs run one at a time, in the order they were sent.
 
 ## <img src="assets/narrate-detailed.svg" width="28" height="28" alt="" valign="middle" /> Read aloud
 
@@ -115,7 +115,10 @@ the speech server decides its arguments, so keep them identical.
 
 ## Limits
 
-- One voicebox job runs at a time; a second request is refused with the running job's id.
+- One voicebox job runs at a time. A job sent while another runs is queued and starts
+  on its own; `job_status` gives its place in line and when it should start. After a
+  worker is killed with no Claude Code session open, the queue moves on when a session
+  next starts or uses voicebox.
 - Voice-overs and read-aloud text are sent to the speech server one sentence at a time,
   because the speech model repeats and garbles words when one request holds several
   ([harness/performance.md](harness/performance.md)). A sentence over 250 characters is

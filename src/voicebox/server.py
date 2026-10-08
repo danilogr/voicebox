@@ -20,7 +20,7 @@ from speak_core.text import normalize, sentences
 
 from voicebox import tools
 from voicebox.config import Settings
-from voicebox.jobs.desk import Desk, busy_message
+from voicebox.jobs.desk import Desk, start_next
 from voicebox.jobs.status import job_status as describe_jobs
 from voicebox.narration import NarrationTracker
 from voicebox.synthesize import service as synthesis
@@ -303,11 +303,10 @@ def create_server(
             return body.replace("$ARGUMENTS", source.strip())
 
     if desk is not None:
-        # The job lock is claimed for a worker that does not exist yet, so between a job
-        # tool returning and that worker taking the lock over, the record still names
-        # this process; without this second gate two calls in one turn would interleave
-        # in that window. One gate for every job tool, because voicebox runs one job at a
-        # time whatever its kind. Refusing rather than queueing keeps the answer immediate.
+        # One job tool call at a time in this session: a call checks that its output is
+        # not another pending job's before it queues, and two calls in one turn would
+        # otherwise both pass that check across the awaits between them. They wait for
+        # each other here only for the checks, never for a job to run.
         starting = asyncio.Lock()
 
         @server.tool(name="transcribe", description=tools.TRANSCRIBE)
@@ -328,8 +327,6 @@ def create_server(
             ctx: Context,
         ) -> str:
             note_harness(ctx)
-            if starting.locked():
-                return reply(busy_message(desk))
             async with starting:
                 return reply(
                     await transcription.start(
@@ -362,8 +359,6 @@ def create_server(
                 ctx: Context,
             ) -> str:
                 note_harness(ctx)
-                if starting.locked():
-                    return reply(busy_message(desk))
                 async with starting:
                     return reply(
                         await synthesis.start(
@@ -384,6 +379,11 @@ def create_server(
             ctx: Context,
         ) -> str:
             note_harness(ctx)
-            return reply(describe_jobs(desk, settings, job_id))
+            # A job tool or a finishing worker normally starts the next job; this also
+            # moves the queue on after a worker that died.
+            report = describe_jobs(desk, settings, job_id)
+            if await start_next(desk) is not None:
+                report = describe_jobs(desk, settings, job_id)
+            return reply(report)
 
     return server

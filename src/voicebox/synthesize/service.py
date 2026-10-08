@@ -6,17 +6,22 @@ and not recorded."""
 
 import os
 import shutil
-import sys
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass
 from pathlib import Path
 
 from speak_core.engines.asr import Liveness
 
 from voicebox.config import Settings
-from voicebox.jobs.desk import Desk, busy_message, claim, duration, launch, record_unstarted
-from voicebox.jobs.lock import BUSY
-from voicebox.jobs.store import RUNNING, SynthesisJob, new_job_id
+from voicebox.jobs.desk import (
+    Desk,
+    accepted,
+    failed_to_start,
+    queue,
+    record_unstarted,
+    start_next,
+)
+from voicebox.jobs.store import QUEUED, SynthesisJob, new_job_id
 from voicebox.programs import FFMPEG_REMEDY
 from voicebox.synthesize.audio import MAX_DATA_BYTES
 from voicebox.synthesize.encode import FORMATS
@@ -134,19 +139,16 @@ async def start(
         refuse("input_missing", {}, None)
         return f"cannot resolve the path {request.path}: {error}"
     try:
-        prepared = await _prepare(speech, settings, request, source, job_id)
+        prepared = await _prepare(
+            speech, settings, request, source, job_id, desk.jobs.outputs_in_use()
+        )
     except Refused as refusal:
         if refusal.reason is not None:
             refuse(refusal.reason, refusal.shape, source)
         return refusal.message
-    try:
-        lock = claim(desk)
-    except BUSY:
-        refuse("busy", prepared.shape, source)
-        return busy_message(desk)
     job = SynthesisJob(
         job_id=job_id,
-        state=RUNNING,
+        state=QUEUED,
         source=str(source.resolve()) if source is not None else "",
         output=str(prepared.output),
         format=request.format,
@@ -170,19 +172,20 @@ async def start(
         text_path.parent.mkdir(parents=True, exist_ok=True)
         text_path.write_text(prepared.text, encoding="utf-8")
     except OSError as error:
-        lock.release()
         desk.jobs.discard_artifacts(job_id)
         record_unstarted(desk, job, error)
         return f"could not start synthesis: {error}"
-    argv = [sys.executable, "-m", "voicebox.synthesize.worker", str(settings.state_dir), job_id]
-    failure = await launch(desk, lock, job, argv)
+    failure = queue(desk, job)
     if failure is not None:
         text_path.unlink(missing_ok=True)
         return f"could not start synthesis: {failure}"
+    await start_next(desk)
+    failure = failed_to_start(desk, job)
+    if failure is not None:
+        return f"could not start synthesis: {failure}"
     name = source.name if source is not None else "the text"
-    return (
-        f"Writing {name} ({job.words} words) in voice {job.voice} to {job.output}\n"
-        f"Job {job_id}; about {duration(job.eta_s)}. Ask job_status for progress."
+    return f"Writing {name} ({job.words} words) in voice {job.voice} to {job.output}\n" + accepted(
+        desk, job
     )
 
 
@@ -192,6 +195,7 @@ async def _prepare(
     request: SynthesizeRequest,
     source: Path | None,
     job_id: str,
+    in_use: Collection[str] = (),
 ) -> _Prepared:
     if (request.text is None) == (source is None):
         raise Refused(None, "give synthesize exactly one of text or path", {})
@@ -230,7 +234,7 @@ async def _prepare(
             shape,
         )
 
-    output = _output(request, source, job_id, shape)
+    output = _output(request, source, job_id, shape, in_use)
     if request.format != "wav" and speech.which("ffmpeg") is None:
         raise Refused(
             "ffmpeg_missing",
@@ -293,7 +297,11 @@ def _read(source: Path, shape: dict[str, object]) -> str:
 
 
 def _output(
-    request: SynthesizeRequest, source: Path | None, job_id: str, shape: dict[str, object]
+    request: SynthesizeRequest,
+    source: Path | None,
+    job_id: str,
+    shape: dict[str, object],
+    in_use: Collection[str] = (),
 ) -> Path:
     suffix = f".{request.format}"
     if request.output is not None:
@@ -314,6 +322,12 @@ def _output(
                 "change one of them",
                 shape,
             )
+        if str(output) in in_use:
+            raise Refused(
+                "output_unwritable",
+                f"another voicebox job is already writing {output}; choose another path",
+                shape,
+            )
         if _taken(output):
             raise Refused(
                 "output_unwritable",
@@ -330,9 +344,9 @@ def _output(
         )
     else:
         output = source.with_suffix(suffix)
-        if _taken(output):
+        if _taken(output) or str(output) in in_use:
             output = source.with_name(f"{source.stem}.{job_id[:8]}{suffix}")
-            if _taken(output):
+            if _taken(output) or str(output) in in_use:
                 raise Refused(
                     "output_unwritable",
                     f"{output} already exists, and voicebox never overwrites a file; "

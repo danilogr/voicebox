@@ -11,15 +11,17 @@
    installed (`ffmpeg_missing`) and can read it and finds audio (`input_unsupported`);
    the destination - `output_dir`, which must be absolute, else `VOICEBOX_TRANSCRIBE_DIR`,
    else the file's folder - is writable (`output_unwritable`); `nemo-speech` resolves
-   (`nemo_missing`); no other voicebox job runs (`busy`, naming the running job). An
-   unknown format is answered and not recorded.
-2. It claims the job lock, writes the record (`stage`: `convert` or `asr`) and spawns
-   `python -m voicebox.transcribe.worker`, then answers with the output path and an
-   estimate.
+   (`nemo_missing`). An unknown format is answered and not recorded. The transcript is
+   named `<stem>.<ext>`, or `<stem>.<job_id>.<ext>` when a file or an unfinished job
+   already has that name.
+2. It writes the record `queued` (`stage`: `convert` or `asr`) and calls `start_next`
+   (see "The queue"), then answers with the output path and either an estimate or, when
+   another job runs, its place in line and when it should start and finish.
 3. The worker takes the lock over, converts to 16 kHz mono WAV if needed, runs
    `nemo-speech transcribe`, and writes the record's final state: `done`, `empty` (no
    speech), or `failed` with a reason (`ffmpeg_missing`, `conversion_failed`, `timeout`,
-   `nemo_missing`, `model_failed`, `other`). It records the row and releases the lock.
+   `nemo_missing`, `model_failed`, `other`). It records the row, releases the lock and
+   starts the next queued job.
 
 ## Writing a voice-over
 
@@ -32,9 +34,10 @@
    its folder is writable (`output_unwritable`; pasted text must name one); ffmpeg for
    m4a and mp3 (`ffmpeg_missing`); NeMo — the server answers, or its binary resolves
    (`nemo_missing`) and `NEMO_AUTOSTART` allows starting it (`server_unavailable`); the
-   voice, when the server can list them (`input_unsupported`); no other job (`busy`).
-2. It stages the spoken text in `jobs/<id>.txt`, writes the record and spawns
-   `python -m voicebox.synthesize.worker`.
+   voice, when the server can list them (`input_unsupported`); no queued or running job
+   writes the same output (`output_unwritable`; a default output steps around it).
+2. It stages the spoken text in `jobs/<id>.txt`, writes the record `queued` and calls
+   `start_next`, answering as transcription does.
 3. The worker, registered with the supervisor throughout:
 
 | Stage | What happens | Ends early with |
@@ -50,6 +53,23 @@
 A chunk's request is never retried: one that times out ends the job, because the speech
 server would go on working on it and queue the retry behind it.
 
+## The queue
+
+Jobs run one at a time, oldest first. `start_next` claims the one-job lock (a live
+holder means a job runs: it returns), writes the oldest queued job `running` with the
+start time as its `created_at`, and spawns `python -m voicebox.<kind>.worker`. A worker
+that cannot be spawned fails its job (`other`) and the next is tried; a job whose failure
+cannot even be written is dropped. With nothing queued it releases the lock. It runs
+after a tool queues a job, after a worker's job ends (that worker then waits up to 10 s
+for the next worker to take the lock), at session start, and on `job_status`. A worker
+killed mid-job leaves a lock naming a dead pid, which the next of those reclaims.
+
+| State | Meaning |
+|---|---|
+| `queued` | accepted, waiting for the jobs ahead of it; never crashes, never pruned |
+| `running` | its worker has it; becomes `crashed` if that worker dies |
+| `done`, `empty`, `failed`, `crashed` | ended; recorded once |
+
 ## Asking about jobs
 
 `job_status(job_id)` reads the record; an id that is not a uuid4, or a record that names
@@ -57,9 +77,12 @@ another id than its own file, is no job, so a path can never be passed for an id
 running job whose worker is gone — its pid dead,
 or no pid anywhere a minute after starting — becomes `crashed`, keeps the stage it had
 reached (for a voice-over, "after chunk i of n"), loses its artifacts and is recorded.
-Without an id it lists recent jobs of every kind. A job far past its estimate is
-reported as "it may be wedged"; that is a report, and the job keeps running. Every
-session also reconciles running jobs when it starts.
+A queued job reports its place in line and when it should start and finish. A failed or
+crashed job's report ends with whether the same request can work again or, if not, what
+to change; an unfinished job's report says when to check again. Without an id it lists
+recent jobs of every kind. A job far past its estimate is reported as "it may be wedged";
+that is a report, and the job keeps running. Every session also reconciles running jobs
+when it starts, and then starts the next queued job if none runs.
 
 ## Reading aloud
 

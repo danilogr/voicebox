@@ -28,7 +28,7 @@ from speak_core.engines.nemo import NemoSynthesizer, SynthesisFailed
 from speak_core.runtime import supervisor_for
 from speak_core.supervisor import process_is_alive
 
-from voicebox.jobs.desk import Record
+from voicebox.jobs.desk import Record, start_next_job
 from voicebox.jobs.lock import JobBusy, job_lock
 from voicebox.jobs.store import DONE, FAILED, Job, JobStore, SynthesisJob
 from voicebox.programs import ConversionFailed, ToolMissing
@@ -413,6 +413,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception:
         logger.exception("the synthesis worker did not finish")
         return 1
+    finally:
+        start_next_job(Path(args[0]))
     return 0 if job is not None else 1
 
 

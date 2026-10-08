@@ -374,17 +374,28 @@ async def test_a_path_whose_home_cannot_be_found_is_refused_input_missing(tmp_pa
     assert row["reason"] == "input_missing"
 
 
-async def test_a_busy_lock_is_refused_busy_and_a_huge_file_is_clamped(tmp_path):
+async def test_a_huge_file_refused_after_its_probe_is_clamped(tmp_path):
     media = tmp_path / "a.m4a"
     media.write_bytes(b"x")
     huge = Probe(200_000.0, 20 * 1024**3, "wav", "pcm_s16le", 16000, 1)
-    job_lock(tmp_path / "state", is_alive=lambda p: True, pid=300).acquire()
-    row = await refused(tmp_path, desk_for(tmp_path, huge, alive=(CLAIMER, 300)), request(media))
+    row = await refused(tmp_path, desk_for(tmp_path, huge), request(media, output_dir="rel"))
     assert (row["reason"], row["source_bytes"], row["audio_ms"]) == (
-        "busy",
+        "output_unwritable",
         10_737_418_240,
         86_400_000,
     )
+
+
+async def test_a_job_sent_while_another_runs_waits_and_records_nothing_yet(tmp_path):
+    media = tmp_path / "a.m4a"
+    media.write_bytes(b"x")
+    session = session_for(tmp_path)
+    job_lock(tmp_path / "state", is_alive=lambda p: True, pid=300).acquire()
+    desk = desk_for(tmp_path, alive=(CLAIMER, 300))
+    reply = await start(desk, Settings(state_dir=tmp_path / "state"), request(media), session)
+    assert "queued behind 1 job" in reply
+    assert [job.state for job in desk.jobs.recent()] == ["queued"]
+    assert stored_rows(session.db_path) == []  # a job is recorded when it ends
 
 
 async def test_an_accepted_job_carries_its_telemetry_ref_and_first_stage(tmp_path):

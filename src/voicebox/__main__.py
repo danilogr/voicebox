@@ -25,7 +25,7 @@ from speak_core.telemetry import store as telemetry_store
 from speak_core.telemetry import wiring as telemetry_wiring
 
 from voicebox.config import PLUGIN, Settings
-from voicebox.jobs.desk import build_desk, sweep
+from voicebox.jobs.desk import Desk, build_desk, start_next, sweep
 from voicebox.narration import NarrationTracker
 from voicebox.server import VERSION, create_server
 from voicebox.synthesize.service import Speech
@@ -81,6 +81,13 @@ async def _send_ping(ping: telemetry_ping.Ping, env: Mapping[str, str]) -> None:
         )
     except Exception:
         logger.debug("telemetry: the install ping failed", exc_info=True)
+
+
+async def _start_waiting_job(desk: Desk) -> None:
+    try:
+        await start_next(desk)
+    except OSError:
+        logger.warning("could not start a queued job", exc_info=True)
 
 
 def _spawn(coroutine: Coroutine[object, object, object]) -> None:
@@ -163,7 +170,9 @@ def build(settings: Settings, env: Mapping[str, str]) -> MCPServer:
 
     def schedule_sends() -> None:
         """Deferred to the server's lifespan: `build()` runs before an event loop exists.
-        The ping goes whatever the telemetry mode; the backlog only when it collects."""
+        The ping goes whatever the telemetry mode; the backlog only when it collects. A
+        job left queued behind a worker that died starts now too."""
+        _spawn(_start_waiting_job(desk))
         if ping is not None:
             _spawn(_send_ping(ping, env))
         if telemetry is not None and shippable:

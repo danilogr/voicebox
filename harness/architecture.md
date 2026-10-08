@@ -36,8 +36,8 @@ their design is in its `harness/architecture.md`. This document covers voicebox.
   holds no job or speech logic. It also serves `commands/narrate.md` as the `narrate`
   prompt.
 - **`jobs/`** — what every job kind shares: `store` (one JSON record per job, a subclass
-  per kind), `lock` (one job at a time), `desk` (claiming, launching a worker,
-  recognising a dead one) and `status` (`job_status`).
+  per kind), `lock` (one job at a time), `desk` (queuing, `start_next`, launching a
+  worker, recognising a dead one) and `status` (`job_status`).
 - **`transcribe/`** — `service` checks a file and starts `worker`, which converts with
   ffmpeg when needed and runs `nemo-speech transcribe`.
 - **`synthesize/`** — `service` checks a request and stages the spoken text; `worker`
@@ -53,13 +53,13 @@ their design is in its `harness/architecture.md`. This document covers voicebox.
 - **Session state** (in memory): whether this session registered with the supervisor,
   whether it has checked the client's `client_info`, the open reading-aloud run.
 - **Plugin state** under `VOICEBOX_STATE_DIR` (`<cache>/voicebox`):
-  - `job/owner` — the one-job lock: the pid of the session that claimed it, then of the
-    worker that took it over.
-  - `jobs/<job_id>.json` — every job's record, written by the tool once and by the
-    worker after that; `.log` (the worker's stderr), `.pid` (the pid the spawn returned),
-    and while a job runs, `.wav` (transcription's converted audio), `.txt` (synthesis's
-    staged text) and `.d/` (synthesis's chunk WAVs). Records outlive their job by two
-    weeks.
+  - `job/owner` — the one-job lock: the pid of the process that started the running
+    job (a session, or the worker before it), then of that job's worker.
+  - `jobs/<job_id>.json` — every job's record: written `queued` by the tool, `running`
+    by whoever starts it, and by its worker after that; `.log` (the worker's stderr),
+    `.pid` (the pid the spawn returned), and until a job ends, `.wav` (transcription's
+    converted audio), `.txt` (synthesis's staged text, from acceptance) and `.d/`
+    (synthesis's chunk WAVs). Records outlive their job by two weeks.
   - `telemetry.db` — the local telemetry store. A session that finds it damaged (SQLite
     says it is not a database, or is malformed) renames it, with its journal, to
     `telemetry.db.corrupt*` and starts an empty one; its unshipped rows are lost. A store
@@ -100,14 +100,32 @@ their design is in its `harness/architecture.md`. This document covers voicebox.
 
 ## Key decisions (with rationale)
 
-- **One job at a time, whatever its kind.** Transcription and synthesis contend for the
-  same accelerator, and two at once would each run slower than one after the other. One
-  lock (`<state>/job`) covers both; a second call is refused at once with the running
-  job's id rather than queued, so the answer is immediate. The lock is not re-entrant
-  (the session claims it for a worker that does not exist yet) and waits out an ownerless
-  directory for two seconds before reclaiming it, so a session mid-claim is never robbed.
-  An in-process gate in the server closes the window between a claim and the worker's
-  takeover. Rejected: a queue of jobs, which turns "busy" into a wait nobody asked for.
+- **One job at a time, whatever its kind, and a queue for the rest.** Transcription and
+  synthesis contend for the same accelerator, and two at once would each run slower than
+  one after the other. One lock (`<state>/job`) covers both. Agents, sub-agents among
+  them, must be able to send a job without knowing another runs, so nothing is refused
+  for being second: every accepted job is written `queued` (a synthesis with its staged
+  text), and `desk.start_next` is the only way a job starts. It claims the lock, writes
+  the oldest queued job `running` and spawns its worker; holding the lock is what makes
+  one starter. It is called by the tool after queuing, by a worker after its job ends
+  (`start_next_job`), at session start and by `job_status`, so the queue moves on after
+  a worker that died, at the next of those. A worker that starts the next job waits up
+  to 10 s for that job's worker to take the lock over before exiting, since a lock
+  naming a dead pid may be reclaimed by anyone. A job's `created_at` is when it started
+  running, so estimates, the dead-worker grace and telemetry's `wall_ms` measure work;
+  `queued_at` orders the queue. A request whose output a queued or running job will
+  write is refused, or for a transcript given another name. The lock is not re-entrant
+  (it is claimed for a worker that does not exist yet) and waits out an ownerless
+  directory for two seconds before reclaiming it. An in-process gate in the server makes
+  one session's job calls check and queue one at a time. Not built: a cap, cancelling or
+  priorities. Rejected: a long-lived runner draining the queue, which needs the same
+  recovery and more code; and waiting inside the tool call, which times out and ties up
+  the agent.
+
+- **A failure says whether retrying can help.** `job_status` ends a failed or crashed
+  job's report with whether sending the same request again can work and, when not, what
+  to change, by its recorded reason; reports on unfinished jobs say when to check again.
+  An agent should never need a log or a process list to decide what to do next.
 
 - **A job is owned by a detached worker, and the record is the source of truth.** A
   three-hour recording is minutes of work and a long voice-over more; nothing should
