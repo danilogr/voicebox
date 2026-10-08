@@ -122,8 +122,9 @@ the speech server decides its arguments, so keep them identical.
 - A voice-over is one WAV file (encoded from it for m4a and mp3), and a WAV file holds
   about 27 hours of audio: `synthesize` refuses text estimated to need more, which is
   about 1.2 million characters of prose.
-- Text with no spaces between words (Chinese, Japanese) is cut at the request size
-  rather than at a word boundary.
+- Text with no spaces between words (Chinese, Japanese) is cut at its full-width
+  punctuation (`。`, `，`), and a run longer than a request with none is cut at the request
+  size rather than at a word boundary.
 - A voice-over request waits as long as the machine's pace needs, up to a fixed ceiling.
   A CPU-only machine is far slower than one with Metal or CUDA, and its voice-overs take
   correspondingly long ([measurements](harness/performance.md)). A request that times out
