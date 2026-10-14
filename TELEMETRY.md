@@ -59,8 +59,9 @@ Only `ping.json`, holding the last version counted, is kept on your machine.
 ## What is sent
 
 With telemetry `on`, and only then. This is every field; the machine-checked version is
-`contract/v1/schema.remote.sql` in the voicebox-telemetry repository, the only schema the
-server accepts (a copy is in `tests/contract/v1/`).
+[`tests/contract/v1/schema.remote.sql`](tests/contract/v1/schema.remote.sql), a
+byte-for-byte copy of the only schema the server accepts (the server's own repository
+is not public).
 
 **Once per install:** a random `install_id`; `first_seen_at`, `last_seen_at`;
 `plugin_version`; `disclosure_ver` (which notice you were shown); `language`, `timezone`

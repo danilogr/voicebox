@@ -917,8 +917,8 @@ wheels = [
 
 [[package]]
 name = "speak-core"
-version = "0.4.0"
-source = { git = "https://github.com/danilogr/speak-core?rev=v0.4.0#4465a86243a792e2932dcbdc306e864bdc5ac756" }
+version = "0.4.1"
+source = { git = "https://github.com/danilogr/speak-core?rev=v0.4.1#5d0629864aeed91d2b1284b67d9596eb1799c481" }
 dependencies = [
     { name = "httpx2" },
 ]
@@ -1014,7 +1014,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "mcp", specifier = ">=2.1,<3" },
-    { name = "speak-core", git = "https://github.com/danilogr/speak-core?rev=v0.4.0" },
+    { name = "speak-core", git = "https://github.com/danilogr/speak-core?rev=v0.4.1" },
 ]
 
 [package.metadata.requires-dev]
