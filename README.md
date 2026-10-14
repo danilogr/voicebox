@@ -168,3 +168,7 @@ dependency. Operating rules are in [AGENTS.md](AGENTS.md); design in
 [harness/performance.md](harness/performance.md), conventions in
 [harness/design-guidelines.md](harness/design-guidelines.md), and the file map in
 [harness/layout.md](harness/layout.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE).

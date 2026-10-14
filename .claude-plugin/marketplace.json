@@ -11,6 +11,7 @@
       "name": "voicebox",
       "description": "Offline transcription, voice-overs and read-aloud, on your machine.",
       "source": "./",
+      "license": "MIT",
       "category": "productivity"
     },
     {
@@ -20,6 +21,7 @@
         "source": "github",
         "repo": "danilogr/walkie"
       },
+      "license": "MIT",
       "category": "productivity"
     }
   ]

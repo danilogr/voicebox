@@ -17,6 +17,7 @@
 | File | Purpose |
 |---|---|
 | `README.md` | What voicebox does, install, tools, settings, privacy |
+| `LICENSE` | The MIT license |
 | `TELEMETRY.md` | Every telemetry field, the notice, and how to turn it off |
 | `AGENTS.md` | Operating rules for coding agents in this repo |
 | `pyproject.toml`, `uv.lock` | Package, console scripts (`voicebox-mcp`, `voicebox-telemetry`, `voicebox-stats`), tool settings, the pinned lock |
