@@ -201,3 +201,23 @@ def test_the_cli_is_asked_for_everything_the_caller_chose(tmp_path):
     assert argv[argv.index("-f") + 1] == "srt"
     assert argv[argv.index("--language") + 1] == "pt"
     assert argv[argv.index("--translate-to") + 1] == "en"
+
+
+async def test_a_worker_bug_keeps_how_far_the_job_got(tmp_path):
+    """An unexpected error still leaves an honest record: the stage and conversion time
+    it reached, not the job as it was before conversion."""
+    store, _ = start(tmp_path, convert=True, codec="flac")
+
+    async def ffmpeg(argv) -> CommandResult:
+        Path(argv[-1]).write_bytes(b"RIFF")
+        return CommandResult(0, b"", b"")
+
+    async def broken(argv, log) -> int:
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        await run(tmp_path, broken, [], run=ffmpeg)
+
+    failed = store.read("j1")
+    assert failed.state == FAILED and failed.error == "worker error: boom"
+    assert failed.stage == "asr" and failed.convert_ms is not None
