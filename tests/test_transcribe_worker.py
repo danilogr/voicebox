@@ -354,3 +354,23 @@ async def test_json_without_speakers_runs_no_diarizer(tmp_path):
     await run(tmp_path, run_cli, [])
     assert [call[2] for call in calls] == ["transcribe"]
     assert "speaker" not in json.loads(Path(job.output).read_text())["words"][0]
+
+
+async def test_a_worker_bug_keeps_how_far_the_job_got(tmp_path):
+    """An unexpected error still leaves an honest record: the stage and conversion time
+    it reached, not the job as it was before conversion."""
+    store, _ = start(tmp_path, convert=True, codec="flac")
+
+    async def ffmpeg(argv) -> CommandResult:
+        Path(argv[-1]).write_bytes(b"RIFF")
+        return CommandResult(0, b"", b"")
+
+    async def broken(argv, log) -> int:
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        await run(tmp_path, broken, [], run=ffmpeg)
+
+    failed = store.read("j1")
+    assert failed.state == FAILED and failed.error == "worker error: boom"
+    assert failed.stage == "asr" and failed.convert_ms is not None
