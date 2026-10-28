@@ -18,7 +18,8 @@
    (see "The queue"), then answers with the output path and either an estimate or, when
    another job runs, its place in line and when it should start and finish.
 3. The worker takes the lock over, converts to 16 kHz mono WAV if needed, runs
-   `nemo-speech transcribe`, and writes the record's final state: `done`, `empty` (no
+   `nemo-speech transcribe` - for json with speakers, without `--diarize`, followed by
+   `nemo-speech diarize`, whose segments tag the words - and writes the record's final state: `done`, `empty` (no
    speech), or `failed` with a reason (`ffmpeg_missing`, `conversion_failed`, `timeout`,
    `nemo_missing`, `model_failed`, `other`). It records the row, releases the lock and
    starts the next queued job.

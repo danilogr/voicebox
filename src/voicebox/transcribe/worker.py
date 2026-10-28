@@ -25,6 +25,7 @@ from voicebox.programs import ConversionFailed, Runner, ToolMissing, run_convert
 from voicebox.telemetry.jobs import record_job
 from voicebox.transcribe.output import transcript_text
 from voicebox.transcribe.prepare import convert
+from voicebox.transcribe.speakers import read_segments, tag_transcript
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ async def run_cli(argv: Sequence[str], log: Path) -> int:
         return await process.wait()
 
 
-def cli_argv(job: TranscriptionJob, audio: Path) -> list[str]:
+def cli_argv(job: TranscriptionJob, audio: Path, output: Path) -> list[str]:
     argv = [
         job.nemo_binary,
         "--quiet",
@@ -54,16 +55,40 @@ def cli_argv(job: TranscriptionJob, audio: Path) -> list[str]:
         "-f",
         job.format,
         "-o",
-        job.output,
+        str(output),
         "--force",
     ]
-    if job.diarize:
+    if job.diarize and not speakers_from_diarizer(job):
         argv.append("--diarize")
     if job.language:
         argv += ["--language", job.language]
     if job.translate_to:
         argv += ["--translate-to", job.translate_to]
     return argv
+
+
+def speakers_from_diarizer(job: TranscriptionJob) -> bool:
+    """Whether the words' speakers come from a separate `nemo-speech diarize` run.
+
+    Only json carries speaker tags, and `transcribe --diarize` leaves every word older
+    than its retained window - all but the last fifteen minutes or so of a recording
+    past twenty - with one speaker. The standalone diarizer labels the whole file.
+    """
+    return job.diarize and job.format == "json"
+
+
+def diarize_argv(job: TranscriptionJob, audio: Path, segments: Path) -> list[str]:
+    return [
+        job.nemo_binary,
+        "--quiet",
+        "diarize",
+        str(audio),
+        "--format",
+        "json",
+        "-o",
+        str(segments),
+        "--force",
+    ]
 
 
 async def run_job(
@@ -132,12 +157,16 @@ async def _transcribe(
         job = replace(job, convert_ms=int((clock() - started) * 1000), stage="asr")
         jobs.write(job)
     started = clock()
+    output = Path(job.output)
+    tagging = speakers_from_diarizer(job)
+    transcript = jobs.untagged_path(job.job_id) if tagging else output
     try:
-        code = await run_cli(cli_argv(job, audio), jobs.log_path(job.job_id))
+        code = await run_cli(cli_argv(job, audio, transcript), jobs.log_path(job.job_id))
+        if code == 0 and tagging and transcript.exists():
+            code = await _tag_speakers(jobs, job, audio, transcript, run_cli)
     except FileNotFoundError:
         return _failed(job, clock, "nemo_missing", str(ToolMissing(job.nemo_binary, NEMO_REMEDY)))
     asr_ms = int((clock() - started) * 1000)
-    output = Path(job.output)
     if code != 0 or not output.exists():
         message = jobs.log_tail(job.job_id) or f"{job.nemo_binary} exited with {code}"
         return _failed(replace(job, asr_ms=asr_ms), clock, "model_failed", message)
@@ -150,6 +179,31 @@ async def _transcribe(
         words=len(text.split()),
         chars=len(text),
     )
+
+
+async def _tag_speakers(
+    jobs: JobStore, job: TranscriptionJob, audio: Path, untagged: Path, run_cli: CliRunner
+) -> int:
+    """Write the transcript to its output with its words' speakers from the diarizer,
+    returning an exit code. Until then it waits among the job's files, which every
+    ending - failed, cancelled or crashed - deletes: a transcript without the speakers
+    asked for is not the finished one, and is never where the finished one goes."""
+    log = jobs.log_path(job.job_id)
+    segments = jobs.diarization_path(job.job_id)
+    heard = bool(transcript_text(untagged, job.format))
+    if heard:  # with nothing heard there is no one to tell apart
+        code = await run_cli(diarize_argv(job, audio, segments), log)
+        if code != 0 or not segments.exists():
+            return code
+    try:
+        tag_transcript(untagged, read_segments(segments) if heard else [], Path(job.output))
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        # Segments no reader would accept, or an output that could not be written: the
+        # log is where the job's error is read from.
+        with log.open("a", encoding="utf-8") as sink:
+            sink.write(f"voicebox: could not tag the speakers: {error}\n")
+        return 1
+    return 0
 
 
 def _failed(

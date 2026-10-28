@@ -39,7 +39,8 @@ their design is in its `harness/architecture.md`. This document covers voicebox.
   per kind), `lock` (one job at a time), `desk` (queuing, `start_next`, launching a
   worker, recognising a dead one) and `status` (`job_status`).
 - **`transcribe/`** — `service` checks a file and starts `worker`, which converts with
-  ffmpeg when needed and runs `nemo-speech transcribe`.
+  ffmpeg when needed and runs `nemo-speech transcribe`; for a json transcript with
+  speakers it also runs `nemo-speech diarize` and tags the words (`speakers`).
 - **`synthesize/`** — `service` checks a request and stages the spoken text; `worker`
   splits it (`text`), synthesizes each chunk over HTTP, joins (`audio`), encodes
   (`encode`) and writes the file. `limits` holds the measured request limits.
@@ -58,7 +59,9 @@ their design is in its `harness/architecture.md`. This document covers voicebox.
   - `jobs/<job_id>.json` — every job's record: written `queued` by the tool, `running`
     by whoever starts it, and by its worker after that; `.log` (the worker's stderr),
     `.pid` (the pid the spawn returned), and until a job ends, `.wav` (transcription's
-    converted audio), `.txt` (synthesis's staged text, from acceptance) and `.d/`
+    converted audio), `.segments` and `.untagged` (a json transcript's diarizer segments,
+    and the transcript waiting for them), `.txt` (synthesis's staged text, from
+    acceptance) and `.d/`
     (synthesis's chunk WAVs). Records outlive their job by two weeks.
   - `telemetry.db` — the local telemetry store. A session that finds it damaged (SQLite
     says it is not a database, or is malformed) renames it, with its journal, to
@@ -129,6 +132,22 @@ their design is in its `harness/architecture.md`. This document covers voicebox.
   job's report with whether sending the same request again can work and, when not, what
   to change, by its recorded reason; reports on unfinished jobs say when to check again.
   An agent should never need a log or a process list to decide what to do next.
+
+- **A json transcript's speakers come from `nemo-speech diarize`, not `transcribe
+  --diarize`.** NeMo-Speech.cpp 0.2.0's `transcribe` tags only the words inside the
+  diarizer's retained window, so once a recording passes about twenty minutes every word
+  before roughly its last fifteen gets one speaker (issue #3). The standalone diarizer
+  reports every segment of the file. So for `json` with `diarize`, the worker transcribes
+  without `--diarize`, runs `nemo-speech diarize` on the same WAV, and gives each word the
+  speaker of the segment it overlaps most, or the nearest one (`transcribe/speakers.py`),
+  writing the transcript to its output in NeMo's own layout. Until then the untagged
+  transcript waits in `jobs/<job_id>.untagged`, so however the job ends - the diarizer
+  failing or writing segments no one can read (`model_failed`), a cancel, a crash -
+  nothing without its speakers is left at the output path. With nothing heard, the
+  diarizer is not run. Only json carries speaker tags:
+  text, srt and vtt come out the same with or without `--diarize`, which they are still
+  given. `scripts/eval_diarization.py` scores speakers window by window against a known
+  truth; this step goes once a NeMo-Speech.cpp that tags the whole file is pinned.
 
 - **A job is owned by a detached worker, and the record is the source of truth.** A
   three-hour recording is minutes of work and a long voice-over more; nothing should

@@ -118,6 +118,15 @@ A transcription job runs `nemo-speech transcribe`, which loads the model per job
 time includes the load. On the M5, cold: about 6.9x realtime with speakers labelled and
 9.5x without (`jobs/store.py`'s estimate uses these).
 
+A json transcript with speakers runs `nemo-speech transcribe` without `--diarize`, then
+`nemo-speech diarize`, and takes about as long as `transcribe --diarize` alone: 156 s
+against 153 s for a 26-minute two-voice recording, 179 s against 177 s for AMI meeting
+IS1009c (30 minutes, four speakers), both on Metal. `diarize` alone takes about 45 s for
+33 minutes. Speaker accuracy on those two, per five-minute window
+(`scripts/eval_diarization.py`): 0.99–1.00 in every window, where `transcribe --diarize`
+scores 0.46–0.49 (two voices) and 0.00–0.48 (four) before its tags begin, at 9:58 and
+19:53.
+
 ## Resident memory
 
 | Server | Once `/health` answers |

@@ -233,9 +233,13 @@ def test_discarding_artifacts_leaves_the_record_and_log(tmp_path):
     record = job()
     store.write(record)
     store.wav_path(record.job_id).write_bytes(b"RIFF")
+    store.diarization_path(record.job_id).write_text("{}")
+    store.untagged_path(record.job_id).write_text("{}")
     store.log_path(record.job_id).write_text("log")
     store.discard_artifacts(record.job_id)
     assert not store.wav_path(record.job_id).exists()
+    assert not store.diarization_path(record.job_id).exists()
+    assert not store.untagged_path(record.job_id).exists()
     assert store.read(record.job_id) is not None and store.log_path(record.job_id).exists()
 
 

@@ -176,6 +176,15 @@ class JobStore:
     def wav_path(self, job_id: str) -> Path:
         return self._dir / f"{job_id}.wav"
 
+    def diarization_path(self, job_id: str) -> Path:
+        """The diarizer's segments, which a json transcript's speakers are read from."""
+        # Not `.json`: `recent()` reads every `*.json` here as a job record.
+        return self._dir / f"{job_id}.segments"
+
+    def untagged_path(self, job_id: str) -> Path:
+        """A json transcript waiting for its words' speakers, before it goes to its output."""
+        return self._dir / f"{job_id}.untagged"  # not `.json`, as above
+
     def pid_path(self, job_id: str) -> Path:
         return self._dir / f"{job_id}.pid"
 
@@ -259,10 +268,13 @@ class JobStore:
         return sorted(jobs, key=lambda j: j.created_at, reverse=True)[:limit]
 
     def discard_artifacts(self, job_id: str) -> None:
-        """Delete what a job holds only while it runs - converted audio, staged text,
-        chunk WAVs, a partly written output - never its record or log. Never raises."""
+        """Delete what a job holds only while it runs - converted audio, segments, an untagged
+        transcript, staged text, chunk WAVs, a partly written output - never its record or
+        log. Never raises."""
         try:
             self.wav_path(job_id).unlink(missing_ok=True)
+            self.diarization_path(job_id).unlink(missing_ok=True)
+            self.untagged_path(job_id).unlink(missing_ok=True)
             self.text_path(job_id).unlink(missing_ok=True)
             job = self.read(job_id)
             if isinstance(job, SynthesisJob) and job.partial:
