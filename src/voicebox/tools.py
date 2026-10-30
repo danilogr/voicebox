@@ -56,7 +56,10 @@ TRANSCRIBE_OUTPUT_DIR = (
     "Directory for the transcript. Defaults to VOICEBOX_TRANSCRIBE_DIR if set, "
     "otherwise the input file's own directory."
 )
-TRANSCRIBE_FORMAT = "text, json (word timings and speakers), srt, or vtt."
+TRANSCRIBE_FORMAT = (
+    "text, json (word timings and speakers), srt, or vtt. With diarize, every format "
+    "labels who is speaking."
+)
 TRANSCRIBE_DIARIZE = "Label who is speaking. On by default; about 38% slower."
 TRANSCRIBE_LANGUAGE = "Language code of the speech, e.g. en or pt. Detected when omitted."
 TRANSCRIBE_TRANSLATE = "Translate the transcript into this language code."

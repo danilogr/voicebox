@@ -130,6 +130,16 @@ their design is in its `harness/architecture.md`. This document covers voicebox.
   to change, by its recorded reason; reports on unfinished jobs say when to check again.
   An agent should never need a log or a process list to decide what to do next.
 
+- **Speakers come from `nemo-speech transcribe --diarize`, so NeMo-Speech.cpp must be
+  0.3.0 or later** (speak-core's `install-nemo.sh` requires it). Before 0.3.0 the
+  runtime gave every word older than about the last ten minutes of a long recording one
+  speaker (issue #3), and only json carried speakers. Now json tags each word, text has a
+  `Speaker N: ` paragraph per turn, srt a `Speaker N: ` cue prefix and vtt a
+  `<v Speaker N>` voice tag. `transcript_text` drops those labels, so a transcript's word
+  count and preview are what was said. `scripts/eval_diarization.py` scores speakers per
+  five-minute window against a known truth: on 0.3.0 with Metal, 1.00 in every window of
+  a 26-minute two-voice recording and 0.99–1.00 on AMI meeting IS1009c.
+
 - **A job is owned by a detached worker, and the record is the source of truth.** A
   three-hour recording is minutes of work and a long voice-over more; nothing should
   depend on the asking session staying open. The tool writes the record once; the worker
