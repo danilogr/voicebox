@@ -202,6 +202,19 @@ def test_a_new_transcript_never_overwrites_an_old_one(tmp_path):
             "hello there again",
         ),
         ("vtt", "WEBVTT\n\n00:00.320 --> 00:03.840\nhello there\n", "hello there"),
+        ("text", "Speaker 1: hello there\n\nSpeaker 2: again\n", "hello there\n\nagain"),
+        (
+            "srt",
+            "1\n00:00:00,320 --> 00:00:03,840\nSpeaker 1: hello\nthere\n\n2\n"
+            "00:00:04,000 --> 00:00:05,000\nSpeaker 2: again\n",
+            "hello there again",
+        ),
+        (
+            "vtt",
+            "WEBVTT\n\n00:00.320 --> 00:03.840\n<v Speaker 1>hello\nthere\n\n"
+            "00:04.000 --> 00:05.000\n<v Speaker 2>again</v>\n",
+            "hello there again",
+        ),
     ],
 )
 def test_the_words_come_out_of_every_format(tmp_path, fmt, content, expected):
