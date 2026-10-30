@@ -31,7 +31,7 @@ from voicebox.transcribe import service as transcription
 
 logger = logging.getLogger(__name__)
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 # Claude Code reads `commands/*.md` itself; every other MCP client (Antigravity) sees only
 # what this server offers, so /voicebox:narrate is also served as a prompt from that same
