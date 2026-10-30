@@ -2,7 +2,7 @@
 
 Run as `python -m voicebox.transcribe.worker <state_dir> <job_id>` in its own
 session, so it outlives the MCP server that started it: a three-hour recording
-is twenty-six minutes of work, and nothing should depend on that window staying
+is about eighteen minutes of work, and nothing should depend on that window staying
 open. It is also what reports the outcome, because by the time a long job ends the
 session that asked for it may be gone.
 """

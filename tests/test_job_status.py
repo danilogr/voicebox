@@ -13,7 +13,7 @@ from voicebox.transcribe.service import TranscribeRequest, start
 
 ME, OTHER, WORKER = 100, 300, 4242
 AUDIO = Probe(
-    duration_s=690.0,
+    duration_s=1030.0,
     size_bytes=49_283_072,
     container="matroska,webm",
     codec="flac",

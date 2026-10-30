@@ -60,7 +60,7 @@ def job(name: str, created_at: float, **overrides: object) -> TranscriptionJob:
         diarize=False,
         language=None,
         translate_to=None,
-        duration_s=95.0,  # 10 s of work at 9.5x
+        duration_s=130.0,  # 10 s of work at 13x
         size_bytes=1,
         codec="flac",
         convert=False,

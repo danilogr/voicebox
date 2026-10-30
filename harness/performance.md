@@ -115,8 +115,13 @@ job's overall throughput so far.
 ## Transcription
 
 A transcription job runs `nemo-speech transcribe`, which loads the model per job, so its
-time includes the load. On the M5, cold: about 6.9x realtime with speakers labelled and
-9.5x without (`jobs/store.py`'s estimate uses these).
+time includes the load. On the M5 with Metal, NeMo-Speech.cpp 0.3.0, a fresh process per
+run: 10.3x realtime with speakers labelled and 13.0x without, the medians of six pairs of
+runs on five recordings of 21 to 33 minutes (`jobs/store.py`'s estimate uses these).
+Across those runs the range is 10.1–10.5x and 12.6–13.3x, and labelling speakers adds 24–28%,
+27% at the median. Load weighs more on a short file but its speed is still higher: a
+3-minute clip ran at 16x and 21x, so the estimate is cautious there. Converting a 33-minute
+m4a to WAV took about a second, and the estimate leaves it out.
 
 ## Resident memory
 

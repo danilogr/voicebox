@@ -28,8 +28,8 @@ TRANSCRIPTION = "transcription"
 SYNTHESIS = "synthesis"
 
 # Realtime multiples measured on an M5, cold, including model load (performance.md).
-REALTIME_RATIO_DIARIZED = 6.9
-REALTIME_RATIO_PLAIN = 9.5
+REALTIME_RATIO_DIARIZED = 10.3
+REALTIME_RATIO_PLAIN = 13.0
 
 # How long a finished job's record and log stay before `recent()` prunes them -
 # generous for a human looking back at what they transcribed.

@@ -31,9 +31,9 @@ or writing a script to do it. Nothing leaves the machine.
 
 It starts a background job and returns at once with a job id, the path the
 transcript will be written to, and an estimate: roughly a minute of work for every
-seven minutes of audio. Check on it with job_status. Speakers are
+ten minutes of audio. Check on it with job_status. Speakers are
 labelled by default; turn diarize off for a single speaker to save about a
-quarter of the time. Jobs run one at a time in the order they were sent: one sent
+fifth of the time. Jobs run one at a time in the order they were sent: one sent
 while another runs is queued and starts on its own, so send every file you need
 without waiting for the last.
 
@@ -60,7 +60,7 @@ TRANSCRIBE_FORMAT = (
     "text, json (word timings and speakers), srt, or vtt. With diarize, every format "
     "labels who is speaking."
 )
-TRANSCRIBE_DIARIZE = "Label who is speaking. On by default; about 38% slower."
+TRANSCRIBE_DIARIZE = "Label who is speaking. On by default; about 27% slower."
 TRANSCRIBE_LANGUAGE = "Language code of the speech, e.g. en or pt. Detected when omitted."
 TRANSCRIBE_TRANSLATE = "Translate the transcript into this language code."
 JOB_ID = "A job id from transcribe or synthesize. Omit it to list recent jobs."

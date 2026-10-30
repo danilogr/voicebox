@@ -167,8 +167,8 @@ def test_the_log_tail_is_the_last_lines(tmp_path):
 
 
 def test_the_estimate_uses_the_measured_ratios():
-    assert eta_seconds(690.0, diarize=True) == pytest.approx(100.0)
-    assert eta_seconds(950.0, diarize=False) == pytest.approx(100.0)
+    assert eta_seconds(1030.0, diarize=True) == pytest.approx(100.0)
+    assert eta_seconds(1300.0, diarize=False) == pytest.approx(100.0)
 
 
 def test_job_ids_are_distinct_dashed_uuid4s():
