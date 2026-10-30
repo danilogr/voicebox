@@ -9,11 +9,11 @@ from voicebox.server import VERSION
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_plugin_json_pyproject_and_the_server_agree_on_1_1_1():
+def test_plugin_json_pyproject_and_the_server_agree_on_1_1_2():
     plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
     assert plugin["name"] == project["name"] == "voicebox"
-    assert plugin["version"] == project["version"] == VERSION == "1.1.1"
+    assert plugin["version"] == project["version"] == VERSION == "1.1.2"
 
 
 def test_the_marketplace_lists_voicebox_first_and_walkie_from_github():
