@@ -8,7 +8,7 @@
     assets/             art: voicebox, transcribe and narrate icons and heroes; walkie icon (for the README note); favicons
     commands/           /voicebox:narrate, :setup, :telemetry, :stats
     harness/            architecture, user flow, performance, design guidelines, this file
-    scripts/            the MCP launcher and the local-install helper
+    scripts/            the MCP launcher, the local-install helper and the diarization eval
     src/voicebox/       the plugin
     tests/              the offline test suite and the vendored telemetry contract
 
@@ -26,6 +26,7 @@
 | `favicon.ico`, `favicon.png`, `assets/favicon.*` | Icons; no code reads them |
 | `scripts/voicebox-mcp` | Finds `uv` and runs `voicebox-mcp` |
 | `scripts/install-local.sh` | Copies this tree into Claude Code's plugin cache for a non-local install |
+| `scripts/eval_diarization.py` | Opt-in eval: speaker accuracy per five-minute window on a generated two-voice conversation or an AMI meeting, through the real worker and models |
 
 ## `src/voicebox/`
 

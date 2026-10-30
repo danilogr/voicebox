@@ -1,6 +1,6 @@
 {
   "name": "voicebox",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Offline transcription, voice-overs and read-aloud: transcribe audio and video, turn text into an audio file in a chosen voice, and read long text aloud. Runs entirely on your machine, powered by NVIDIA NeMo-Speech.cpp.",
   "repository": "https://github.com/danilogr/voicebox",
   "license": "MIT"

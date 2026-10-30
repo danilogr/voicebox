@@ -12,6 +12,10 @@ FORMATS = tuple(EXTENSIONS)
 # that is not something somebody said.
 _NOT_SPEECH = re.compile(r"^\d+$|-->|^WEBVTT")
 
+# The speaker labels `--diarize` writes: a `Speaker N: ` paragraph or cue prefix in text
+# and srt, a `<v Speaker N>` voice tag in vtt. They name who spoke, not what was said.
+_SPEAKER_LABEL = re.compile(r"^Speaker \d+: |<v [^>]*>|</v>", re.MULTILINE)
+
 
 def output_path(
     source: Path, directory: Path, fmt: str, job_id: str, *, in_use: Collection[str] = ()
@@ -34,6 +38,7 @@ def transcript_text(path: Path, fmt: str) -> str:
             return ""
         text = data.get("text") if isinstance(data, dict) else None
         return text.strip() if isinstance(text, str) else ""
+    raw = _SPEAKER_LABEL.sub("", raw)
     if fmt in ("srt", "vtt"):
         lines = (line.strip() for line in raw.splitlines())
         return " ".join(line for line in lines if line and not _NOT_SPEECH.search(line))

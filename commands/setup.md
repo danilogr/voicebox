@@ -11,7 +11,7 @@ text-normalization grammars on disk, and while
 the speech server runs, roughly 1.75 GB of resident memory.
 
 1. Run `uv run --directory "${CLAUDE_PLUGIN_ROOT}" --quiet speak-core-setup` and show the
-   output. It installs `nemo-speech` if it is missing or older than 0.2.0, pulls both
+   output. It installs `nemo-speech` if it is missing or older than 0.3.0, pulls both
    models, downloads the grammars that let the server read numbers and abbreviations as
    words, and runs `nemo-speech doctor`. It is idempotent. If `uv` is not on PATH, use
    `~/.local/bin/uv`.

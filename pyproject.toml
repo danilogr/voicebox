@@ -1,12 +1,12 @@
 [project]
 name = "voicebox"
-version = "1.0.0"
+version = "1.1.0"
 description = "Offline transcription, voice-overs and read-aloud for coding agents, on NVIDIA NeMo-Speech.cpp."
 requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE"]
 dependencies = [
-    "speak-core @ git+https://github.com/danilogr/speak-core@v0.4.1",
+    "speak-core @ git+https://github.com/danilogr/speak-core@v0.5.0",
     "mcp>=2.1,<3",
 ]
 

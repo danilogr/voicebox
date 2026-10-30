@@ -95,8 +95,10 @@ async def run_job(
     try:
         finished = await _transcribe(jobs, job, run=run, run_cli=run_cli, clock=clock)
     except Exception as error:  # a bug here must still leave an honest record
+        latest = jobs.read(job_id)  # how far it got is on the record
+        base = latest if isinstance(latest, TranscriptionJob) else job
         finished = replace(
-            job, state=FAILED, finished_at=clock(), error=f"worker error: {error}", reason="other"
+            base, state=FAILED, finished_at=clock(), error=f"worker error: {error}", reason="other"
         )
         jobs.write(finished)
         record(finished)
